@@ -1,0 +1,11 @@
+/node_modules
+/*.local
+/.env*
+/.vscode/*
+/package-lock.json
+/app
+/src
+/docs
+/*config.{mjs,js,ts,mts}
+/test
+/index.html

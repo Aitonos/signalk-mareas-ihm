@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJNQVJFQVMgKElITSkiPgogIDxyZWN0IHg9IjAiIHk9IjAiIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMDQzODRhIi8+CiAgPCEtLSBzdW4gLS0+CiAgPGNpcmNsZSBjeD0iNDgiIGN5PSIxOCIgcj0iNiIgZmlsbD0iI2ZmZDE2NiIvPgogIDwhLS0gaXNsYW5kIC0tPgogIDxwYXRoIGQ9Ik0xOCA0MGM2LTYgMTYtNiAyMiAwIiBmaWxsPSIjMGU2YjRmIi8+CiAgPHBhdGggZD0iTTEyIDQyYzEwLTggMzAtOCA0MCAwdjZIMTJ6IiBmaWxsPSIjMGU2YjRmIi8+CiAgPCEtLSBsaWdodGhvdXNlIC0tPgogIDxyZWN0IHg9IjI4IiB5PSIyNCIgd2lkdGg9IjgiIGhlaWdodD0iMTgiIHJ4PSIyIiBmaWxsPSIjZmZmZmZmIi8+CiAgPHJlY3QgeD0iMjciIHk9IjIyIiB3aWR0aD0iMTAiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IiNmZjRiNGIiLz4KICA8cGF0aCBkPSJNMzIgMThsNiA0SDI2eiIgZmlsbD0iI2ZmZmZmZiIvPgogIDwhLS0gd2F2ZXMgLS0+CiAgPHBhdGggZD0iTTEwIDUwYzQgMCA0LTIgOC0yczQgMiA4IDIgNC0yIDgtMiA0IDIgOCAyIDQtMiA4LTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzFhYTZiNyIgc3Ryb2tlLXdpZHRoPSI0IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNMTAgNTZjNCAwIDQtMiA4LTJzNCAyIDggMiA0LTIgOC0yIDQgMiA4IDIgNC0yIDgtMiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMWFhNmI3IiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iMC45Ii8+Cjwvc3ZnPgo=" />
+  <!-- Rev175: bloquear pinch-zoom y double-tap-zoom en mobile, igual que mobile.html.
+       TidesView debe ajustarse al tamaño de pantalla, no permitir zoom de usuario
+       (es interfaz, no foto/mapa). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Mareas (IHM)</title>
+</head>
+
+<body>
+  <!-- Rev178: botón Atrás visible cuando viene desde el visor mobile.
+       UA-check para mostrarlo solo en móvil/tablet o cuando se navegó
+       desde /signalk-mareas-ihm/mobile. Vuelve con history.back(). -->
+  <!-- Rev187: header iOS-style con back+título centrado para TidesView embebido -->
+  <div id="m-tv-header" style="display:none;position:fixed;top:0;left:0;right:0;height:64px;z-index:9999;background:rgba(10,30,50,.97);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,178,63,.3);align-items:center;justify-content:space-between;padding:0 12px">
+    <button id="m-tv-back" type="button" onclick="if(history.length>1){history.back()}else{location.href='/signalk-mareas-ihm/visorfondeo'}" style="background:rgba(255,178,63,.15);border:1px solid #ffb23f;color:#ffb23f;font-size:18px;font-weight:800;padding:12px 18px;border-radius:12px;cursor:pointer;min-height:48px;display:flex;align-items:center;gap:4px"><span id="m-tv-back-txt">‹ Back</span></button>
+    <div id="m-tv-title-txt" style="flex:1;text-align:center;font-size:22px;font-weight:900;color:#fff;letter-spacing:-.3px">🌊 Tides</div>
+    <button id="m-tv-curvas" type="button" onclick="document.dispatchEvent(new CustomEvent('m-show-curvas'))" style="background:rgba(33,150,243,.18);border:1px solid #2196F3;color:#4dd0ff;font-size:16px;font-weight:800;padding:12px 16px;border-radius:12px;cursor:pointer;min-height:48px"><span id="m-tv-curvas-txt">📈 Curves</span></button>
+  </div>
+  <script>
+  (function(){
+    /* Rev320: i18n del header del iframe (m-tv-header). Detecta idioma vía
+       URL ?lang= o localStorage 'ihm-visor-lang'. ES → Atrás/Mareas/Curvas. */
+    var ua = navigator.userAgent || '';
+    var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(ua);
+    var fromMobile = (document.referrer || '').indexOf('/signalk-mareas-ihm/mobile') >= 0;
+    var fromVisor = (document.referrer || '').indexOf('/signalk-mareas-ihm/') >= 0;
+    var header = document.getElementById('m-tv-header');
+    if (header && (isMobile || fromMobile || fromVisor)) {
+      header.style.display = 'flex';
+      document.documentElement.style.paddingTop = '64px';
+    }
+    /* Detectar idioma */
+    var lang = 'en';
+    try {
+      var qs = new URLSearchParams(window.location.search);
+      if (qs.get('lang') === 'es') lang = 'es';
+      else if (qs.get('lang') === 'en') lang = 'en';
+      else {
+        var ls = localStorage.getItem('ihm-visor-lang');
+        if (ls === 'es' || ls === 'en') lang = ls;
+      }
+    } catch(_){}
+    if (lang === 'es') {
+      var bt = document.getElementById('m-tv-back-txt'); if (bt) bt.textContent = '‹ Atrás';
+      var tt = document.getElementById('m-tv-title-txt'); if (tt) tt.textContent = '🌊 Mareas';
+      var ct = document.getElementById('m-tv-curvas-txt'); if (ct) ct.textContent = '📈 Curvas';
+    }
+  })();
+  </script>
+  <div id="app"></div>
+  <script>
+  (function(){
+    var ld=window.devicePixelRatio||1,bd=ld;
+    if(window.outerWidth>0&&window.innerWidth>0){var iz=window.outerWidth/window.innerWidth;if(iz>1.05&&iz<5)bd=ld/iz;}
+    function fix(){var d=window.devicePixelRatio||1,bz=d/bd,c=(Math.abs(bz-1)>0.05)?1/bz:1;document.documentElement.style.setProperty('--zoom-fix',c);}
+    fix();window.addEventListener('resize',fix);
+  })();
+  </script>
+  <script type="module" src="/app/main.tsx"></script>
+</body>
+
+</html>

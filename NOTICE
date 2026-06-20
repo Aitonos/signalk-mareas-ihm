@@ -1,0 +1,13 @@
+Mareas – IHM
+
+This product is licensed under the Apache License 2.0.
+
+Attribution:
+This project was originally derived from the Signal K community plugin "signalk-tides"
+and has since been significantly modified and extended to support official data from
+the Spanish Hydrographic Institute (IHM), advanced caching, alarms, and a custom web interface.
+
+Map Tile Attribution:
+- OpenStreetMap contributors (© OpenStreetMap, ODbL) — https://www.openstreetmap.org/copyright
+- OpenSeaMap (© OpenSeaMap contributors) — https://www.openseamap.org
+- Leaflet (BSD-2-Clause) — https://leafletjs.com

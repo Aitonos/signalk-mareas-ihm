@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+
+# Build outputs (npm includes them via files[]; git does not need them)
+dist/
+dist-ssr/
+public/assets/
+public/.vite/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local config & secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Lock files (this project does not commit package-lock.json)
+package-lock.json
+
+# Editor / IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local agent memory and tooling caches (not for upstream)
+.claude/
+
+# Local-only docs (drafts and review artifacts)
+docs/PROPUESTA_*.md
+docs/INSTRUCCIONES_MODAL_v*.html
+docs/PROMPT_FOR_LLM_*.md
+docs/BACKLOG_REVISION_*.md
+
+# Author-specific infra docs (contain Tailscale IPs etc — not useful for upstream)
+docs/DEPLOY.md
+docs/BOOTSTRAP_PROMPT.md
+
+# Author-specific deploy script (contains hardcoded Tailscale IP).
+# TODO: parametrize via $env:PI_HOST and bring back into the repo in a later version.
+deploy.ps1
+
+# Tarballs from npm pack
+*.tgz

@@ -1,0 +1,29 @@
+{
+  "3560": {
+    "id": "3560",
+    "name": "Vigo",
+    "hat": 4.20,
+    "lat": 0.30,
+    "datum": "CH",
+    "source": "IHM 2026 (19 años sobre Cero Hidrográfico)",
+    "updated": "2026-01-15"
+  },
+  "3561": {
+    "id": "3561",
+    "name": "A Coruña",
+    "hat": 4.10,
+    "lat": 0.40,
+    "datum": "CH",
+    "source": "IHM 2026 (19 años sobre Cero Hidrográfico)",
+    "updated": "2026-01-15"
+  },
+  "3562": {
+    "id": "3562",
+    "name": "Marín",
+    "hat": 4.15,
+    "lat": 0.35,
+    "datum": "CH",
+    "source": "IHM 2026 (19 años sobre Cero Hidrográfico)",
+    "updated": "2026-01-15"
+  }
+}

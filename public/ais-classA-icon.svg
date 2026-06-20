@@ -1,0 +1,85 @@
+<svg viewBox="0 0 60 180" xmlns="http://www.w3.org/2000/svg" role="img">
+  <defs>
+    <linearGradient id="hull" x1="30" y1="0" x2="30" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1f4a78"/>
+      <stop offset="1" stop-color="#0c2440"/>
+    </linearGradient>
+    <clipPath id="deckClip">
+      <path d="M30 4 C18 8 10 24 10 50 v110 c0 8 5 14 10 14 h20 c5 0 10-6 10-14 V50 C50 24 42 8 30 4 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Hull outline -->
+  <path d="M30 2 C16 7 8 24 8 50 v110 c0 10 6 16 12 16 h20 c6 0 12-6 12-16 V50 C52 24 44 7 30 2 Z"
+        fill="url(#hull)" stroke="#091b30" stroke-width="1" stroke-linejoin="round"/>
+
+  <!-- Deck content (clipped to hull) -->
+  <g clip-path="url(#deckClip)">
+    <!-- Bow anchor mark -->
+    <circle cx="30" cy="14" r="0.9" fill="#d6e0e4"/>
+    <path d="M30 16 v4 M27 18 h6" stroke="#d6e0e4" stroke-width="0.8" stroke-linecap="round"/>
+
+    <!-- Container rows (forward → aft) -->
+    <!-- Row 1 -->
+    <rect x="12" y="26" width="9"  height="14" fill="#f87519" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="22" y="26" width="8"  height="14" fill="#2f7cae" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="31" y="26" width="8"  height="14" fill="#5d984d" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="40" y="26" width="8"  height="14" fill="#f3c62a" stroke="#0c2440" stroke-width="0.4"/>
+    <!-- Row 2 -->
+    <rect x="12" y="42" width="9"  height="14" fill="#5d984d" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="22" y="42" width="8"  height="14" fill="#b7b8b2" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="31" y="42" width="8"  height="14" fill="#f87519" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="40" y="42" width="8"  height="14" fill="#2f7cae" stroke="#0c2440" stroke-width="0.4"/>
+    <!-- Row 3 -->
+    <rect x="12" y="58" width="9"  height="14" fill="#2f7cae" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="22" y="58" width="8"  height="14" fill="#f3c62a" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="31" y="58" width="8"  height="14" fill="#5d984d" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="40" y="58" width="8"  height="14" fill="#f87519" stroke="#0c2440" stroke-width="0.4"/>
+    <!-- Row 4 -->
+    <rect x="12" y="74" width="9"  height="14" fill="#b7b8b2" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="22" y="74" width="8"  height="14" fill="#5d984d" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="31" y="74" width="8"  height="14" fill="#f3c62a" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="40" y="74" width="8"  height="14" fill="#2f7cae" stroke="#0c2440" stroke-width="0.4"/>
+    <!-- Row 5 -->
+    <rect x="12" y="90" width="9"  height="14" fill="#f87519" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="22" y="90" width="8"  height="14" fill="#2f7cae" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="31" y="90" width="8"  height="14" fill="#f87519" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="40" y="90" width="8"  height="14" fill="#5d984d" stroke="#0c2440" stroke-width="0.4"/>
+    <!-- Row 6 -->
+    <rect x="12" y="106" width="9" height="14" fill="#5d984d" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="22" y="106" width="8" height="14" fill="#b7b8b2" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="31" y="106" width="8" height="14" fill="#2f7cae" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="40" y="106" width="8" height="14" fill="#f3c62a" stroke="#0c2440" stroke-width="0.4"/>
+
+    <!-- Bridge / accommodation -->
+    <rect x="10" y="124" width="40" height="16" fill="#f8fbfd" stroke="#0c2440" stroke-width="0.4"/>
+    <g fill="#234b72">
+      <rect x="14" y="126" width="8" height="2"/>
+      <rect x="26" y="126" width="8" height="2"/>
+      <rect x="38" y="126" width="8" height="2"/>
+      <rect x="14" y="131" width="8" height="2"/>
+      <rect x="26" y="131" width="8" height="2"/>
+      <rect x="38" y="131" width="8" height="2"/>
+      <rect x="14" y="136" width="8" height="2"/>
+      <rect x="26" y="136" width="8" height="2"/>
+      <rect x="38" y="136" width="8" height="2"/>
+    </g>
+
+    <!-- Funnel -->
+    <rect x="26" y="142" width="8" height="6" fill="#a23a1a" stroke="#0c2440" stroke-width="0.4"/>
+
+    <!-- Lifeboats -->
+    <ellipse cx="12" cy="135" rx="2" ry="5" fill="#ef7d14" stroke="#bf5a0a" stroke-width="0.5"/>
+    <ellipse cx="48" cy="135" rx="2" ry="5" fill="#ef7d14" stroke="#bf5a0a" stroke-width="0.5"/>
+
+    <!-- Aft cargo / stern equipment -->
+    <rect x="14" y="152" width="8"  height="12" fill="#5d984d" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="23" y="152" width="8"  height="12" fill="#f87519" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="32" y="152" width="8"  height="12" fill="#2f7cae" stroke="#0c2440" stroke-width="0.4"/>
+    <rect x="41" y="152" width="8"  height="12" fill="#f3c62a" stroke="#0c2440" stroke-width="0.4"/>
+
+    <!-- Stern winches -->
+    <circle cx="20" cy="170" r="2" fill="#234b72" stroke="#0c2440" stroke-width="0.3"/>
+    <circle cx="40" cy="170" r="2" fill="#234b72" stroke="#0c2440" stroke-width="0.3"/>
+  </g>
+</svg>
