@@ -5266,11 +5266,11 @@ function _ihmShowBanner(msg, kind){
   }
 }
 function _ihmHideBanner(){ if (_ihmBannerEl) _ihmBannerEl.style.display = 'none'; }
-/* Rev483: log INCONDICIONAL cada tick para diagnostico — si aparece, watchdog
-   vive. Si no, hay bug parser/syntax. Tras confirmar, volver a hacer condicional. */
+/* Rev487: log solo si age > 10s para no saturar consola. Watchdog validado
+   en barco real (Rev486 — corte WiFi laptop confirmo disparo del banner). */
 function _ihmWatchdogTick(){
   var age = Date.now() - _lastStateRecvMs;
-  try { console.log('[IHM-WATCHDOG] tick age=' + age + 'ms threshold=15000ms banner=' + (_ihmBannerEl ? _ihmBannerEl.style.display : 'null')); } catch(_){}
+  try { if (age > 10000) console.log('[IHM-WATCHDOG] tick age=' + age + 'ms threshold=15000ms banner=' + (_ihmBannerEl ? _ihmBannerEl.style.display : 'null')); } catch(_){}
   if (age > 15000) {
     var sec = Math.round(age / 1000);
     /* Rev480: banner explicito — solo nuestro plugin esta mudo; SignalK base
@@ -5278,9 +5278,13 @@ function _ihmWatchdogTick(){
        canales. El usuario debe saber que lo que NO esta al dia es lo nuestro
        (fondeo, varada, AIS) — NO debe asumir que el barco esta sin telemetria. */
     var lang = (typeof _lang === 'string') ? _lang : 'es';
+    /* Rev487: texto mas contundente. La causa puede ser muchas (WiFi caido,
+       4G perdido, plugin caido, SK parado, Pi apagado). El usuario debe saber
+       que NO debe fiarse de los datos visibles para tomar decisiones criticas
+       de navegacion / fondeo. */
     var msg = (lang === 'en')
-      ? ('Plugin offline (' + sec + 's) - anchor/grounding/AIS data stale. Other SK data may still update.')
-      : ('Plugin desconectado (' + sec + 's) - fondeo/varada/AIS obsoletos. Otros datos del SK pueden seguir al dia.');
+      ? ('DATA UNRELIABLE (' + sec + 's no connection). Check WiFi, plugin or boat link before making decisions.')
+      : ('DATOS NO FIABLES (' + sec + 's sin conexion). Verifica WiFi, plugin o conexion con el barco antes de tomar decisiones.');
     _ihmShowBanner(msg, 'disconnect');
   } else if (_ihmBannerEl && _ihmBannerEl.style.display !== 'none'
              && _ihmBannerEl.dataset.kind !== 'reload') {

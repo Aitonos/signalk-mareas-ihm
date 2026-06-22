@@ -1,5 +1,49 @@
 # Changelog
 
+## [2.3.0] - 2026-06-22
+
+### English
+
+**Safety hardening (refactor Rev475-487)**
+
+- **Grounding FSM** with four orthogonal dimensions exposed at `state.grounding`: `physics` (data + clearance), `config` (alarm settings), `notification` (active/snoozed/inactive/latched), `safetyLatch` (persistent across restart). Plus legacy paths (`groundingAlarm`, `groundingStatus`, `groundingDetail`) preserved for backward compatibility.
+- **Grounding snooze** added: `POST /api/anchor-watch/silence-alarm {kind:"grounding", minutes:N}` silences the grounding siren for N minutes. The visor snooze button (😴) now silences AIS *and* grounding (anchor-drag still untouched — safety critical). Cancel with `kind:"all"`.
+- **Visual risk indicator**: anchor icon (sidebar button + map marker) glows red and pulses when physical grounding risk is detected, independent of whether the alarm is enabled or silenced. Bottom-bar SONDA cell shows "⚠ RIESGO DE VARADA" in red.
+- **Disconnect banner**: when the visor stops receiving state for >15s (WiFi lost, plugin down, SK stopped, Pi off), a red banner appears warning "DATA UNRELIABLE — check WiFi, plugin or boat link before making decisions". Auto-reload on backend restart (detected via `serverInstanceId` change).
+- **GPS freshness exposed** as `state.gpsAgeMs`. `boatPosition: null` when fresh GPS is unavailable (avoids stale-position leakage).
+- **Single-flight lock** for `drop`/`lift`/`toggle` anchor commands (10s recovery). Concurrent calls return 409.
+- **Persistent safety latch**: if the depth sounder freezes or disappears while grounding is monitored, the latch holds the alarm even across plugin restarts until the user explicitly clears it.
+- **Schema version 2** + `serverInstanceId` to detect cached frontend / backend restart and force reload.
+- **Input validation**: POST endpoints now reject invalid types (`enabled:"yes"`, `draft:"text"`, out-of-range numbers) with 400 instead of silent coercion.
+- **Robust draft reader** handling all `design.draft` shapes (number, `{value}`, `{value:{maximum}}`).
+- **Validated position** with 60s timestamp window for SSE consumers.
+- **Defensive deep-clone** of state payload to avoid mutation leaks.
+- **Cache migration** for legacy `groundingRisk` snapshots.
+- Integration test suite (`tests/grounding_v475.test.js`, `depth_v476.test.js`, `fsm_v477.test.js`, `sync_v478.test.js`) — 37 tests.
+
+QA validated in-water on Tunatunes during a real grounding-risk event (Vigo, 2026-06-22), including snooze, glow indicators, bottom-bar display, and connection-loss banner triggered by laptop WiFi cut.
+
+### Español
+
+**Refuerzo de seguridad (refactor Rev475-487)**
+
+- **FSM de varada** con cuatro dimensiones ortogonales expuestas en `state.grounding`: `physics` (datos + holgura), `config` (configuración de alarma), `notification` (active/snoozed/inactive/latched), `safetyLatch` (persistente entre reinicios). Más los paths legacy (`groundingAlarm`, `groundingStatus`, `groundingDetail`) preservados por compatibilidad.
+- **Snooze de varada** añadido: `POST /api/anchor-watch/silence-alarm {kind:"grounding", minutes:N}` silencia la sirena de varada N minutos. El botón snooze del visor (😴) ahora silencia AIS *y* varada (garreo intocable — safety crítico). Cancelar con `kind:"all"`.
+- **Indicador visual de riesgo**: el icono ancla (botón sidebar + marker del mapa) brilla en rojo pulsante cuando se detecta riesgo físico de varada, independientemente de si la alarma está activada o silenciada. La celda SONDA del bottom-bar muestra "⚠ RIESGO DE VARADA" en rojo.
+- **Banner de desconexión**: cuando el visor lleva >15s sin recibir state (WiFi caído, plugin parado, SK parado, Pi apagado), aparece un banner rojo: "DATOS NO FIABLES — verifica WiFi, plugin o conexión con el barco antes de tomar decisiones". Auto-recarga al reiniciar backend (detectado vía cambio de `serverInstanceId`).
+- **Edad del GPS expuesta** en `state.gpsAgeMs`. `boatPosition: null` cuando no hay fix fresco (evita filtrar posiciones obsoletas).
+- **Lock single-flight** para comandos `drop`/`lift`/`toggle` (recovery 10s). Llamadas concurrentes devuelven 409.
+- **Safety latch persistente**: si la sonda se congela o desaparece mientras vigilamos varada, el latch mantiene la alarma incluso entre reinicios del plugin hasta que el usuario la limpie explícitamente.
+- **Schema versión 2** + `serverInstanceId` para detectar frontend cacheado / backend reiniciado y forzar reload.
+- **Validación de inputs**: los endpoints POST ahora rechazan tipos inválidos (`enabled:"yes"`, `draft:"texto"`, números fuera de rango) con 400 en lugar de coerción silenciosa.
+- **Lector de calado robusto** que maneja todos los shapes de `design.draft` (número, `{value}`, `{value:{maximum}}`).
+- **Posición validada** con ventana timestamp 60s para consumidores SSE.
+- **Deep-clone defensivo** del payload de state para evitar fugas de mutación.
+- **Migración de cache** para snapshots legacy de `groundingRisk`.
+- Suite de tests de integración (`tests/grounding_v475.test.js`, `depth_v476.test.js`, `fsm_v477.test.js`, `sync_v478.test.js`) — 37 tests.
+
+QA validado en agua a bordo del Tunatunes durante un evento real de riesgo de varada (Vigo, 2026-06-22), incluyendo snooze, indicadores de glow, bottom-bar y banner de pérdida de conexión disparado al cortar el WiFi del portátil.
+
 ## [2.2.2] - 2026-06-20
 
 ### English
