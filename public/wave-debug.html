@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wave Nav Engine · Mareas-IHM</title>
+<style>
+  body{margin:0;padding:14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a1929;color:#e0e0e0}
+  h1{margin:0 0 4px;font-size:22px;color:#ffb23f}
+  .sub{font-size:13px;color:#9ad;margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+  .card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:14px}
+  .card h2{margin:0 0 10px;font-size:15px;color:#fff;border-bottom:1px solid rgba(255,255,255,.15);padding-bottom:6px}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:14px;border-bottom:1px solid rgba(255,255,255,.05)}
+  .row:last-child{border-bottom:none}
+  .k{color:#9ad;font-weight:600}
+  .v{color:#fff;font-weight:800;font-variant-numeric:tabular-nums;font-family:'SF Mono',Consolas,monospace}
+  .ok{color:#3aa856}
+  .bad{color:#f44336}
+  .warn{color:#ffb23f}
+  .neutral{color:#9ad}
+  .big{font-size:28px;font-weight:900;letter-spacing:-.5px}
+  .status-banner{padding:14px;border-radius:10px;margin-bottom:12px;text-align:center;font-weight:800;font-size:18px}
+  .status-active{background:rgba(58,168,86,.18);border:1px solid #3aa856;color:#3aa856}
+  .status-not-available{background:rgba(244,67,54,.18);border:1px solid #f44336;color:#f88}
+  .compass{margin:8px auto 0;display:block}
+  .conf-bar{position:relative;width:100%;height:8px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden;margin-top:4px}
+  .conf-bar > span{display:block;height:100%;background:linear-gradient(90deg,#f44336 0%,#ffb23f 50%,#3aa856 100%);transition:width .3s}
+  .spark{margin-top:6px;background:rgba(255,255,255,.03);border-radius:6px;padding:4px;display:block;width:100%}
+  .pill{display:inline-block;padding:2px 10px;border-radius:14px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px}
+  .pill-calma{background:rgba(58,168,86,.2);color:#3aa856}
+  .pill-rizada{background:rgba(154,170,221,.2);color:#9ad}
+  .pill-moderada{background:rgba(255,178,63,.2);color:#ffb23f}
+  .pill-agitada{background:rgba(255,138,0,.2);color:#ff8a00}
+  .pill-fuerte{background:rgba(244,67,54,.2);color:#f88}
+  .small{font-size:11px;color:#888}
+  .status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .green{background:#3aa856;box-shadow:0 0 6px rgba(58,168,86,.5)}
+  .red{background:#f44336;box-shadow:0 0 6px rgba(244,67,54,.5)}
+  .amber{background:#ffb23f;box-shadow:0 0 6px rgba(255,178,63,.5)}
+</style>
+</head>
+<body>
+<h1>🌊 Wave Nav Engine · Sprint H V2</h1>
+<div class="sub">Motor de estimacion de olas en navegacion. Plugin Rev <span id="rev">—</span> · algoritmo <span id="algo">—</span></div>
+
+<div id="status-banner" class="status-banner status-not-available">— status —</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>🌊 Estado del mar</h2>
+    <div class="row"><span class="k">Motion band</span><span class="v" id="motion-band">—</span></div>
+    <div class="row"><span class="k">RMS pitch+roll</span><span class="v" id="motion-rms">—</span></div>
+    <div class="row"><span class="k">Periodo encontrado (T_enc)</span><span class="v" id="period-enc">—</span></div>
+    <div class="row"><span class="k">Periodo verdadero (T_true)</span><span class="v" id="period-true">—</span></div>
+    <div class="row"><span class="k">Periodo crudo (diag)</span><span class="v" id="raw-period" style="color:#888;font-size:12px">—</span></div>
+    <div class="row"><span class="k">Doppler reason</span><span class="v" id="doppler-reason" style="font-size:12px">—</span></div>
+    <svg class="spark" id="spark-rms" width="100%" height="40" viewBox="0 0 300 40" preserveAspectRatio="none">
+      <polyline id="spark-line" fill="none" stroke="#3aa856" stroke-width="1.5" points=""/>
+    </svg>
+    <div class="small">Sparkline RMS deg (ultimos 5 min)</div>
+  </div>
+
+  <div class="card">
+    <h2>🧭 Direccion</h2>
+    <svg class="compass" id="compass-svg" width="180" height="180" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="1"/>
+      <line x1="50" y1="6" x2="50" y2="14" stroke="#fff" stroke-width="1.5"/>
+      <text x="50" y="20" text-anchor="middle" font-size="6" fill="#fff" font-weight="900">N</text>
+      <text x="84" y="52" text-anchor="middle" font-size="6" fill="#9ad">E</text>
+      <text x="50" y="96" text-anchor="middle" font-size="6" fill="#9ad">S</text>
+      <text x="16" y="52" text-anchor="middle" font-size="6" fill="#9ad">W</text>
+      <g id="wave-arrow-group" style="transform-origin:50px 50px">
+        <path id="wave-arrow" d="M 50 50 L 50 18 M 50 18 L 46 24 M 50 18 L 54 24" stroke="#ffb23f" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <circle cx="50" cy="50" r="2" fill="#ffb23f"/>
+    </svg>
+    <div class="row" style="margin-top:8px"><span class="k">Direccion (true)</span><span class="v" id="direction-true">—</span></div>
+    <div class="row"><span class="k">Eje relativo proa</span><span class="v" id="rel-axis">—</span></div>
+    <div class="row"><span class="k">Ambigua?</span><span class="v" id="rel-amb">—</span></div>
+  </div>
+
+  <div class="card">
+    <h2>📊 Confidence</h2>
+    <div class="row"><span class="k">Global</span><span class="v" id="conf-global">—</span></div>
+    <div class="conf-bar"><span id="conf-global-bar" style="width:0%"></span></div>
+    <div class="row" style="margin-top:8px"><span class="k">Direction</span><span class="v" id="conf-dir">—</span></div>
+    <div class="conf-bar"><span id="conf-dir-bar" style="width:0%"></span></div>
+    <div class="row" style="margin-top:8px"><span class="k">Period True</span><span class="v" id="conf-pt">—</span></div>
+    <div class="conf-bar"><span id="conf-pt-bar" style="width:0%"></span></div>
+    <div class="row" style="margin-top:8px"><span class="k">Rejection reason</span><span class="v" id="reject" style="font-size:12px">—</span></div>
+  </div>
+
+  <div class="card">
+    <h2>🚧 Hard gates</h2>
+    <div class="row"><span class="k">Buffer ≥ 90s</span><span class="v" id="g-buf">—</span></div>
+    <div class="row"><span class="k">Sample rate ≥ 4Hz</span><span class="v" id="g-sr">—</span></div>
+    <div class="row"><span class="k">Heading change &lt; 20°</span><span class="v" id="g-hdg">—</span></div>
+    <div class="row"><span class="k">Heel drift &lt; 5°</span><span class="v" id="g-heel">—</span></div>
+    <div class="row"><span class="k">Yaw rate RMS &lt; 3°/s</span><span class="v" id="g-yaw">—</span></div>
+    <div class="row"><span class="k">SOG std &lt; 0.7 m/s</span><span class="v" id="g-sog">—</span></div>
+  </div>
+
+  <div class="card">
+    <h2>⚙ Penalizadores soft</h2>
+    <div class="row"><span class="k">Motor off</span><span class="v" id="p-eng">—</span></div>
+    <div class="row"><span class="k">TWD estable ≥ 5kt</span><span class="v" id="p-twd">—</span></div>
+    <div class="row"><span class="k">Axis dominance</span><span class="v" id="p-ax">—</span></div>
+    <div class="row"><span class="k">Sample rate ≥ 8Hz</span><span class="v" id="p-sr">—</span></div>
+    <div class="row"><span class="k">Buffer ≥ 120s</span><span class="v" id="p-buf">—</span></div>
+  </div>
+
+  <div class="card">
+    <h2>🔍 Diagnostics</h2>
+    <div class="row"><span class="k">Buffer dur (s)</span><span class="v" id="d-buf">—</span></div>
+    <div class="row"><span class="k">Sample rate (Hz)</span><span class="v" id="d-sr">—</span></div>
+    <div class="row"><span class="k">Heading change 60s</span><span class="v" id="d-hdg">—</span></div>
+    <div class="row"><span class="k">Heel drift</span><span class="v" id="d-heel">—</span></div>
+    <div class="row"><span class="k">Yaw rate RMS</span><span class="v" id="d-yaw">—</span></div>
+    <div class="row"><span class="k">SOG std</span><span class="v" id="d-sog">—</span></div>
+    <div class="row"><span class="k">No significant motion</span><span class="v" id="d-nsm">—</span></div>
+    <div class="row"><span class="k">Period out of range</span><span class="v" id="d-por">—</span></div>
+  </div>
+</div>
+
+<script>
+function fmt(v, d){ return (v == null || !isFinite(v)) ? '—' : Number(v).toFixed(d == null ? 2 : d); }
+function pill(band){
+  if (!band) return '—';
+  return '<span class="pill pill-'+band+'">'+band.toUpperCase()+'</span>';
+}
+function gateIcon(ok){
+  if (ok === null || ok === undefined) return '—';
+  return ok ? '<span class="status-dot green"></span><span class="ok">PASS</span>'
+            : '<span class="status-dot red"></span><span class="bad">FAIL</span>';
+}
+var sparkData = [];
+function pushSpark(v){
+  if (v == null || !isFinite(v)) return;
+  sparkData.push(v);
+  // 5 min @ 1 sample / 5s = 60 puntos
+  while (sparkData.length > 60) sparkData.shift();
+  // Render
+  var w = 300, h = 40;
+  var max = Math.max.apply(null, sparkData.concat([0.3]));
+  var pts = sparkData.map(function(y, i){
+    var x = (i / Math.max(1, sparkData.length - 1)) * w;
+    var yy = h - (y / max) * (h - 2) - 1;
+    return x.toFixed(1) + ',' + yy.toFixed(1);
+  });
+  var el = document.getElementById('spark-line');
+  if (el) el.setAttribute('points', pts.join(' '));
+}
+function load(){
+  fetch('/signalk-mareas-ihm/api/wave/nav', {cache:'no-store'}).then(r => r.ok ? r.json() : null).then(j => {
+    if (!j) return;
+    document.getElementById('rev').textContent = (j.diagnostics && j.diagnostics.pluginRev) || '—';
+    document.getElementById('algo').textContent = j.algorithm || '—';
+    // Status banner
+    var banner = document.getElementById('status-banner');
+    if (j.status === 'active') {
+      banner.className = 'status-banner status-active';
+      banner.textContent = '✓ ACTIVE — publicando deltas';
+    } else {
+      banner.className = 'status-banner status-not-available';
+      banner.textContent = '✗ NOT AVAILABLE — ' + (j.rejectionReason || 'sin razon');
+    }
+    document.getElementById('motion-band').innerHTML = pill(j.motionBand);
+    document.getElementById('motion-rms').textContent = (j.motionRmsDeg != null) ? fmt(j.motionRmsDeg, 2) + '°' : '—';
+    document.getElementById('period-enc').textContent = (j.periodEncountered != null) ? fmt(j.periodEncountered, 1) + ' s' : 'null';
+    document.getElementById('period-true').textContent = (j.periodTrue != null) ? fmt(j.periodTrue, 1) + ' s' : 'null';
+    document.getElementById('raw-period').textContent = (j.diagnostics && j.diagnostics.rawPeriodEncountered != null) ? fmt(j.diagnostics.rawPeriodEncountered, 2) + ' s' : '—';
+    document.getElementById('doppler-reason').textContent = j.dopplerReason || '(applied)';
+    pushSpark(j.motionRmsDeg);
+    // Direction
+    document.getElementById('direction-true').textContent = (j.directionTrue != null) ? fmt(j.directionTrue, 0) + '°' : 'null';
+    document.getElementById('rel-axis').textContent = (j.relativeAxisDeg != null) ? fmt(j.relativeAxisDeg, 0) + '°' : '—';
+    document.getElementById('rel-amb').innerHTML = j.relativeAxisAmbiguous ? '<span class="warn">SI</span>' : '<span class="ok">no</span>';
+    var arrowG = document.getElementById('wave-arrow-group');
+    if (j.directionTrue != null) {
+      arrowG.style.transform = 'rotate(' + j.directionTrue + 'deg)';
+      arrowG.style.opacity = '1';
+    } else {
+      arrowG.style.opacity = '0.15';
+    }
+    // Confidence
+    var c = j.confidence || 0;
+    var cd = j.confidenceDirection || 0;
+    document.getElementById('conf-global').textContent = fmt(c, 2);
+    document.getElementById('conf-global-bar').style.width = (c * 100).toFixed(0) + '%';
+    document.getElementById('conf-dir').textContent = fmt(cd, 2);
+    document.getElementById('conf-dir-bar').style.width = (cd * 100).toFixed(0) + '%';
+    var cpt = j.confidencePeriodTrue || 0;
+    document.getElementById('conf-pt').textContent = fmt(cpt, 2);
+    document.getElementById('conf-pt-bar').style.width = (cpt * 100).toFixed(0) + '%';
+    document.getElementById('reject').textContent = j.rejectionReason || '(none)';
+    // Gates
+    var d = j.diagnostics || {};
+    document.getElementById('g-buf').innerHTML = gateIcon(d.bufferDurSec != null && d.bufferDurSec >= 90);
+    document.getElementById('g-sr').innerHTML = gateIcon(d.sampleRateHz != null && d.sampleRateHz >= 4);
+    document.getElementById('g-hdg').innerHTML = gateIcon(d.headingChange60s != null && d.headingChange60s < 20);
+    document.getElementById('g-heel').innerHTML = gateIcon(d.heelDrift != null && d.heelDrift < 5);
+    document.getElementById('g-yaw').innerHTML = gateIcon(d.yawRateRmsDegPerSec == null || d.yawRateRmsDegPerSec < 3);
+    document.getElementById('g-sog').innerHTML = gateIcon(d.sogStd == null || d.sogStd < 0.7);
+    // Penalizadores
+    document.getElementById('p-eng').innerHTML = gateIcon(!d.engineOn);
+    document.getElementById('p-twd').innerHTML = gateIcon(d.twdStable);
+    document.getElementById('p-ax').textContent = (d.axisDominance != null) ? fmt(d.axisDominance, 2) : '—';
+    document.getElementById('p-sr').innerHTML = gateIcon(d.sampleRateHz != null && d.sampleRateHz >= 8);
+    document.getElementById('p-buf').innerHTML = gateIcon(d.bufferDurSec != null && d.bufferDurSec >= 120);
+    // Diagnostics raw
+    document.getElementById('d-buf').textContent = fmt(d.bufferDurSec, 1);
+    document.getElementById('d-sr').textContent = fmt(d.sampleRateHz, 1) + ' Hz';
+    document.getElementById('d-hdg').textContent = fmt(d.headingChange60s, 2) + '°';
+    document.getElementById('d-heel').textContent = fmt(d.heelDrift, 3) + '°';
+    document.getElementById('d-yaw').textContent = (d.yawRateRmsDegPerSec != null) ? fmt(d.yawRateRmsDegPerSec, 2) + '°/s' : '—';
+    document.getElementById('d-sog').textContent = (d.sogStd != null) ? fmt(d.sogStd, 3) + ' m/s' : '—';
+    document.getElementById('d-nsm').innerHTML = d.noSignificantMotion ? '<span class="warn">SI</span>' : '<span class="ok">no</span>';
+    document.getElementById('d-por').innerHTML = d.periodOutOfRange ? '<span class="warn">SI</span>' : '<span class="ok">no</span>';
+  }).catch(function(){});
+}
+setInterval(load, 2000);
+load();
+</script>
+</body>
+</html>

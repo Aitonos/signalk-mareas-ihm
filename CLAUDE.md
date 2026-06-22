@@ -1,13 +1,21 @@
 # CLAUDE.md — instrucciones para asistente AI
 
-**LEE PRIMERO `docs/RULES.md` y `docs/Q_AND_A.md`** antes de tocar nada.
+> 🚫 **PUBLICACIÓN NPM BLOQUEADA hasta acumular más sesiones de QA real en barco**.
+> Rev486 (2026-06-22) cerró la regresión grave del refactor Rev475-483 vía hotfixes
+> validados en agua. Estado actual: ESTABLE — ver `docs/STATE_Rev486_STABLE.md`.
+> Bloqueantes pendientes: validar banner desconexión real, lift/drop concurrente,
+> alarma off preserva physics, safety latch release tras recuperar sonda.
+> No proponer `npm publish` por iniciativa propia, y NO heredar autorización de
+> sesiones anteriores: cada publish requiere OK explícito tras el cambio.
+
+**LEE PRIMERO `docs/RULES.md`, `docs/Q_AND_A.md` y `docs/STATE_Rev486_STABLE.md`** antes de tocar nada.
 
 ## Quick context
 
 - Plugin SignalK para barco **Tunatunes** (autor Aitonos, NPM `signalk-mareas-ihm`).
 - Funcionalidades: mareas IHM España, fondeo con vigilancia garreo, AIS anti-colisión, abrigo, meteo, sonda.
-- **Rev actual**: `Rev190` (en `src/index.ts` const `PLUGIN_REVISION`).
-- **Versión paquete**: 2.0.3 (`package.json`).
+- **Rev actual**: `Rev486` (en `src/index.ts` const `PLUGIN_REVISION`).
+- **Versión paquete**: 2.2.2 (`package.json`).
 
 ## Workflow
 

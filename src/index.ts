@@ -73,7 +73,14 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev419";
+const PLUGIN_REVISION = "Rev486";
+
+// Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
+// Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
+// expected=1 debe forzar reload. SERVER_INSTANCE_ID detecta restart vivo del
+// backend (id nuevo cada boot) y el visor puede invalidar su estado local.
+const SSE_SCHEMA_VERSION = 2;
+const SERVER_INSTANCE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 let _buildInfo: { version: string; timestamp: string; gitHash: string | null; gitDirty: boolean; builtAt: string } | null = null;
 try {
   _buildInfo = esmRequire("./build-info.json") as any;
@@ -85,6 +92,297 @@ const PLUGIN_ITERATION = `${PLUGIN_VERSION} ${PLUGIN_REVISION} ${BUILD_TAG}`;
 
 type UiLang = "en" | "es";
 const DEFAULT_LANG: UiLang = "es";
+
+// Rev421: sistema de unidades. metric_nautical es el default (la mayoría de
+// usuarios náuticos en España y Europa). Cada sistema decide qué unidad usa
+// para profundidad, velocidad, distancia, temperatura y presión.
+type UnitSystem =
+  | "metric"               // m, m/s, km, °C, hPa
+  | "metric_nautical"      // m, kn, NM, °C, hPa  (default)
+  | "imperial_us"          // ft, mph, mi, °F, inHg
+  | "imperial_us_nautical" // ft, kn, NM, °F, inHg
+  | "imperial_uk"          // ft, mph, mi, °F, mbar
+  | "imperial_uk_nautical";// ft, kn, NM, °F, mbar
+const DEFAULT_UNITS: UnitSystem = "metric_nautical";
+const VALID_UNIT_SYSTEMS: UnitSystem[] = ["metric","metric_nautical","imperial_us","imperial_us_nautical","imperial_uk","imperial_uk_nautical"];
+function isValidUnitSystem(v: any): v is UnitSystem {
+  return typeof v === "string" && (VALID_UNIT_SYSTEMS as string[]).includes(v);
+}
+
+// Rev475 paso 2 (C-10): helpers de validación estricta de inputs.
+// NUNCA usar Number(x) || default ni Boolean(x) en endpoints de seguridad.
+// Number("texto") es NaN, NaN || 0.5 = 0.5 silenciosamente. Boolean("false") = true.
+function _finiteInRange(value: unknown, min: number, max: number): number | null {
+  // Acepta number directo o string parseable. Rechaza NaN, Infinity, fuera de rango.
+  let n: number;
+  if (typeof value === "number") {
+    n = value;
+  } else if (typeof value === "string" && value.trim() !== "") {
+    n = Number(value);
+  } else {
+    return null;
+  }
+  if (!Number.isFinite(n)) return null;
+  if (n < min || n > max) return null;
+  return n;
+}
+function _strictBool(value: unknown): boolean | null {
+  if (value === true) return true;
+  if (value === false) return false;
+  // Aceptar también "true"/"false" estrictos para compat HTML forms si llega así.
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
+}
+
+// Rev475 paso 6 (C-24): reloj monotónico. Date.now() puede saltar hacia
+// atrás con corrección NTP, falsificando duraciones (snooze, latch, debounce,
+// history TTL). process.hrtime.bigint() es monotónico y nanosegundos.
+// Devolvemos ms para facilidad de uso.
+// Persistencia: usar siempre ISO UTC (Date.toISOString) — el monotónico se
+// pierde al reiniciar y NO se persiste.
+function monotonicNowMs(): number {
+  // bigint nanosegundos → number ms. Pierde precisión <1ms pero es suficiente.
+  return Number(process.hrtime.bigint() / 1_000_000n);
+}
+// Detector de saltos del wall clock (Date.now). Útil para invalidar caches
+// de timestamps al arrancar si Date.now hizo saltos grandes (DST mal, NTP).
+let _lastWallClockCheck = { wall: Date.now(), mono: monotonicNowMs() };
+function detectClockJumpMs(): number {
+  const wallNow = Date.now();
+  const monoNow = monotonicNowMs();
+  const wallDelta = wallNow - _lastWallClockCheck.wall;
+  const monoDelta = monoNow - _lastWallClockCheck.mono;
+  const jumpMs = wallDelta - monoDelta;
+  _lastWallClockCheck = { wall: wallNow, mono: monoNow };
+  return jumpMs; // positivo = wall saltó adelante; negativo = saltó atrás
+}
+
+// Rev475 paso 7 (C-27): persistencia fail-safe para paths críticos.
+// Si la SD card del Pi se monta read-only tras una caída de batería,
+// ihmCache.set lanza excepción. Esto NO debe degradar la seguridad:
+// la sesión actual sigue funcionando en memoria. Solo loggeamos.
+// `ihmCache` y `app` se inicializan dentro de plugin.start(), por eso
+// usamos referencias perezosas vía getter.
+type _CacheLike = { set: (key: string, value: any) => Promise<any>; get: (key: string) => Promise<any> };
+let _ihmCacheRef: _CacheLike | null = null;
+let _appRef: any = null;
+// Rev476: ref top-level para el helper de profundidad (definido en scope más
+// profundo). Permite que evaluateAndPublishGroundingRisk (scope diferente)
+// pueda llamarlo sin duplicar código.
+let _readDepthValidatedRef: ((draft: number) => any) | null = null;
+let _resolveDepthOffsetsRef: (() => { transducerToKeelM: number | null; surfaceToTransducerM: number | null }) | null = null;
+
+// Rev476 HOTFIX: design.draft viene como {value: {maximum: number}} en algunas
+// instalaciones (NaviTop confirmado). El patrón antiguo `Number(v.value)` daba
+// NaN → draft=0 → _readDepthValidated cae en "conflict" (belowKeel vs belowSurface
+// difieren por exactamente el draft real). Helper único que maneja TODOS los
+// shapes posibles del path SK design.draft.
+function _readSkDraftRobust(appRef: any): number {
+  if (!appRef) return 0;
+  try {
+    const v = appRef.getSelfPath("design.draft");
+    let n: number = NaN;
+    if (typeof v === "number") n = v;
+    else if (v && typeof v === "object") {
+      const inner = v.value;
+      if (typeof inner === "number") n = inner;
+      else if (inner && typeof inner === "object") {
+        if (typeof inner.maximum === "number") n = inner.maximum;
+        else if (typeof inner.minimum === "number") n = inner.minimum;
+        else if (typeof inner.canoe === "number") n = inner.canoe;
+      } else if (typeof v.maximum === "number") {
+        n = v.maximum;
+      }
+    }
+    return (isFinite(n) && n > 0) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// Rev478 (C-12): helper único para leer navigation.position con validación de
+// timestamp. ANTES: getAnchorWatchState devolvía pos sin validar → SK mantiene
+// last-known value indefinidamente aunque el GPS esté muerto, y el SSE seguía
+// publicando coordenadas FALSAS para el visor. Ahora: si el timestamp es stale
+// o falta, devolvemos null y el caller debe gestionar el caso "sin GPS".
+//
+// Devuelve {lat, lng, ageMs} si fresh dentro de maxAgeMs (default 60s), o null.
+function _readValidatedPosition(appRef: any, maxAgeMs: number = 60_000):
+  { lat: number; lng: number; ageMs: number } | null {
+  if (!appRef) return null;
+  try {
+    const pos = appRef.getSelfPath("navigation.position");
+    if (!pos || typeof pos !== "object") return null;
+    const lat = (pos as any).value?.latitude ?? (pos as any).latitude ?? null;
+    const lng = (pos as any).value?.longitude ?? (pos as any).longitude ?? null;
+    if (typeof lat !== "number" || typeof lng !== "number" || !isFinite(lat) || !isFinite(lng)) return null;
+    const tsStr = (pos as any).timestamp ?? (pos as any).value?.timestamp ?? null;
+    if (!tsStr) {
+      // Sin timestamp = NO confiamos. SK puede tener last-known del GPS muerto.
+      return null;
+    }
+    const ts = Date.parse(tsStr);
+    if (!isFinite(ts)) return null;
+    const ageMs = Date.now() - ts;
+    if (ageMs > maxAgeMs) return null;
+    return { lat, lng, ageMs: Math.max(0, ageMs) };
+  } catch {
+    return null;
+  }
+}
+
+async function _persistSafely(key: string, value: any, context: string = ""): Promise<boolean> {
+  if (!_ihmCacheRef) return false;
+  try {
+    await _ihmCacheRef.set(key, value);
+    return true;
+  } catch (e: any) {
+    try { _appRef?.debug?.(`[IHM-PERSIST] Fallo persistir ${key}${context ? " (" + context + ")" : ""}: ${e?.message ?? e}. Continuando en memoria.`); } catch { /* nada */ }
+    return false;
+  }
+}
+
+// Rev475 paso 8 (C-02): SAFETY LATCH persistido.
+// EL BUG MÁS PELIGROSO: si la sonda se congela / desaparece / se vuelve
+// inestable durante una alarma activa, el código antiguo publicaba
+// notif `state:"normal"` SILENCIANDO la alarma. Igual para SOG > 0.5 kn.
+// "Sensor falla → silencio" es el peor failure mode posible.
+//
+// FIX: latch retiene el estado de alarma cuando los datos se degradan.
+// Solo se libera con 3 ticks consecutivos de datos frescos + ≥6s mínimos.
+// Persistido para sobrevivir a restart SK/Pi.
+type SafetyLatch = {
+  active: boolean;
+  activatedAtIso: string | null;
+  activatedAtMonotonicMs: number | null;  // null tras restart (se pierde)
+  reasonCode: string | null;
+};
+let _safetyLatch: SafetyLatch = { active: false, activatedAtIso: null, activatedAtMonotonicMs: null, reasonCode: null };
+let _safeTickCount = 0;
+
+async function _loadSafetyLatchFromCache(): Promise<SafetyLatch | null> {
+  if (!_ihmCacheRef) return null;
+  try {
+    const cached = await _ihmCacheRef.get("safetyLatch") as any;
+    if (cached && typeof cached === "object" && typeof cached.active === "boolean") {
+      return {
+        active: !!cached.active,
+        activatedAtIso: typeof cached.activatedAtIso === "string" ? cached.activatedAtIso : null,
+        activatedAtMonotonicMs: null, // se pierde con restart, recalculado vía ISO
+        reasonCode: typeof cached.reasonCode === "string" ? cached.reasonCode : null,
+      };
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+async function restoreSafetyLatchOnBoot(): Promise<void> {
+  const cached = await _loadSafetyLatchFromCache();
+  if (cached?.active) {
+    _safetyLatch = cached;
+    try {
+      _appRef?.debug?.(`[IHM-LATCH] Restaurado tras restart: active=true reason=${cached.reasonCode} activatedAt=${cached.activatedAtIso}`);
+    } catch { /* nada */ }
+    // No restaurar como danger fresco. La notif persistente se re-emitirá
+    // en el primer tick del evaluator si las condiciones siguen.
+  }
+}
+async function _activateSafetyLatch(reasonCode: string): Promise<void> {
+  if (_safetyLatch.active && _safetyLatch.reasonCode === reasonCode) return; // ya activo por mismo motivo
+  _safetyLatch = {
+    active: true,
+    activatedAtIso: new Date().toISOString(),
+    activatedAtMonotonicMs: monotonicNowMs(),
+    reasonCode,
+  };
+  _safeTickCount = 0;
+  await _persistSafely("safetyLatch", _safetyLatch, "latch-activate");
+}
+async function _releaseSafetyLatch(): Promise<void> {
+  if (!_safetyLatch.active) return;
+  _safetyLatch = { active: false, activatedAtIso: null, activatedAtMonotonicMs: null, reasonCode: null };
+  _safeTickCount = 0;
+  await _persistSafely("safetyLatch", _safetyLatch, "latch-release");
+}
+async function _maybeReleaseSafetyLatch(freshAndSafe: boolean): Promise<boolean> {
+  if (!_safetyLatch.active) return false;
+  if (!freshAndSafe) { _safeTickCount = 0; return false; }
+  _safeTickCount++;
+  const enoughTicks = _safeTickCount >= 3;
+  const elapsedMs = _safetyLatch.activatedAtMonotonicMs != null
+    ? (monotonicNowMs() - _safetyLatch.activatedAtMonotonicMs)
+    : (_safetyLatch.activatedAtIso ? (Date.now() - Date.parse(_safetyLatch.activatedAtIso)) : 999_999);
+  const enoughTime = elapsedMs >= 6_000;
+  if (enoughTicks && enoughTime) {
+    await _releaseSafetyLatch();
+    return true;
+  }
+  return false;
+}
+let _currentUnits: UnitSystem = DEFAULT_UNITS;
+
+// Rev450: motor de botones laterales custom (sidebars izq/der). Defaults
+// son KIP y Freeboard en sidebar derecha (reemplazables). El usuario puede:
+// editar URL/label/icon, mover de side, eliminarlos, o añadir hasta 5 por side.
+// Persistencia en backend (R6/Q-N: single source of truth).
+type SideButtonSide = "left" | "right";
+type SideButton = {
+  id: string;
+  side: SideButtonSide;
+  label: string;
+  icon: string;
+  iconUrl: string;
+  url: string;
+};
+const DEFAULT_SIDE_BUTTONS: SideButton[] = [
+  { id: "kip", side: "right", label: "KIP", icon: "📊", iconUrl: "", url: "/@mxtommy/kip/" },
+  { id: "fb", side: "right", label: "Freeboard", icon: "⛵", iconUrl: "", url: "/@signalk/freeboard-sk/" },
+];
+const MAX_SIDE_BUTTONS_PER_SIDE = 5;
+
+// Rev454: orden + visibilidad configurable del bottom bar.
+// Whitelist de keys soportadas. Cualquier key NO en este set se descarta.
+// El orden recibido define el orden de pintado; las celdas no listadas se ocultan.
+// Whitelist incluye celdas opt-in (sunrise, wx_6h, wave) que NO van en defaults.
+const BB_CELL_KEYS = ["sog","heading","wind","sonda","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","sunrise","wx_6h","wave"] as const;
+type BBCellKey = typeof BB_CELL_KEYS[number];
+const DEFAULT_BB_ORDER: BBCellKey[] = ["sog","heading","wind","sonda","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo"];
+function sanitizeBBOrder(arr: any): BBCellKey[] {
+  if (!Array.isArray(arr)) return DEFAULT_BB_ORDER.slice();
+  const seen: Record<string, boolean> = {};
+  const out: BBCellKey[] = [];
+  for (const v of arr) {
+    if (typeof v !== "string") continue;
+    if ((BB_CELL_KEYS as readonly string[]).indexOf(v) < 0) continue;
+    if (seen[v]) continue;
+    seen[v] = true;
+    out.push(v as BBCellKey);
+  }
+  return out;
+}
+function isValidSideButton(b: any): boolean {
+  return !!b && typeof b === "object"
+    && typeof b.id === "string" && b.id.length > 0
+    && (b.side === "left" || b.side === "right")
+    && typeof b.label === "string"
+    && typeof b.icon === "string"
+    && typeof b.url === "string" && b.url.length > 0;
+}
+function sanitizeSideButtons(arr: any): SideButton[] {
+  if (!Array.isArray(arr)) return DEFAULT_SIDE_BUTTONS.slice();
+  const cleaned: SideButton[] = arr.filter(isValidSideButton).map((b: any) => ({
+    id: String(b.id).slice(0, 64),
+    side: (b.side === "left" ? "left" : "right") as SideButtonSide,
+    label: String(b.label).slice(0, 32),
+    icon: String(b.icon).slice(0, 32),
+    iconUrl: (typeof b.iconUrl === "string") ? String(b.iconUrl).slice(0, 1024) : "",
+    url: String(b.url).slice(0, 512),
+  }));
+  const left = cleaned.filter((b) => b.side === "left").slice(0, MAX_SIDE_BUTTONS_PER_SIDE);
+  const right = cleaned.filter((b) => b.side === "right").slice(0, MAX_SIDE_BUTTONS_PER_SIDE);
+  return [...left, ...right];
+}
+
 const NEARBY_THRESHOLD_METERS = 30000;
 
 // v1.1.0: Default fallback station when no GPS and no lastStation (first boot).
@@ -964,6 +1262,9 @@ export default function (app: SignalKApp): Plugin {
 
     // Shared cache for webapp endpoints / overrides
     const ihmCache = new FileCache(path.join(app.getDataDirPath(), "ihm"));
+    // Rev475 paso 7: refs perezosas para helpers fail-safe a nivel módulo.
+    _ihmCacheRef = ihmCache as unknown as _CacheLike;
+    _appRef = app;
     // Rev332 (Pi5 fresh install fix): canary write al startup para detectar
     // permisos rotos del data-dir ANTES de que las cargas reales fallen. Si
     // SignalK corre como usuario X pero ~/.signalk está owned por Y, el primer
@@ -1259,10 +1560,42 @@ let _currentAudioEnabled = true;
     // existing users with 5 saved must change it manually in Calc. Fondeo if they
     // want the new default.
     // Deploy 3a: load grounding state + alarm enabled flag for in-memory mirror.
+    // Rev478 (C-16): migración del cache. Snapshots antiguos `{risk: boolean}`
+    // (pre-Rev469) deben normalizarse al shape actual o quedan inconsistentes y
+    // tiran exceptions cuando _buildGroundingFSM intenta leer campos nuevos.
     const gr = (await ihmCache.get("groundingRisk")) as any;
-    if (gr) _currentGroundingRisk = gr;
+    if (gr && typeof gr === "object") {
+      // Empieza por TODO el snapshot original (campos extra preservados) y
+      // SOBREESCRIBE solo los campos que el nuevo contrato exige validar.
+      const migrated: any = {
+        ...gr,
+        risk: gr.risk === true,
+        physicalRisk: typeof gr.physicalRisk === "boolean" ? gr.physicalRisk : null,
+        depthNow: typeof gr.depthNow === "number" && isFinite(gr.depthNow) ? gr.depthNow : null,
+        expectedMinDepth: typeof gr.expectedMinDepth === "number" && isFinite(gr.expectedMinDepth) ? gr.expectedMinDepth : null,
+        effectiveDraft: typeof gr.effectiveDraft === "number" && isFinite(gr.effectiveDraft) ? gr.effectiveDraft : null,
+        remainingDrop: typeof gr.remainingDrop === "number" && isFinite(gr.remainingDrop) ? gr.remainingDrop : null,
+        depthAtAlertTime: typeof gr.depthAtAlertTime === "number" && isFinite(gr.depthAtAlertTime) ? gr.depthAtAlertTime : null,
+        enabled: gr.enabled === true,
+        notifyRisk: gr.notifyRisk === true,
+        operationalMode: typeof gr.operationalMode === "string" ? gr.operationalMode : null,
+        nextLowTimeIso: typeof gr.nextLowTimeIso === "string" ? gr.nextLowTimeIso : null,
+        depthQuality: gr.depthQuality && typeof gr.depthQuality === "object" ? gr.depthQuality : null,
+        _schemaVersion: typeof gr._schemaVersion === "number" ? gr._schemaVersion : 1,
+      };
+      _currentGroundingRisk = migrated;
+      // Si subimos schema, persistir versión actualizada para que el próximo
+      // boot no repita la migración (idempotente pero ruidosa en logs).
+      if (migrated._schemaVersion < SSE_SCHEMA_VERSION) {
+        migrated._schemaVersion = SSE_SCHEMA_VERSION;
+        try { await ihmCache.set("groundingRisk", migrated); } catch { /* fail-safe */ }
+      }
+    }
     const al = (await ihmCache.get("alarmaConfig")) as any;
     if (al) _currentAlarmaEnabled = al.enabled === true;
+    // Rev475 paso 8 (C-02): restaurar safety latch persistido tras restart.
+    // Si la sesión anterior dejó latch activo, mantenerlo hasta confirmar safe.
+    try { await restoreSafetyLatchOnBoot(); } catch { /* nada — sigue desactivado */ }
   } catch { /* ignore */ }
 })();
 
@@ -1666,12 +1999,18 @@ try {
       }
     });
 
-    // API: UI language settings (persisted)
+    // API: UI settings (lang + units, persisted)
     expressApp.get("/signalk-mareas-ihm/api/settings", async (_req: any, res: any) => {
       try {
         const storedLang = (await ihmCache.get("lang")) as any;
         const lang: UiLang = (storedLang === "es" || storedLang === "en") ? storedLang : DEFAULT_LANG;
-        res.json({ lang });
+        const storedUnits = (await ihmCache.get("units")) as any;
+        const units: UnitSystem = isValidUnitSystem(storedUnits) ? storedUnits : DEFAULT_UNITS;
+        const storedButtons = (await ihmCache.get("sideButtons")) as any;
+        const buttons: SideButton[] = sanitizeSideButtons(storedButtons);
+        const storedBBOrder = (await ihmCache.get("bbOrder")) as any;
+        const bbOrder: BBCellKey[] = sanitizeBBOrder(storedBBOrder);
+        res.json({ lang, units, buttons, bbOrder });
       } catch (e: any) {
         res.status(500).json({ error: e?.message ?? String(e) });
       }
@@ -1679,10 +2018,50 @@ try {
 
     expressApp.post("/signalk-mareas-ihm/api/settings", async (req: any, res: any) => {
       try {
-        const langRaw = String(req.body?.lang ?? "").toLowerCase();
-        const lang: UiLang = (langRaw === "es" || langRaw === "en") ? (langRaw as UiLang) : DEFAULT_LANG;
-        await ihmCache.set("lang", lang);
-        _currentLang = lang; // Rev44: sync in-memory mirror so Pi voice alarms switch language immediately
+        // lang (optional in this POST — sent only when changed)
+        let lang: UiLang | undefined;
+        if (req.body && Object.prototype.hasOwnProperty.call(req.body, "lang")) {
+          const langRaw = String(req.body.lang ?? "").toLowerCase();
+          lang = (langRaw === "es" || langRaw === "en") ? (langRaw as UiLang) : DEFAULT_LANG;
+          await ihmCache.set("lang", lang);
+          _currentLang = lang; // Rev44: sync in-memory mirror so Pi voice alarms switch language immediately
+        } else {
+          const storedLang = (await ihmCache.get("lang")) as any;
+          lang = (storedLang === "es" || storedLang === "en") ? storedLang : DEFAULT_LANG;
+        }
+
+        // Rev421: units (optional in this POST — sent only when changed)
+        let units: UnitSystem;
+        if (req.body && Object.prototype.hasOwnProperty.call(req.body, "units")) {
+          const unitsRaw = String(req.body.units ?? "").toLowerCase();
+          units = isValidUnitSystem(unitsRaw) ? (unitsRaw as UnitSystem) : DEFAULT_UNITS;
+          await ihmCache.set("units", units);
+          _currentUnits = units;
+        } else {
+          const storedUnits = (await ihmCache.get("units")) as any;
+          units = isValidUnitSystem(storedUnits) ? storedUnits : DEFAULT_UNITS;
+        }
+
+        // Rev450: side buttons (optional in this POST). Acepta array vacio para
+        // que el usuario pueda dejar las sidebars sin botones extra.
+        let buttons: SideButton[];
+        if (req.body && Object.prototype.hasOwnProperty.call(req.body, "buttons")) {
+          buttons = sanitizeSideButtons(req.body.buttons);
+          await ihmCache.set("sideButtons", buttons);
+        } else {
+          const storedButtons = (await ihmCache.get("sideButtons")) as any;
+          buttons = sanitizeSideButtons(storedButtons);
+        }
+
+        // Rev454: bottom bar order (optional). Array vacio = todas ocultas.
+        let bbOrder: BBCellKey[];
+        if (req.body && Object.prototype.hasOwnProperty.call(req.body, "bbOrder")) {
+          bbOrder = sanitizeBBOrder(req.body.bbOrder);
+          await ihmCache.set("bbOrder", bbOrder);
+        } else {
+          const storedBBOrder = (await ihmCache.get("bbOrder")) as any;
+          bbOrder = sanitizeBBOrder(storedBBOrder);
+        }
 
         // Persist alongside existing settings, best-effort
         const manualOverride = Boolean((await ihmCache.get("manualOverride")) ?? false);
@@ -1690,7 +2069,7 @@ try {
         const favoriteStationId = String((await ihmCache.get("favoriteStationId")) ?? "");
         await persistToPluginConfig({ manualOverride, manualStationId, favoriteStationId, lang });
 
-        res.json({ lang });
+        res.json({ lang, units, buttons, bbOrder });
       } catch (e: any) {
         res.status(500).json({ error: e?.message ?? String(e) });
       }
@@ -1729,13 +2108,46 @@ try {
 
     expressApp.post("/signalk-mareas-ihm/api/calado", async (req: any, res: any) => {
       try {
-        const { draft, draftSource, safetyMargin, alertMinutes } = req.body ?? {};
-        const draftNum = (draft === null || draft === undefined || draft === "") ? null : Number(draft);
+        // Rev475 paso 2 (C-10): validación estricta. -999 ya no pasa. NaN ya no pasa.
+        // Boolean("false")===true ya no pasa. draftSource enum estricto.
+        const body = req.body ?? {};
+        // draft: null|undefined|"" permitido (significa "borrar"). Si tiene valor, clamp [0, 30].
+        let draft: number | null;
+        if (body.draft == null || body.draft === "") {
+          draft = null;
+        } else {
+          const v = _finiteInRange(body.draft, 0, 30);
+          if (v == null) {
+            return res.status(400).json({ error: "draft must be a finite number in [0, 30] meters" });
+          }
+          draft = v;
+        }
+        // safetyMargin: requerido, clamp [0, 10]. 0 es válido. -999 rechaza.
+        const sm = _finiteInRange(body.safetyMargin, 0, 10);
+        if (sm == null && body.safetyMargin != null) {
+          return res.status(400).json({ error: "safetyMargin must be a finite number in [0, 10] meters" });
+        }
+        // alertMinutes: clamp [0, 360]. Default 60 si missing.
+        let alertMinutes: number;
+        if (body.alertMinutes == null) {
+          alertMinutes = 60;
+        } else {
+          const v = _finiteInRange(body.alertMinutes, 0, 360);
+          if (v == null) {
+            return res.status(400).json({ error: "alertMinutes must be a finite number in [0, 360]" });
+          }
+          alertMinutes = v;
+        }
+        // draftSource enum estricto.
+        const ds = String(body.draftSource ?? "manual");
+        if (ds !== "manual" && ds !== "signalk") {
+          return res.status(400).json({ error: 'draftSource must be "manual" or "signalk"' });
+        }
         const config = {
-          draft: (typeof draftNum === "number" && isFinite(draftNum) && draftNum > 0) ? draftNum : null,
-          draftSource: draftSource ?? "manual",
-          safetyMargin: Number(safetyMargin) || 0.5,
-          alertMinutes: Number(alertMinutes) || 60,
+          draft,
+          draftSource: ds,
+          safetyMargin: sm ?? 0.5,
+          alertMinutes,
         };
         await ihmCache.set("caladoConfig", config);
         res.json(config);
@@ -1768,35 +2180,67 @@ try {
 
     expressApp.post("/signalk-mareas-ihm/api/alarma", async (req: any, res: any) => {
       try {
-	        const { enabled, alertOnArrival, alertBeforeGrounding, minutesBefore, safetyMargin, soundMuted } = req.body ?? {};
-        const config = {
-          enabled: Boolean(enabled),
-          alertOnArrival: alertOnArrival !== false,
-          alertBeforeGrounding: alertBeforeGrounding !== false,
-          minutesBefore: Number(minutesBefore) || 60,
-          soundMuted: Boolean(soundMuted),
-        };
+        // Rev475 paso 2 (C-10): validación estricta. Antes:
+        //   enabled = Boolean("false") === true  → alarma quedaba encendida
+        //   minutesBefore = Number("texto") || 60 → -999 pasaba sin clamp
+        //   safetyMargin = Number(sm) || 0.5 → 0 caía al default
+        const body = req.body ?? {};
+        const enabled = _strictBool(body.enabled);
+        if (enabled == null) {
+          return res.status(400).json({ error: "enabled must be boolean true or false (no string coercion)" });
+        }
+        const alertOnArrival = body.alertOnArrival === undefined ? true : _strictBool(body.alertOnArrival);
+        if (alertOnArrival == null) {
+          return res.status(400).json({ error: "alertOnArrival must be boolean" });
+        }
+        const alertBeforeGrounding = body.alertBeforeGrounding === undefined ? true : _strictBool(body.alertBeforeGrounding);
+        if (alertBeforeGrounding == null) {
+          return res.status(400).json({ error: "alertBeforeGrounding must be boolean" });
+        }
+        const soundMuted = body.soundMuted === undefined ? false : _strictBool(body.soundMuted);
+        if (soundMuted == null) {
+          return res.status(400).json({ error: "soundMuted must be boolean" });
+        }
+        let minutesBefore = 60;
+        if (body.minutesBefore != null) {
+          const v = _finiteInRange(body.minutesBefore, 0, 360);
+          if (v == null) {
+            return res.status(400).json({ error: "minutesBefore must be a finite number in [0, 360]" });
+          }
+          minutesBefore = v;
+        }
+        const config = { enabled, alertOnArrival, alertBeforeGrounding, minutesBefore, soundMuted };
         await ihmCache.set("alarmaConfig", config);
         _currentAlarmaEnabled = config.enabled === true; // Deploy 3a: mirror
 
-	        // The WebApp edits safety margin inside the alarm modal.
-	        // Persist it in caladoConfig (single source of truth for draft/margin).
-	        const sm = Number(safetyMargin);
-	        if (isFinite(sm) && sm >= 0) {
-	          const prevCalado = (await ihmCache.get("caladoConfig")) as any;
-	          await ihmCache.set("caladoConfig", {
-	            ...(prevCalado ?? {}),
-	            safetyMargin: sm,
-	          });
-	        }
+        // The WebApp edits safety margin inside the alarm modal.
+        // Persist it in caladoConfig (single source of truth for draft/margin).
+        // Rev475 paso 2: clamp safetyMargin [0, 10].
+        if (body.safetyMargin != null) {
+          const sm = _finiteInRange(body.safetyMargin, 0, 10);
+          if (sm == null) {
+            return res.status(400).json({ error: "safetyMargin must be a finite number in [0, 10]" });
+          }
+          const prevCalado = (await ihmCache.get("caladoConfig")) as any;
+          await ihmCache.set("caladoConfig", { ...(prevCalado ?? {}), safetyMargin: sm });
+        }
 
         // Reset snooze whenever alarm config is explicitly saved
         await ihmCache.set("alarmSnoozeUntil", 0);
 
         if (!config.enabled) {
-          await ihmCache.set("groundingRisk", { risk: false });
-          _currentGroundingRisk = { risk: false }; // Deploy 3a: mirror
-          emitNotificationClear(); // v1.125: stop sound IMMEDIATELY when alarm disabled
+          // Rev477 (C-04): apagar la alarma NO destruye la realidad física.
+          // Antes escribíamos `{ risk: false }` ciegamente borrando physicalRisk,
+          // expectedMinDepth, depthNow, etc. Resultado: el modal Info se quedaba
+          // sin datos aunque físicamente siguiera habiendo riesgo.
+          // Ahora solo apagamos `enabled` y `notifyRisk` preservando el resto.
+          const prev = _currentGroundingRisk as any;
+          const preserved = (prev && typeof prev === "object")
+            ? { ...prev, enabled: false, risk: false, notifyRisk: false }
+            : { risk: false, physicalRisk: null, enabled: false, notifyRisk: false };
+          _currentGroundingRisk = preserved;
+          await _persistSafely("groundingRisk", preserved, "alarm-disabled");
+          emitNotificationClear(); // v1.125: stop sound IMMEDIATELY
         }
         const grounding = await ihmCache.get("groundingRisk") as any;
         const snoozeUntil = Number((await ihmCache.get("alarmSnoozeUntil")) as any) || 0;
@@ -1855,8 +2299,13 @@ expressApp.post("/signalk-mareas-ihm/api/alarma/off", async (_req: any, res: any
     await ihmCache.set("alarmaConfig", config);
     _currentAlarmaEnabled = config.enabled === true; // Deploy 3a: mirror
     await ihmCache.set("alarmSnoozeUntil", 0);
-    await ihmCache.set("groundingRisk", { risk: false });
-    _currentGroundingRisk = { risk: false }; // Deploy 3a: mirror
+    // Rev477 (C-04): apagar alarma NO destruye realidad física.
+    const prev = _currentGroundingRisk as any;
+    const preserved = (prev && typeof prev === "object")
+      ? { ...prev, enabled: false, risk: false, notifyRisk: false }
+      : { risk: false, physicalRisk: null, enabled: false, notifyRisk: false };
+    _currentGroundingRisk = preserved;
+    await _persistSafely("groundingRisk", preserved, "alarm-off-endpoint");
     emitNotificationClear(); // v1.125: stop sound IMMEDIATELY
     res.json({ ok: true, ...config });
   } catch (e: any) {
@@ -2506,9 +2955,9 @@ function computePredictiveSwing(extremes: any[]): PredictiveSwingResult | null {
     try { const d = toNum(app.getSelfPath(p + ".value") ?? app.getSelfPath(p)); return (d && d > 0) ? d : null; } catch { return null; }
   };
   
-  // Draft (keel → waterline)
-  let draft: number = 0;
-  try { const v = app.getSelfPath("design.draft") as any; draft = toNum(typeof v === "object" && v ? (v.value ?? v.maximum ?? v) : v) ?? 0; } catch {}
+  // Draft (keel → waterline) — Rev476 hotfix: helper robusto que maneja
+  // design.draft = {value: {maximum: n}} (NaviTop installation pattern).
+  let draft: number = _readSkDraftRobust(app);
   if (!draft) draft = _cachedDraft; // fallback to last grounding evaluation
   
   // === Depth: lectura validada (Rev141) — ignora stale/frozen/spike ===
@@ -2654,7 +3103,9 @@ function _restoreAisAckIfClose(newLat: number, newLng: number): string[] {
 interface ApproachData {
   active: boolean;            // SOG < 2.5 kt
   sogKt: number;              // current SOG in knots
-  depth: number | null;       // depth below surface in metres (null if no sensor)
+  depth: number | null;       // depth below surface in metres (null if no sensor) — legacy
+  depthBelowKeelM: number | null;     // Rev476: depth bajo la quilla calculado (belowSurface - draft)
+  depthSounderRawM: number | null;    // Rev476: valor CRUDO del sounder (belowTransducer raw si está, fallback belowKeel raw). Conservador: lo que ve el navegante en su instrumento físico, asumiendo sounder ≈ quilla.
   chainRecNow: number | null; // chain rec for current tide (m)
   chainRecMax: number | null; // chain rec for predicted peak tide in next 12h (m)
   cadenaTotal: number;        // total chain on board (m) — from config
@@ -2665,12 +3116,12 @@ interface ApproachData {
 const APPROACH_KT = 2.5;
 // Deploy 2.5.1: removed APPROACH_DEFAULT_SCOPE constant — approach bar now uses
 // cfg.scopeNormal directly. ANCHOR_DEFAULTS.scopeNormal changed to 4 (was 5).
-let _lastApproach: ApproachData = { active: false, sogKt: 0, depth: null, chainRecNow: null, chainRecMax: null, cadenaTotal: ANCHOR_DEFAULTS.cadenaTotalBordo, exceedsCapacity: false, risk: false, riskReason: "" };
+let _lastApproach: ApproachData = { active: false, sogKt: 0, depth: null, depthBelowKeelM: null, depthSounderRawM: null, chainRecNow: null, chainRecMax: null, cadenaTotal: ANCHOR_DEFAULTS.cadenaTotalBordo, exceedsCapacity: false, risk: false, riskReason: "" };
 
 function _computeApproachData(): ApproachData {
   const cfg = _currentAnchorConfig;
   const empty: ApproachData = {
-    active: false, sogKt: 0, depth: null, chainRecNow: null, chainRecMax: null,
+    active: false, sogKt: 0, depth: null, depthBelowKeelM: null, depthSounderRawM: null, chainRecNow: null, chainRecMax: null,
     cadenaTotal: cfg.cadenaTotalBordo, exceedsCapacity: false, risk: false, riskReason: "",
   };
   let sogMs = 0;
@@ -2681,13 +3132,41 @@ function _computeApproachData(): ApproachData {
   const sogKt = sogMs * 1.94384;
   if (sogKt >= APPROACH_KT) return { ...empty, sogKt };
 
-  // Read draft (keel depth below waterline).
-  let draft = 0;
-  try {
-    const v = app.getSelfPath("design.draft") as any;
-    const n = Number(typeof v === "object" && v ? (v.value ?? v.maximum ?? v) : v);
-    if (isFinite(n) && n > 0) draft = n;
-  } catch {}
+  // Rev476 hotfix: usar helper robusto que maneja design.draft = {value: {maximum: n}}.
+  // Antes Number(v.value) = NaN cuando inner es {maximum: n} → draft=0 → conflict.
+  let draft = _readSkDraftRobust(app);
+  if (!draft) draft = _cachedDraft || 0;
+
+  // Rev476 (feedback usuario): lectura CRUDA del sounder para mostrar al visor.
+  // Asume conservadoramente "sounder ≈ quilla" — coincide con KIP/NMEA/instrumentos
+  // físicos. Prioridad: belowTransducer raw > belowKeel raw > belowSurface − draft.
+  // (Independiente de _readDepthValidated que se usa para grounding math.)
+  const _readDepthSounderRaw = (): number | null => {
+    const now = Date.now();
+    const TTL = 5_000;
+    const tryPath = (p: string, subtract: number): number | null => {
+      try {
+        const r: any = app.getSelfPath(p);
+        let v: number | null = null;
+        let ts = 0;
+        if (r && typeof r === "object") {
+          v = typeof r.value === "number" ? r.value : null;
+          const t = r.timestamp;
+          if (typeof t === "string") { const x = Date.parse(t); if (!isNaN(x)) ts = x; }
+          else if (t instanceof Date) ts = t.getTime();
+          else if (typeof t === "number" && isFinite(t)) ts = t;
+        } else if (typeof r === "number") v = r;
+        if (v == null || v <= 0) return null;
+        if (ts > 0 && now - ts > TTL) return null; // stale
+        return v - subtract;
+      } catch { return null; }
+    };
+    // Prioridad conservadora: el dato más cercano al sensor físico real.
+    return tryPath("environment.depth.belowTransducer", 0)
+      ?? tryPath("environment.depth.belowKeel", 0)
+      ?? (draft > 0 ? tryPath("environment.depth.belowSurface", draft) : null);
+  };
+  const depthSounderRawM = _readDepthSounderRaw();
 
   // Rev141: lectura validada — si la sonda está stale/frozen/spike, depth=null
   // y el visor muestra "–" coherente con el banner "SONDA CONGELADA" del
@@ -2703,7 +3182,7 @@ function _computeApproachData(): ApproachData {
   const nowDate = new Date();
   const tideNow = approximateTideHeightAt(extremes, nowDate);
   if (typeof tideNow !== "number" || !isFinite(tideNow)) {
-    return { ...empty, active: true, sogKt, depth: Math.round(depthBelowSurface * 10) / 10 };
+    return { ...empty, active: true, sogKt, depth: Math.round(depthBelowSurface * 10) / 10, depthBelowKeelM: Math.round((depthBelowSurface - draft) * 10) / 10, depthSounderRawM: depthSounderRawM != null ? Math.round(depthSounderRawM * 10) / 10 : null };
   }
   const horizonMs = Date.now() + 12 * 3600000;
   let tideMin12h = tideNow;
@@ -2758,7 +3237,9 @@ function _computeApproachData(): ApproachData {
   return {
     active: true,
     sogKt: Math.round(sogKt * 100) / 100,
-    depth: Math.round(depthBelowSurface * 10) / 10,
+    depth: Math.round(depthBelowSurface * 10) / 10,                                  // legacy belowSurface
+    depthBelowKeelM: Math.round((depthBelowSurface - draft) * 10) / 10,              // calculado (belowSurface − draft)
+    depthSounderRawM: depthSounderRawM != null ? Math.round(depthSounderRawM * 10) / 10 : null, // Rev476: valor crudo sounder (conservador, asume sounder ≈ quilla, coincide con KIP)
     chainRecNow,
     chainRecMax,
     cadenaTotal: cfg.cadenaTotalBordo,
@@ -2925,6 +3406,77 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
   try { _sendTelegram("gps_lost", `⚠️ *PÉRDIDA DE GPS* — sin posición durante ${Math.round(elapsed / 1000)}s. El barco está fondeado; no se puede detectar garreo sin GPS.`); } catch { /* defensive */ }
 }
 
+// Rev468: estado interno para detectar salida intencional por motorizado.
+// Se considera salida intencional si SOG > _INTENTIONAL_DEP_SOG_KT sostenido
+// durante > _INTENTIONAL_DEP_DUR_MS estando anchored. Si la velocidad baja
+// del umbral en cualquier tick, se resetea el contador (debouncing).
+const _INTENTIONAL_DEP_SOG_KT = 3.0;
+const _INTENTIONAL_DEP_DUR_MS = 60_000;
+let _intentionalDepartureSinceMs: number | null = null;
+function _checkIntentionalDeparture(sogKt: number): boolean {
+  if (!anchorWatch.anchored) {
+    _intentionalDepartureSinceMs = null;
+    return false;
+  }
+  if (sogKt > _INTENTIONAL_DEP_SOG_KT) {
+    if (_intentionalDepartureSinceMs == null) {
+      _intentionalDepartureSinceMs = Date.now();
+      return false;
+    }
+    return (Date.now() - _intentionalDepartureSinceMs) >= _INTENTIONAL_DEP_DUR_MS;
+  } else {
+    _intentionalDepartureSinceMs = null;
+    return false;
+  }
+}
+async function _autoLiftAnchorIntentional(sogKt: number) {
+  app.debug(`[IHM-AUTOLIFT] Salida intencional detectada: SOG=${sogKt.toFixed(2)} kn sostenido >${_INTENTIONAL_DEP_DUR_MS / 1000}s → auto-lift`);
+  // Replica el flujo de POST /api/anchor-watch/lift sin response HTTP.
+  _saveAisAckPending();
+  _setAnchored(false);
+  anchorWatch.anchorPosition = null;
+  anchorWatch.swingRadiusOverride = null;
+  anchorWatch.chainDeployed = null;
+  anchorWatch.aisAlarmEnabled = false;
+  anchorWatch.garreoAlarmEnabled = false;
+  _lastAisNotifSig = null;
+  _intentionalDepartureSinceMs = null;
+  _restartAnchorWatchTimer();
+  _restartGustTimer();
+  try { await ihmCache.set("anchorWatch", anchorWatch); } catch { /* persist non-critical */ }
+  clearDragAlarm();
+  // Limpieza de paths como en el endpoint /lift.
+  try {
+    const clearValues: any[] = [
+      { path: "environment.anchor.mareasIhm.watchEnabled", value: false },
+      { path: "environment.anchor.mareasIhm.anchorCommand", value: false },
+      { path: "environment.anchor.mareasIhm.garreoAlarmCommand", value: false },
+      { path: "environment.anchor.mareasIhm.aisAlarmCommand", value: false },
+      { path: "environment.anchor.mareasIhm.aisAlarmEnabled", value: false },
+      { path: "environment.anchor.mareasIhm.dragging", value: false },
+      { path: "environment.anchor.mareasIhm.swingRadiusMax", value: null },
+      { path: "environment.anchor.mareasIhm.swingRadiusNow", value: null },
+      { path: "environment.anchor.mareasIhm.chain", value: null },
+      { path: "environment.anchor.mareasIhm.alarmRadius", value: null },
+      { path: "environment.anchor.mareasIhm.distanceToAnchor", value: null },
+      { path: "environment.anchor.mareasIhm.aisAlarmStatus", value: "Auto-lift" },
+    ];
+    const d: Delta = { context: ("vessels." + app.selfId) as Context,
+      updates: [{ timestamp: new Date().toISOString() as Timestamp, values: clearValues as any }] };
+    app.handleMessage(plugin.id, d);
+    // Notificacion explicita del auto-lift.
+    const msg = `Auto-lift: SOG ${sogKt.toFixed(1)} kn sostenido (salida motorizada asumida)`;
+    const notifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
+      updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [
+        { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: "Auto-lift (departure)" } },
+        { path: "notifications.signalk-mareas-ihm.autoLift" as any, value: { state: "alert", method: ["visual"] as string[], message: msg } },
+      ]}] };
+    app.handleMessage(plugin.id, notifDelta);
+  } catch { /* never break */ }
+  // Telegram opcional.
+  try { _sendTelegram("autolift", `⚓ Auto-lift por salida motorizada: SOG ${sogKt.toFixed(1)} kn sostenido durante 1 min. Si fue garreo real, vuelve al fondeo.`); } catch { /* non-critical */ }
+}
+
 function evaluateAnchorWatch() {
   // === STAGE 1: Always read GPS + project bow + record track point ===
   // Track is recorded REGARDLESS of anchor state — we want to capture the
@@ -2994,17 +3546,9 @@ function evaluateAnchorWatch() {
   // que "Estado sonda" + "Sonda mínima esperada" reaccionen rápido cuando la
   // sonda se va o vuelve — antes solo corría dentro de updateTides cada 60 s.
   // Fire-and-forget (es async) y catch silencioso para no romper este tick.
-  try {
-    if (lastForecast && Array.isArray(lastForecast.extremes)) {
-      const _tzGr = stationTimezone({
-        id: lastForecast.station?.id ?? "",
-        name: lastForecast.station?.name ?? "",
-        lat: lastForecast.station?.position?.latitude ?? 0,
-        lon: lastForecast.station?.position?.longitude ?? 0,
-      } as any) || "Europe/Madrid";
-      evaluateAndPublishGroundingRisk(new Date(), _tzGr, lastForecast.extremes).catch(() => { /* ignore */ });
-    }
-  } catch { /* non-critical */ }
+  // Rev475 paso 3 (C-13): single-flight. requestGroundingEvaluation() lee
+  // forecast/tz frescos en cada iteracion, garantiza serializacion y coalesce.
+  try { requestGroundingEvaluation().catch(() => { /* ignore */ }); } catch { /* non-critical */ }
 
   // === STAGE 2: Anchor watch logic (only when anchored & enabled) ===
   if (!anchorWatch.anchored || !anchorWatch.anchorPosition || !anchorWatch.enabled) {
@@ -3097,6 +3641,25 @@ function evaluateAnchorWatch() {
     }
     return 30; // último recurso defensivo (radio mínimo razonable)
   };
+
+  // === Rev468: Auto-lift por salida motorizada intencional ===
+  // Si SOG > 3 kn sostenido durante >60s estando anchored, asumimos salida
+  // intencional (motor encendido, navegando) y auto-levamos en lugar de
+  // dejar sonar la alarma de garreo indefinidamente. Notificacion clara para
+  // que el usuario sepa que el desarme fue automatico — si fue garreo real
+  // catastrofico, sabra volver al fondeo.
+  try {
+    let sogMsForLift = 0;
+    try {
+      const v = app.getSelfPath("navigation.speedOverGround");
+      sogMsForLift = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0);
+    } catch {}
+    const sogKtForLift = sogMsForLift * 1.94384;
+    if (_checkIntentionalDeparture(sogKtForLift)) {
+      _autoLiftAnchorIntentional(sogKtForLift);
+      return; // ya no estamos anchored — salir de evaluateAnchorWatch.
+    }
+  } catch { /* never break on auto-lift */ }
 
   // === GARREO DETECTION & RING SIZING ===
   // Bugs 4+5+6 (Deploy 1, 2026-05-02):
@@ -3876,6 +4439,21 @@ expressApp.get("/signalk-mareas-ihm/mobile", (_req: any, res: any) => {
   res.status(404).send("mobile.html not found");
 });
 
+// Rev460: pagina inspector IMU (Sprint H V0). Auto-refresh 1s, sin cache.
+expressApp.get("/signalk-mareas-ihm/imu-debug", (_req: any, res: any) => {
+  const file = _resolveFile("imu-debug.html");
+  if (file) { _setHtmlNoCacheHeaders(res); return res.sendFile(file); }
+  res.status(404).send("imu-debug.html not found");
+});
+
+// Rev464: dashboard del motor wave nav (Sprint H V1). Visualiza gates,
+// confidence, dirección con flecha compass, sparkline RMS, diagnostics.
+expressApp.get("/signalk-mareas-ihm/wave-debug", (_req: any, res: any) => {
+  const file = _resolveFile("wave-debug.html");
+  if (file) { _setHtmlNoCacheHeaders(res); return res.sendFile(file); }
+  res.status(404).send("wave-debug.html not found");
+});
+
 // Rev178: servir el README.md del plugin para el modal de Instrucciones.
 // El README es la fuente única de verdad — evita duplicar contenido.
 expressApp.get("/signalk-mareas-ihm/readme", (_req: any, res: any) => {
@@ -4238,15 +4816,231 @@ expressApp.get("/signalk-mareas-ihm/navtiles/:z/:x/:y.png", async (req: any, res
 // ═══════════════ SSE (Server-Sent Events) for multi-device sync ═══════════════
 // sseClients + sseBroadcastTimer declared in forward declarations (accessible by stop())
 
+// Rev458: sunrise/sunset y wx +6h calculados en backend (SoT). Antes cada
+// device hacia su propio fetch a open-meteo / calculo solar, lo que daba:
+//   - Espera al primer poll para tener bPos (cliente).
+//   - Cache propio por device (incoherente cross-device).
+//   - Carga repetida del open-meteo.
+// Ahora todo en /api/anchor-watch/state. Los devices solo pintan.
+function _solarTimesAt(date: Date, lat: number, lng: number): { sunrise: Date; sunset: Date } | null {
+  const rad = Math.PI / 180;
+  const jan1 = Date.UTC(date.getUTCFullYear(), 0, 1);
+  const dayOfYear = Math.floor((date.getTime() - jan1) / 86400000) + 1;
+  const fracYear = (2 * Math.PI / 365) * (dayOfYear - 1 + (date.getUTCHours() - 12) / 24);
+  const eqTime = 229.18 * (0.000075 + 0.001868 * Math.cos(fracYear) - 0.032077 * Math.sin(fracYear) - 0.014615 * Math.cos(2 * fracYear) - 0.040849 * Math.sin(2 * fracYear));
+  const decl = 0.006918 - 0.399912 * Math.cos(fracYear) + 0.070257 * Math.sin(fracYear) - 0.006758 * Math.cos(2 * fracYear) + 0.000907 * Math.sin(2 * fracYear) - 0.002697 * Math.cos(3 * fracYear) + 0.00148 * Math.sin(3 * fracYear);
+  const zenith = 90.833 * rad;
+  const cosH = (Math.cos(zenith) - Math.sin(lat * rad) * Math.sin(decl)) / (Math.cos(lat * rad) * Math.cos(decl));
+  if (cosH > 1 || cosH < -1) return null;
+  const H = Math.acos(cosH) / rad;
+  const noonMin = 720 - 4 * lng - eqTime;
+  const sunriseMin = noonMin - 4 * H;
+  const sunsetMin = noonMin + 4 * H;
+  const dayMs = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0);
+  return {
+    sunrise: new Date(dayMs + sunriseMin * 60000),
+    sunset: new Date(dayMs + sunsetMin * 60000),
+  };
+}
+// Cache wx +6h. Refresh max cada 30 min y cuando bPos cambie > 5km.
+type Wx6hPoint = { windKt: number | null; tempC: number | null; code: number | null; isDay: boolean };
+type Wx6hCache = { ts: number; lat: number | null; lng: number | null; now: Wx6hPoint | null; plus6: Wx6hPoint | null };
+const _wx6hCache: Wx6hCache = { ts: 0, lat: null, lng: null, now: null, plus6: null };
+let _wx6hFetchInFlight = false;
+async function _fetchWx6h(lat: number, lng: number): Promise<void> {
+  if (_wx6hFetchInFlight) return;
+  _wx6hFetchInFlight = true;
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&hourly=temperature_2m,wind_speed_10m,weather_code,is_day&wind_speed_unit=kn&forecast_days=2&timezone=auto`;
+    const r: any = await (globalThis as any).fetch(url);
+    if (!r || !r.ok) return;
+    const j: any = await r.json();
+    if (!j || !j.hourly || !Array.isArray(j.hourly.time)) return;
+    const times: string[] = j.hourly.time;
+    const nowMs = Date.now();
+    const target = nowMs + 6 * 3600 * 1000;
+    let nowIdx = -1, p6Idx = -1;
+    for (let i = 0; i < times.length; i++) {
+      const t = new Date(times[i]).getTime();
+      if (nowIdx < 0 && t >= nowMs - 30 * 60 * 1000) nowIdx = i;
+      if (p6Idx < 0 && t >= target) { p6Idx = i; break; }
+    }
+    if (nowIdx < 0) nowIdx = 0;
+    if (p6Idx < 0) p6Idx = Math.min(nowIdx + 6, times.length - 1);
+    const mk = (i: number): Wx6hPoint => ({
+      windKt: j.hourly.wind_speed_10m?.[i] ?? null,
+      tempC: j.hourly.temperature_2m?.[i] ?? null,
+      code: j.hourly.weather_code?.[i] ?? null,
+      isDay: j.hourly.is_day ? !!j.hourly.is_day[i] : true,
+    });
+    _wx6hCache.ts = nowMs;
+    _wx6hCache.lat = lat;
+    _wx6hCache.lng = lng;
+    _wx6hCache.now = mk(nowIdx);
+    _wx6hCache.plus6 = mk(p6Idx);
+  } catch { /* network fail: keep last cache */ } finally {
+    _wx6hFetchInFlight = false;
+  }
+}
+
+// SSE_SCHEMA_VERSION + SERVER_INSTANCE_ID viven arriba del archivo (cerca de
+// PLUGIN_REVISION) porque _readValidatedPosition y la migración de cache los
+// consumen antes de plugin.start.
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Rev477 (C-03, C-04, C-07, C-08, C-11): FSM Physics/Config/Notification.
+//
+// Separa estrictamente 3 dimensiones de estado que antes se mezclaban:
+//   1. PHYSICS: lo que sabemos AHORA del estado físico (independiente de
+//      configuración o botones de alarma).
+//   2. CONFIG: lo que quiere el usuario (alarmas on/off, márgenes, snooze).
+//   3. NOTIFICATION: cómo estamos alertando (visual, audio, snooze).
+//
+// Reglas inflexibles:
+//   - physics.state = "safe" SOLO si dataHealth=fresh Y physicalRisk explícitamente false.
+//   - Ausencia de datos → physics.state = "unknown" (NUNCA "safe" por defecto).
+//   - Apagar alarma → solo cambia config + notification, NO toca physics.
+//   - Pérdida sensor durante danger → physics permanece "unknown" + safetyLatch.active=true.
+//   - Snooze → notification.audibleRequested=false aunque physics=danger.
+//   - "En movimiento" → operationalMode="moving" pero NO limpia alarma activa.
+// ═══════════════════════════════════════════════════════════════════════════
+type GroundingPhysicsState = "safe" | "danger" | "unknown";
+type GroundingDataHealth = "fresh" | "stale" | "missing" | "degraded" | "missing-calibration" | "invalid" | "conflict";
+type GroundingOperationalMode = "anchored" | "moving" | "unknown";
+type GroundingNotificationState = "inactive" | "active" | "snoozed" | "latched";
+interface GroundingState {
+  physics: {
+    state: GroundingPhysicsState;
+    depthBelowSurfaceM: number | null;
+    expectedMinDepthM: number | null;
+    currentPhysicalUnderKeelM: number | null;       // agua bajo quilla AHORA (lo que muestra el sounder)
+    expectedMinPhysicalUnderKeelM: number | null;   // peor caso ventana 12h
+    clearanceToEffectiveThresholdM: number | null;  // diferencia con umbral conservador (effectiveDraft - expectedMinDepth)
+    nextLowTimeIso: string | null;
+    dataHealth: GroundingDataHealth;
+    operationalMode: GroundingOperationalMode;
+  };
+  config: {
+    alarmEnabled: boolean;
+    safetyMarginM: number;
+    minutesBefore: number;
+    draftM: number | null;
+  };
+  notification: {
+    state: GroundingNotificationState;
+    audibleRequested: boolean;
+    snoozedUntilMs: number | null;
+  };
+  safetyLatch: {
+    active: boolean;
+    activatedAtIso: string | null;
+    reasonCode: string | null;
+  };
+  // Metadatos para frontend mismatch detection (Rev478 sube schemaVersion).
+  schemaVersion: number;
+}
+function _buildGroundingFSM(): GroundingState | null {
+  const gr: any = _currentGroundingRisk;
+  if (!gr) return null;
+  // PHYSICS state según realidad:
+  //   - danger si physicalRisk === true.
+  //   - safe si physicalRisk === false Y datos frescos (depthNow, expectedMinDepth presentes).
+  //   - unknown en cualquier otro caso (incluye sensor perdido, sin marea, latch active).
+  let physicsState: GroundingPhysicsState;
+  let dataHealth: GroundingDataHealth = "fresh";
+  if (_safetyLatch.active) {
+    physicsState = "unknown"; // Latch activo = no sabemos la realidad ahora
+    dataHealth = "degraded";
+  } else if (gr.physicalRisk === true) {
+    physicsState = "danger";
+  } else if (gr.physicalRisk === false && gr.depthNow != null && gr.expectedMinDepth != null) {
+    physicsState = "safe";
+  } else {
+    physicsState = "unknown";
+    if (gr.depthNow == null) dataHealth = "missing";
+    else if (gr.depthQuality === "stale") dataHealth = "stale";
+    else if (gr.depthQuality === "missing-calibration") dataHealth = "missing-calibration";
+    else if (gr.depthQuality === "conflict") dataHealth = "conflict";
+  }
+  // currentPhysicalUnderKeelM = depthNow - baseDraft. Es el agua REAL bajo la quilla AHORA.
+  const draftM = (typeof gr.baseDraft === "number" && typeof gr.safetyMargin === "number")
+    ? (gr.baseDraft - gr.safetyMargin) : null;
+  const currentUnderKeel = (gr.depthNow != null && draftM != null)
+    ? Math.round((gr.depthNow - draftM) * 100) / 100 : null;
+  const expectedMinUnderKeel = (gr.expectedMinDepth != null && draftM != null)
+    ? Math.round((gr.expectedMinDepth - draftM) * 100) / 100 : null;
+  const clearanceToThreshold = (gr.expectedMinDepth != null && gr.effectiveDraft != null)
+    ? Math.round((gr.expectedMinDepth - gr.effectiveDraft) * 100) / 100 : null;
+  // NOTIFICATION state
+  // Rev480: snoozedUntilMs viene de DOS fuentes: gr.snoozedUntil (legacy, set
+  // por el evaluator) y _groundingSilencedUntil (Rev480, set por endpoint
+  // silence-alarm kind=grounding). Tomar el más alto (el snooze más largo gana).
+  const snoozeCandidateA = (typeof gr.snoozedUntil === "number" && gr.snoozedUntil > Date.now())
+    ? gr.snoozedUntil : 0;
+  const snoozeCandidateB = (_groundingSilencedUntil > Date.now())
+    ? _groundingSilencedUntil : 0;
+  const snoozeMs = Math.max(snoozeCandidateA, snoozeCandidateB);
+  const snoozedUntilMs = snoozeMs > 0 ? snoozeMs : null;
+  let notifState: GroundingNotificationState;
+  let audibleRequested: boolean;
+  if (_safetyLatch.active) {
+    notifState = "latched";
+    audibleRequested = !!gr.enabled; // latched solo emite audio si alarma está habilitada
+  } else if (snoozedUntilMs != null) {
+    notifState = "snoozed";
+    audibleRequested = false; // C-07: snooze SIEMPRE cancela audible
+  } else if (gr.notifyRisk === true) {
+    notifState = "active";
+    audibleRequested = true;
+  } else {
+    notifState = "inactive";
+    audibleRequested = false;
+  }
+  return {
+    physics: {
+      state: physicsState,
+      depthBelowSurfaceM: gr.depthNow ?? null,
+      expectedMinDepthM: gr.expectedMinDepth ?? null,
+      currentPhysicalUnderKeelM: currentUnderKeel,
+      expectedMinPhysicalUnderKeelM: expectedMinUnderKeel,
+      clearanceToEffectiveThresholdM: clearanceToThreshold,
+      nextLowTimeIso: gr.nextLowTime ?? null,
+      dataHealth,
+      operationalMode: gr.operationalMode ?? "unknown",
+    },
+    config: {
+      alarmEnabled: !!gr.enabled,
+      safetyMarginM: typeof gr.safetyMargin === "number" ? gr.safetyMargin : 0.5,
+      minutesBefore: 60, // se popula desde alarmaConfig en Rev478
+      draftM,
+    },
+    notification: {
+      state: notifState,
+      audibleRequested,
+      snoozedUntilMs,
+    },
+    safetyLatch: {
+      active: !!_safetyLatch.active,
+      activatedAtIso: _safetyLatch.activatedAtIso,
+      reasonCode: _safetyLatch.reasonCode,
+    },
+    schemaVersion: SSE_SCHEMA_VERSION,
+  };
+}
+
 function getAnchorWatchState() {
   let lat: number | null = null, lng: number | null = null;
-  try {
-    const pos = app.getSelfPath("navigation.position");
-    if (pos && typeof pos === "object") {
-      lat = (pos as any).value?.latitude ?? (pos as any).latitude ?? null;
-      lng = (pos as any).value?.longitude ?? (pos as any).longitude ?? null;
-    }
-  } catch { /* no position */ }
+  let gpsAgeMs: number | null = null;
+  // Rev478 (C-12): helper único con validación timestamp. ANTES leíamos
+  // navigation.position sin validar y publicábamos coords FALSAS al visor cuando
+  // el GPS estaba muerto pero SK conservaba last-known en memoria. Ahora si la
+  // posición es stale → null y el frontend gestiona "sin GPS".
+  const validated = _readValidatedPosition(app, 60_000);
+  if (validated) {
+    lat = validated.lat;
+    lng = validated.lng;
+    gpsAgeMs = validated.ageMs;
+  }
 
   // Derive operational radii from predictive model (fallback to override/calc).
   // Bug 4+5 (Deploy 1): alarmRadius uses radiusTotalMaxInWindow + aExtra to
@@ -4303,6 +5097,23 @@ function getAnchorWatchState() {
   let dLen: number | null = null, dBeam: number | null = null;
   try { const v = app.getSelfPath("environment.tide.resume"); tideResume = (typeof v === "object" ? (v as any).value : v) ?? ""; } catch {}
   try { const v = app.getSelfPath("environment.tide.vessel.groundingStatus"); groundingStatus = (typeof v === "object" ? (v as any).value : v) ?? ""; } catch {}
+  // Rev484 hotfix-2: si SK no esta publicando groundingStatus (latch activo
+  // sin actualizar el path, evaluator congelado, etc.) pero hay riesgo fisico
+  // o latch activo, generar fallback. Sin esto el bottom-bar SONDA queda en
+  // blanco aunque haya alarma sonando = peor UX posible.
+  if (!groundingStatus || (typeof groundingStatus === "string" && groundingStatus.trim().length === 0)) {
+    const gr: any = _currentGroundingRisk || {};
+    const en = _currentLang === "en";
+    if (_safetyLatch.active) {
+      groundingStatus = en ? "GROUNDING RISK (LATCHED)" : "RIESGO DE VARADA (LATCH)";
+    } else if (gr.physicalRisk === true || gr.risk === true) {
+      groundingStatus = en ? "GROUNDING RISK" : "RIESGO DE VARADA";
+    } else if (_currentAlarmaEnabled === false) {
+      groundingStatus = en ? "ALARM OFF" : "ALARMA OFF";
+    } else if (gr.physicalRisk === false) {
+      groundingStatus = en ? "NO RISK" : "SIN RIESGO";
+    }
+  }
   try { const v = app.getSelfPath("navigation.courseOverGroundTrue"); cog = typeof v === "object" ? (v as any).value : typeof v === "number" ? v : null; } catch {}
   try { const v = app.getSelfPath("navigation.headingTrue"); hdg = typeof v === "object" ? (v as any).value : typeof v === "number" ? v : null; } catch {}
   if (hdg == null) { try { const v = app.getSelfPath("navigation.headingMagnetic"); hdg = typeof v === "object" ? (v as any).value : typeof v === "number" ? v : null; } catch {} }
@@ -4331,11 +5142,14 @@ function getAnchorWatchState() {
     }
   } catch {}
 
-  return {
+  const rawState = {
     anchored: anchorWatch.anchored,
     anchorPosition: anchorWatch.anchorPosition,
     anchoredSinceMs: anchorWatch.anchoredSinceMs, // Rev331 item 13: contador frontend
     boatPosition: (lat != null && lng != null) ? { lat, lng } : null,
+    // Rev478 (C-12): edad real del fix GPS en ms. null si no hay posición fresca.
+    // Permite al visor mostrar "GPS de hace Xs" o avisar si supera umbral.
+    gpsAgeMs,
     // New semantic fields (numeric, meters)
     radiusBowNow: Math.round(radiusBowNow * 10) / 10,
     radiusTotalNow: Math.round(radiusTotalNow * 10) / 10,
@@ -4360,7 +5174,7 @@ function getAnchorWatchState() {
     chainRecommended: lastAnchorCalc?.chainL ?? null,
     chainDeployed: anchorWatch.chainDeployed,
     swingRadiusOverride: anchorWatch.swingRadiusOverride,
-    anchorHistory: anchorWatch.anchorHistory?.slice(0, 5) ?? [],
+    anchorHistory: anchorWatch.anchorHistory?.slice(0, 20) ?? [],
     tideEvents,
     aisAlarmEnabled: anchorWatch.aisAlarmEnabled,
     garreoAlarmEnabled: anchorWatch.garreoAlarmEnabled,
@@ -4374,6 +5188,9 @@ function getAnchorWatchState() {
     // Cero si no hay snooze activo. Los visores sincronizan su countdown
     // desde aquí para mostrar el mismo tiempo restante en todos los devices.
     aisSilencedUntil: _isAisSilenced() ? _aisSilencedUntil : 0,
+    // Rev485: expose groundingSilencedUntil para que el visor sincronice el
+    // countdown del boton snooze cuando se silencia grounding (no solo AIS).
+    groundingSilencedUntil: _isGroundingSilenced() ? _groundingSilencedUntil : 0,
     // Rev233: nombre de la estación de mareas activa (manual o auto) para
     // que el panel meteo pueda mostrarlo SIN hacer fetch adicional. Viaja
     // junto al state SSE cada 3s, así está disponible al instante.
@@ -4394,8 +5211,85 @@ function getAnchorWatchState() {
     approach: _lastApproach,
     // Deploy 3a: grounding alarm active flag — frontend uses to trigger audio.
     // True when alarm is enabled in config AND grounding risk is real.
-    groundingActive: !!(_currentAlarmaEnabled && _currentGroundingRisk?.risk),
+    // Rev484 hotfix-1: respeta _isGroundingSilenced() para que el snooze del
+    // usuario suprima la sirena del visor (el evaluator sigue calculando risk
+    // pero el frontend deja de pitar 5 min). Sin esto, la sirena vuelve cada
+    // 60s tras expirar el grace mute aunque el usuario haya pulsado snooze.
+    groundingActive: !!(_currentAlarmaEnabled && _currentGroundingRisk?.risk && !_isGroundingSilenced()),
+    // Rev471: snapshot del riesgo de varada para que el bottom-bar pueda
+    // mostrar deficit en cm + hora del evento critico (mas util que la sonda
+    // actual cuando hay riesgo).
+    groundingDetail: _currentGroundingRisk ? {
+      risk: !!_currentGroundingRisk.risk,
+      physicalRisk: !!(_currentGroundingRisk as any).physicalRisk,
+      expectedMinDepthM: (_currentGroundingRisk as any).expectedMinDepth ?? null,
+      effectiveDraftM: (_currentGroundingRisk as any).effectiveDraft ?? null,
+      safetyMarginM: (_currentGroundingRisk as any).safetyMargin ?? null,
+      nextLowTimeIso: (_currentGroundingRisk as any).nextLowTime ?? null,
+      timeUntilMin: (_currentGroundingRisk as any).timeUntil ?? null,
+      operationalMode: (_currentGroundingRisk as any).operationalMode ?? null, // Rev475 paso 5 (C-21)
+      safetyLatchActive: !!_safetyLatch.active,                                   // Rev475 paso 8 (C-02)
+      safetyLatchReason: _safetyLatch.reasonCode,
+      safetyLatchActivatedAtIso: _safetyLatch.activatedAtIso,
+    } : null,
+    // Rev477 (C-03 + C-04 + C-07 + C-08 + C-11): FSM Physics/Config/Notification
+    // como contrato V2 inequívoco. Coexiste con groundingDetail (legacy) para
+    // backward compat C-22. Rev479 frontend migrará a consumir 'grounding'.
+    grounding: _buildGroundingFSM(),
+    // Rev458: sunrise / sunset y prevision meteo +6h calculados en backend
+    // para que TODOS los devices reciban lo mismo al instante (R6/Q-N SoT).
+    sun: ((): { sunriseIso: string; sunsetIso: string } | null => {
+      if (lat == null || lng == null) return null;
+      const t = _solarTimesAt(new Date(), lat, lng);
+      if (!t) return null;
+      return { sunriseIso: t.sunrise.toISOString(), sunsetIso: t.sunset.toISOString() };
+    })(),
+    wx6h: ((): { now: Wx6hPoint | null; plus6: Wx6hPoint | null; ts: number } | null => {
+      if (lat == null || lng == null) return null;
+      // Lanza fetch en background si cache stale (>30 min) o posicion movida >5km.
+      const stale = (Date.now() - _wx6hCache.ts) > 30 * 60 * 1000;
+      const moved = _wx6hCache.lat == null || _wx6hCache.lng == null ||
+        Math.abs(_wx6hCache.lat - lat) > 0.05 || Math.abs(_wx6hCache.lng - lng) > 0.05;
+      if (stale || moved) _fetchWx6h(lat, lng); // fire-and-forget
+      if (!_wx6hCache.plus6) return null;
+      return { now: _wx6hCache.now, plus6: _wx6hCache.plus6, ts: _wx6hCache.ts };
+    })(),
+    // Rev467: snapshot del motor wave nav para que mobile.html lo pinte en
+    // el bottom-bar sin hacer un fetch separado a /api/wave/nav.
+    wave: _lastWaveNav ? {
+      status: _lastWaveNav.status,
+      motionBand: _lastWaveNav.motionBand,
+      motionRmsDeg: _lastWaveNav.motionRmsDeg,
+      periodEncountered: _lastWaveNav.periodEncountered,
+      periodTrue: _lastWaveNav.periodTrue,
+      directionTrue: _lastWaveNav.directionTrue,
+      relativeAxisDeg: _lastWaveNav.relativeAxisDeg,
+      relativeAxisAmbiguous: _lastWaveNav.relativeAxisAmbiguous,
+      confidence: _lastWaveNav.confidence,
+      rejectionReason: _lastWaveNav.rejectionReason,
+    } : null,
+    // Rev478 (C-17): schemaVersion=2 introduce campo `grounding` (FSM) y
+    // `gpsAgeMs`. Frontend cacheado con expected=1 debe forzar reload.
+    schemaVersion: SSE_SCHEMA_VERSION,
+    serverInstanceId: SERVER_INSTANCE_ID,
+    serverTimeMs: Date.now(),
+    generatedAt: new Date().toISOString(),
   };
+  // Rev478 (C-29): deep clone defensivo. Aunque JSON.stringify ya aísla en
+  // Node single-threaded, devolver una copia profunda asegura que cualquier
+  // consumer que retenga el snapshot (frontend cache, tests, futuras refactor)
+  // no pueda mutar accidentalmente estado interno como anchorWatch.anchorHistory
+  // o _currentGroundingRisk. structuredClone (node ≥17) es ~3× más rápido que
+  // JSON.parse(JSON.stringify); fallback al método clásico si no disponible.
+  try {
+    return (typeof structuredClone === "function")
+      ? structuredClone(rawState)
+      : JSON.parse(JSON.stringify(rawState));
+  } catch {
+    // Si el clone falla (e.g. tipo no serializable colado), devuelve la referencia.
+    // Mejor un payload sin defensa que un crash de SSE.
+    return rawState;
+  }
 }
 
 /** Broadcast state to all SSE clients — fully crash-proof */
@@ -4485,6 +5379,19 @@ expressApp.get("/signalk-mareas-ihm/api/weather", (_req: any, res: any) => {
 // cualquier path o el dato más viejo supera el TTL → null (frontend cae a
 // Open-Meteo). TTL 30 s — los sensores fiables refrescan cada 1-2 s.
 const _BOAT_WIND_TTL_MS = 30_000;
+// Rev475 paso 4 (C-09): warning log si llega valor sin timestamp en path
+// crítico. El audit C-28 confirmó que ningún path crítico actual devuelve
+// número plano, así que esto es defensivo: si en el futuro cambia, lo vemos.
+const _PATHS_CRITICAL_TIMESTAMP = new Set<string>([
+  "navigation.position",
+  "navigation.speedOverGround",
+  "navigation.headingTrue",
+  "navigation.headingMagnetic",
+  "environment.depth.belowKeel",
+  "environment.depth.belowSurface",
+  "environment.depth.belowTransducer",
+]);
+const _skValNoTimestampWarnedFor = new Set<string>();
 function _skVal(p: string): { v: number | null; ts: number } {
   try {
     const raw: any = app.getSelfPath(p);
@@ -4508,12 +5415,27 @@ function _skVal(p: string): { v: number | null; ts: number } {
         }
       } else if (typeof raw === "number") {
         v = raw;
+        // C-09 defensivo: número plano sin timestamp en path crítico → warn una vez.
+        if (_PATHS_CRITICAL_TIMESTAMP.has(p) && !_skValNoTimestampWarnedFor.has(p)) {
+          _skValNoTimestampWarnedFor.add(p);
+          app.debug(`[IHM-C09] Path crítico ${p} devolvió número plano (sin timestamp). Staleness no detectable. Considerar migrar a streambundle delta listener.`);
+        }
       }
     }
     return { v, ts };
   } catch {
     return { v: null, ts: 0 };
   }
+}
+
+// Rev475 paso 4 (C-09): variante STRICT que rechaza ts<=0 (no-timestamp).
+// Disponible para Rev476 cuando refactoricemos los call sites críticos.
+function _skValStrict(p: string, maxAgeMs: number = 30_000): { v: number | null; ts: number; quality: "fresh" | "stale" | "no-timestamp" | "missing" } {
+  const { v, ts } = _skVal(p);
+  if (v == null) return { v: null, ts: 0, quality: "missing" };
+  if (ts <= 0) return { v: null, ts: 0, quality: "no-timestamp" };
+  if (Date.now() - ts > maxAgeMs) return { v: null, ts, quality: "stale" };
+  return { v, ts, quality: "fresh" };
 }
 
 // === Rev141: lector de sonda VALIDADO ===
@@ -4536,37 +5458,115 @@ interface ValidatedDepth {
   vBS: number | null;
   vRaw: number | null;
   pathUsed: string;
-  reason: "ok" | "stale" | "frozen" | "spike" | "null" | "zero" | "absurd" | "none";
+  reason: "ok" | "stale" | "frozen" | "spike" | "null" | "zero" | "absurd" | "none" | "missing-calibration" | "conflict";
 }
+
+// Rev476 C-05 + C-06: lee offsets de calibración del transductor.
+// Antes el código sumaba `draft` a belowTransducer ciegamente — solo correcto
+// si el transductor está EN EL RAS de la quilla (poco común). En realidad:
+//   belowSurface = belowTransducer + surfaceToTransducer
+//   surfaceToTransducer = draft - transducerToKeel (si transductor está sobre la quilla)
+// Si SK no publica ninguno, devolvemos null/null y el caller marca
+// "missing-calibration" en lugar de calcular con offset asumido (cero).
+type DepthOffsets = {
+  transducerToKeelM: number | null;
+  surfaceToTransducerM: number | null;
+};
+function _resolveDepthOffsets(): DepthOffsets {
+  let t2k: number | null = null;
+  let s2t: number | null = null;
+  for (const p of ["design.transducerToKeel", "environment.depth.transducerToKeel"]) {
+    try {
+      const raw: any = app.getSelfPath(p);
+      const v = raw && typeof raw === "object" ? raw.value : raw;
+      if (typeof v === "number" && isFinite(v) && v >= 0 && t2k === null) t2k = v;
+    } catch { /* ignore */ }
+  }
+  for (const p of ["environment.depth.surfaceToTransducer", "design.surfaceToTransducer"]) {
+    try {
+      const raw: any = app.getSelfPath(p);
+      const v = raw && typeof raw === "object" ? raw.value : raw;
+      if (typeof v === "number" && isFinite(v) && v >= 0 && s2t === null) s2t = v;
+    } catch { /* ignore */ }
+  }
+  return { transducerToKeelM: t2k, surfaceToTransducerM: s2t };
+}
+
+// Rev476 C-19: tolerance for conflict detection between simultaneous sources.
+const DEPTH_CONFLICT_TOLERANCE_M = 0.5;
+
 function _readDepthValidated(draft: number): ValidatedDepth {
+  // Rev476: si llaman desde scope distinto al de definición, usar la ref top-level.
+  // (Aquí estamos dentro de la definición, así que ejecutamos el cuerpo real).
   const now = Date.now();
-  const paths: { p: string; addDraft: boolean }[] = [
-    { p: "environment.depth.belowKeel", addDraft: true },
-    { p: "environment.depth.belowSurface", addDraft: false },
-    { p: "environment.depth.belowTransducer", addDraft: true },
+  // Rev476 C-05 + C-06 + C-19 + C-20:
+  // - Conversión correcta de belowTransducer con offsets reales (no asumir 0).
+  // - Si missing calibration y NO hay otra fuente → reason "missing-calibration".
+  // - Si dos fuentes frescas en frames distintos difieren > tolerance → "conflict".
+  // - Si primaria stale y alternativa fresca → preferir fresca (C-20).
+  const offsets = _resolveDepthOffsets();
+  // Convertir belowTransducer a belowSurface según offsets disponibles.
+  // Devuelve null si no se puede convertir con calibración explícita.
+  const convertTransducer = (vRaw: number): number | null => {
+    if (offsets.surfaceToTransducerM != null) {
+      return vRaw + offsets.surfaceToTransducerM;
+    }
+    if (offsets.transducerToKeelM != null) {
+      return vRaw + (draft - offsets.transducerToKeelM);
+    }
+    return null; // missing-calibration
+  };
+  // Orden: prioridad belowSurface > belowKeel > belowTransducer.
+  // Cada item: path, función de conversión a belowSurface.
+  const sources: Array<{ p: string; conv: (v: number) => number | null }> = [
+    { p: "environment.depth.belowSurface", conv: (v) => v },
+    { p: "environment.depth.belowKeel", conv: (v) => v + draft },
+    { p: "environment.depth.belowTransducer", conv: convertTransducer },
   ];
   let firstStalePath = "";
-  for (const { p, addDraft } of paths) {
+  let primaryStale = false;
+  let pickedSrc: { p: string; vRaw: number; vBS: number } | null = null;
+  for (const { p, conv } of sources) {
     const s = _skVal(p);
     if (s.v === null || s.v <= 0) continue;
     if (s.ts > 0 && now - s.ts > TTL_DEPTH_FRESH_MS) {
+      if (!firstStalePath) { firstStalePath = p; primaryStale = (pickedSrc == null); }
+      continue;
+    }
+    const vBS = conv(s.v);
+    if (vBS == null) {
+      // belowTransducer sin calibración disponible. NO usar fallback ciego.
       if (!firstStalePath) firstStalePath = p;
       continue;
     }
-    const q = isDepthReliable(s.v);
-    if (!q.reliable) {
-      return { vBS: null, vRaw: s.v, pathUsed: p, reason: q.reason as ValidatedDepth["reason"] };
+    if (pickedSrc == null) {
+      pickedSrc = { p, vRaw: s.v, vBS };
+    } else {
+      // C-19: dos fuentes frescas. Chequear coherencia.
+      if (Math.abs(pickedSrc.vBS - vBS) > DEPTH_CONFLICT_TOLERANCE_M) {
+        return { vBS: null, vRaw: pickedSrc.vRaw, pathUsed: `${pickedSrc.p}↔${p}`, reason: "conflict" };
+      }
+      // Coherentes — mantenemos el primero (mayor prioridad).
     }
-    return {
-      vBS: addDraft ? s.v + draft : s.v,
-      vRaw: s.v,
-      pathUsed: p,
-      reason: "ok",
-    };
+  }
+  if (pickedSrc) {
+    const q = isDepthReliable(pickedSrc.vBS, pickedSrc.p);
+    if (!q.reliable) {
+      return { vBS: null, vRaw: pickedSrc.vRaw, pathUsed: pickedSrc.p, reason: q.reason as ValidatedDepth["reason"] };
+    }
+    return { vBS: pickedSrc.vBS, vRaw: pickedSrc.vRaw, pathUsed: pickedSrc.p, reason: "ok" };
+  }
+  // Sin fuente válida. Distinguir stale (datos viejos) vs missing-calibration vs nada.
+  if (firstStalePath === "environment.depth.belowTransducer" && offsets.transducerToKeelM == null && offsets.surfaceToTransducerM == null) {
+    return { vBS: null, vRaw: null, pathUsed: firstStalePath, reason: "missing-calibration" };
   }
   if (firstStalePath) return { vBS: null, vRaw: null, pathUsed: firstStalePath, reason: "stale" };
   return { vBS: null, vRaw: null, pathUsed: "none", reason: "none" };
 }
+// Rev476: asignar refs top-level para que otras funciones en otro scope (e.g.
+// evaluateAndPublishGroundingRisk) puedan llamar este helper sin scope issues.
+_readDepthValidatedRef = _readDepthValidated;
+_resolveDepthOffsetsRef = _resolveDepthOffsets;
 function _getBoatWind(): {
   dirFromDeg: number;
   speedKt: number;
@@ -4646,7 +5646,12 @@ _restartGustTimer();
 // SIN altura — eso es Fase 2 (integración doble de navigation.acceleration).
 type WaveSample = { ts: number; pitchDeg: number; rollDeg: number; headingDeg: number };
 const _waveBuffer: WaveSample[] = [];
-const _WAVE_BUFFER_DUR_MS = 90_000;
+// Rev465: buffer 180s (era 90s). Antes el _waveBuffer guardaba justo 90s y
+// el gate "buffer >= 90s" oscilaba entre PASS y FAIL: la muestra mas vieja
+// expiraba justo cuando rozaba el threshold → flicker active/buffer_warming.
+// Ahora margen amplio: buffer 180s, gate exige 90s. Sin oscilacion.
+const _WAVE_BUFFER_DUR_MS = 180_000;
+const _WAVE_NAV_GATE_MIN_BUF_MS = 90_000;
 const _WAVE_MIN_SAMPLES = 30;
 // Rev331 (item 18b): offset de calibración IMU. Sumado al ángulo de las
 // olas medidas por IMU. Útil cuando el chip está montado rotado respecto
@@ -5063,6 +6068,270 @@ expressApp.get("/signalk-mareas-ihm/api/wave/history", (_req: any, res: any) => 
 _waveHistoryStart();
 _waveHistoryStopOuter = _waveHistoryStop;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Rev460 — Sprint H V0: Auditoría IMU (paso previo a wave-in-motion).
+// Buffers rolling de últimas N muestras de attitude / accel / gyro con
+// timestamps de cada paquete que entra por el bridge pypilot. Expone:
+//   - sampleRate medido por canal (instantáneo y medio últimas 10s)
+//   - signos: media, std, last value
+//   - bias check: |meanPitch|, |meanRoll| con barco "supuestamente quieto"
+//   - g-vector check: módulo medio de accel debe ser ~9.81; signo de z
+// Para que el usuario verifique los SIGNOS antes de programar V1.
+// ═══════════════════════════════════════════════════════════════════════════
+type ImuChan3 = { ts: number; x: number; y: number; z: number };
+type ImuChanAtt = { ts: number; pitch: number; roll: number; heading: number };
+const _imuAuditAtt: ImuChanAtt[] = [];
+const _imuAuditAcc: ImuChan3[] = [];
+const _imuAuditGyr: ImuChan3[] = [];
+const _IMU_AUDIT_DUR_MS = 30_000;
+function _trimImuAudit<T extends { ts: number }>(arr: T[], now: number): void {
+  while (arr.length > 0 && now - arr[0].ts > _IMU_AUDIT_DUR_MS) arr.shift();
+}
+function _recordImuAtt(pitchDeg: number, rollDeg: number, headingDeg: number): void {
+  const now = Date.now();
+  _imuAuditAtt.push({ ts: now, pitch: pitchDeg, roll: rollDeg, heading: headingDeg });
+  _trimImuAudit(_imuAuditAtt, now);
+}
+function _recordImuAcc(ax: number, ay: number, az: number): void {
+  const now = Date.now();
+  _imuAuditAcc.push({ ts: now, x: ax, y: ay, z: az });
+  _trimImuAudit(_imuAuditAcc, now);
+}
+function _recordImuGyr(gx: number, gy: number, gz: number): void {
+  const now = Date.now();
+  _imuAuditGyr.push({ ts: now, x: gx, y: gy, z: gz });
+  _trimImuAudit(_imuAuditGyr, now);
+}
+function _statsOf(values: number[]): { mean: number; std: number; min: number; max: number; last: number | null } {
+  const n = values.length;
+  if (n === 0) return { mean: 0, std: 0, min: 0, max: 0, last: null };
+  let sum = 0, min = values[0], max = values[0];
+  for (const v of values) { sum += v; if (v < min) min = v; if (v > max) max = v; }
+  const mean = sum / n;
+  let sq = 0;
+  for (const v of values) sq += (v - mean) * (v - mean);
+  return { mean, std: Math.sqrt(sq / n), min, max, last: values[n - 1] };
+}
+function _hzOf<T extends { ts: number }>(arr: T[], windowMs = 10_000): number {
+  const now = Date.now();
+  const cutoff = now - windowMs;
+  let count = 0;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (arr[i].ts < cutoff) break;
+    count++;
+  }
+  if (count < 2) return 0;
+  const span = arr[arr.length - 1].ts - arr[arr.length - count].ts;
+  if (span <= 0) return 0;
+  return (count - 1) / (span / 1000);
+}
+function _getImuAuditReport(lastMs?: number): any {
+  const now = Date.now();
+  const cutoff = (typeof lastMs === "number" && lastMs > 0) ? (now - lastMs) : 0;
+  const fAtt = cutoff > 0 ? _imuAuditAtt.filter(s => s.ts >= cutoff) : _imuAuditAtt;
+  const fAcc = cutoff > 0 ? _imuAuditAcc.filter(s => s.ts >= cutoff) : _imuAuditAcc;
+  const fGyr = cutoff > 0 ? _imuAuditGyr.filter(s => s.ts >= cutoff) : _imuAuditGyr;
+  const pitches = fAtt.map(s => s.pitch);
+  const rolls   = fAtt.map(s => s.roll);
+  const headings = fAtt.map(s => s.heading);
+  const axs = fAcc.map(s => s.x);
+  const ays = fAcc.map(s => s.y);
+  const azs = fAcc.map(s => s.z);
+  const gxs = fGyr.map(s => s.x);
+  const gys = fGyr.map(s => s.y);
+  const gzs = fGyr.map(s => s.z);
+  // Modulo medio del vector accel — deberia ser ~9.81 con barco quieto.
+  const aStatsX = _statsOf(axs);
+  const aStatsY = _statsOf(ays);
+  const aStatsZ = _statsOf(azs);
+  let gMag = 0;
+  if (fAcc.length) {
+    gMag = Math.sqrt(aStatsX.mean ** 2 + aStatsY.mean ** 2 + aStatsZ.mean ** 2);
+  }
+  // Deduce eje up del chip = el de mayor |mean| con barco quieto.
+  let upAxis: "x" | "y" | "z" = "z";
+  let upSign: 1 | -1 = 1;
+  const absMeans = { x: Math.abs(aStatsX.mean), y: Math.abs(aStatsY.mean), z: Math.abs(aStatsZ.mean) };
+  if (absMeans.x > absMeans.y && absMeans.x > absMeans.z) { upAxis = "x"; upSign = aStatsX.mean > 0 ? 1 : -1; }
+  else if (absMeans.y > absMeans.z) { upAxis = "y"; upSign = aStatsY.mean > 0 ? 1 : -1; }
+  else { upAxis = "z"; upSign = aStatsZ.mean > 0 ? 1 : -1; }
+  return {
+    nowMs: now,
+    pluginRev: PLUGIN_REVISION,
+    windowMs: (typeof lastMs === "number" && lastMs > 0) ? lastMs : _IMU_AUDIT_DUR_MS,
+    pypilotConnected: _pypilotLastMsgMs > 0 && (now - _pypilotLastMsgMs) < 5000,
+    pypilotLastMsgAgeMs: _pypilotLastMsgMs > 0 ? now - _pypilotLastMsgMs : null,
+    waveBufferSize: _waveBuffer.length,
+    attitude: {
+      samples: fAtt.length,
+      hz10s: _hzOf(fAtt),
+      pitchDeg: _statsOf(pitches),
+      rollDeg: _statsOf(rolls),
+      headingDeg: _statsOf(headings),
+    },
+    accel: {
+      samples: fAcc.length,
+      hz10s: _hzOf(fAcc),
+      x: aStatsX,
+      y: aStatsY,
+      z: aStatsZ,
+      gMagMean: gMag,
+      upAxis,
+      upSign,
+    },
+    gyro: {
+      samples: fGyr.length,
+      hz10s: _hzOf(fGyr),
+      x: _statsOf(gxs),
+      y: _statsOf(gys),
+      z: _statsOf(gzs),
+    },
+    interpretation: {
+      bias_pitch_ok: Math.abs(_statsOf(pitches).mean) < 1.5,
+      bias_roll_ok: Math.abs(_statsOf(rolls).mean) < 1.5,
+      gravity_ok: gMag > 9.0 && gMag < 10.5,
+      sampleRate_ok: _hzOf(_imuAuditAtt) >= 8,
+      attitudeIsCompensated_hint: (Math.abs(_statsOf(pitches).mean) < 1.5 && Math.abs(_statsOf(rolls).mean) < 1.5)
+        ? "Probably YES (means near zero)"
+        : "Probably NO — chip might be tilted vs boat axes",
+    },
+  };
+}
+expressApp.get("/signalk-mareas-ihm/api/imu/debug", (_req: any, res: any) => {
+  res.json(_getImuAuditReport());
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Rev475 paso 1 — C-28 prerequisito: audit de la forma real del payload SK.
+//
+// Antes de aplicar C-09 (rechazar lecturas sin timestamp), necesitamos
+// confirmar qué forma devuelve realmente `app.getSelfPath()` para paths
+// críticos en la instalación del usuario. Si devuelve solo números planos,
+// invalidar números planos eliminaría todos los datos válidos.
+//
+// Este endpoint inspecciona la forma EN VIVO de cada path crítico:
+//   - shape: "object-with-value-and-timestamp" | "object-without-timestamp" |
+//            "object-value-only" | "number-plain" | "string" | "null" | "other"
+//   - hasTimestamp: boolean
+//   - timestampType: "string-iso" | "Date" | "number-ms" | "missing"
+//   - sampleValue: el valor real (truncado si es grande)
+//
+// Tras desplegar Rev475, el usuario abre este endpoint y manda el JSON.
+// Con eso decidimos:
+//   - Si TODOS los paths críticos devuelven {value, timestamp} → C-09 OK
+//     tal como está descrito en el plan (rechazar números planos).
+//   - Si ALGUNO devuelve número plano → migrar a app.streambundle deltas
+//     antes de C-09.
+// ═══════════════════════════════════════════════════════════════════════════
+const _SK_PATHS_TO_AUDIT = [
+  "navigation.position",
+  "navigation.speedOverGround",
+  "navigation.courseOverGroundTrue",
+  "navigation.headingTrue",
+  "navigation.headingMagnetic",
+  "environment.depth.belowKeel",
+  "environment.depth.belowSurface",
+  "environment.depth.belowTransducer",
+  "environment.depth.transducerToKeel",
+  "environment.depth.surfaceToTransducer",
+  "design.draft",
+  "design.length",
+  "design.beam",
+  "environment.wind.speedTrue",
+  "environment.wind.directionTrue",
+  "environment.wind.speedApparent",
+  "environment.wind.angleApparent",
+];
+function _classifyShape(raw: any): {
+  shape: string;
+  hasTimestamp: boolean;
+  timestampType: string;
+  hasValue: boolean;
+  valueType: string;
+  sampleValue: any;
+  sampleTimestamp: any;
+  ageMs: number | null;
+} {
+  if (raw == null) {
+    return { shape: "null", hasTimestamp: false, timestampType: "missing", hasValue: false, valueType: "undefined", sampleValue: null, sampleTimestamp: null, ageMs: null };
+  }
+  if (typeof raw === "number") {
+    return { shape: "number-plain", hasTimestamp: false, timestampType: "missing", hasValue: true, valueType: "number", sampleValue: raw, sampleTimestamp: null, ageMs: null };
+  }
+  if (typeof raw === "string") {
+    return { shape: "string", hasTimestamp: false, timestampType: "missing", hasValue: true, valueType: "string", sampleValue: raw, sampleTimestamp: null, ageMs: null };
+  }
+  if (typeof raw === "object") {
+    const hasValue = "value" in raw;
+    const hasTs = "timestamp" in raw && raw.timestamp != null;
+    const t = raw.timestamp;
+    let tsType = "missing";
+    let ageMs: number | null = null;
+    if (typeof t === "string") {
+      tsType = "string-iso";
+      const tMs = Date.parse(t);
+      if (!isNaN(tMs)) ageMs = Date.now() - tMs;
+    } else if (t instanceof Date) {
+      tsType = "Date";
+      ageMs = Date.now() - t.getTime();
+    } else if (typeof t === "number" && isFinite(t)) {
+      tsType = "number-ms";
+      ageMs = Date.now() - t;
+    }
+    const v = raw.value;
+    const valueType = v == null ? "null" : (typeof v);
+    let shape: string;
+    if (hasValue && hasTs) shape = "object-with-value-and-timestamp";
+    else if (hasValue) shape = "object-value-only";
+    else if (hasTs) shape = "object-without-value";
+    else shape = "object-other";
+    // Truncar sampleValue para evitar JSON enormes (e.g. position con value object)
+    let sample = v;
+    if (v != null && typeof v === "object") {
+      try { sample = JSON.parse(JSON.stringify(v)); } catch { sample = "[unserializable]"; }
+    }
+    return { shape, hasTimestamp: hasTs, timestampType: tsType, hasValue, valueType, sampleValue: sample, sampleTimestamp: t ?? null, ageMs };
+  }
+  return { shape: "other", hasTimestamp: false, timestampType: "missing", hasValue: false, valueType: typeof raw, sampleValue: String(raw), sampleTimestamp: null, ageMs: null };
+}
+expressApp.get("/signalk-mareas-ihm/api/_skshape", (_req: any, res: any) => {
+  const report: any = {
+    rev: PLUGIN_REVISION,
+    timestamp: new Date().toISOString(),
+    purpose: "C-28 audit: forma real del payload getSelfPath() para paths críticos. Manda este JSON al developer para validar C-09.",
+    paths: {},
+  };
+  for (const path of _SK_PATHS_TO_AUDIT) {
+    try {
+      const raw = app.getSelfPath(path);
+      report.paths[path] = _classifyShape(raw);
+    } catch (e: any) {
+      report.paths[path] = { error: e?.message ?? String(e) };
+    }
+  }
+  // Resumen executive
+  const summary = {
+    totalPaths: _SK_PATHS_TO_AUDIT.length,
+    withTimestamp: 0,
+    withoutTimestamp: 0,
+    plainNumber: 0,
+    nullOrMissing: 0,
+    timestampTypes: {} as Record<string, number>,
+  };
+  for (const p of Object.values(report.paths) as any[]) {
+    if (p.error || p.shape === "null") summary.nullOrMissing++;
+    else if (p.shape === "number-plain") summary.plainNumber++;
+    else if (p.hasTimestamp) summary.withTimestamp++;
+    else summary.withoutTimestamp++;
+    if (p.timestampType) summary.timestampTypes[p.timestampType] = (summary.timestampTypes[p.timestampType] ?? 0) + 1;
+  }
+  report.summary = summary;
+  report.verdict = summary.plainNumber === 0 && summary.withoutTimestamp === 0
+    ? "✅ C-09 SEGURO: todos los paths con datos tienen timestamp. Rechazar números planos es OK."
+    : "⚠ C-09 INSEGURO: hay paths con datos sin timestamp. Migrar a app.streambundle deltas antes de C-09.";
+  res.json(report);
+});
+
 expressApp.get("/signalk-mareas-ihm/api/wave/boat", (_req: any, res: any) => {
   const stats = _waveStats();
   const heightStats = _waveHeightStats();
@@ -5080,12 +6349,451 @@ expressApp.get("/signalk-mareas-ihm/api/wave/boat", (_req: any, res: any) => {
   res.json({ available: true, source: "boat-imu", ...stats, ...heightStats });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Rev462 — Sprint H V1: Motion estimator en NAVEGACIÓN.
+//
+// Reusa _waveBuffer (pitch/roll/heading @ 5Hz) y le añade:
+//   - Hard gates de contaminación (heading change, heel drift, yaw rate, surf,
+//     buffer warming, sample rate). Si falla un gate → status="not_available"
+//     + rejectionReason explicito; no publicamos numeros engañosos.
+//   - Soft penalizadores (motor on, viento inestable, pico debil) reducen
+//     confidence pero permiten publicar.
+//   - Buffer de contexto navegacional @1Hz para detectar cambios de rumbo,
+//     viradas, surf, etc.
+// Salidas via SK deltas en environment.outside.waves.estimate.*
+// + endpoint REST /api/wave/nav para debug.
+// ═══════════════════════════════════════════════════════════════════════════
+type NavCtxSample = { ts: number; sogMs: number | null; cogDeg: number | null; headingDeg: number | null; yawRateRadS: number | null };
+const _navCtxBuffer: NavCtxSample[] = [];
+const _NAV_CTX_DUR_MS = 90_000;
+const _NAV_CTX_SAMPLE_MS = 1000;
+let _navCtxTimer: NodeJS.Timeout | null = null;
+function _navCtxStartSampling() {
+  if (_navCtxTimer) return;
+  _navCtxTimer = setInterval(() => {
+    const now = Date.now();
+    const sog = _skVal("navigation.speedOverGround");
+    const cog = _skVal("navigation.courseOverGroundTrue");
+    const hdgT = _skVal("navigation.headingTrue");
+    const hdgM = _skVal("navigation.headingMagnetic");
+    // yaw rate: ultimas 2 muestras gyro (eje Z chip) si tenemos audit fresco.
+    let yawRateRadS: number | null = null;
+    if (_imuAuditGyr.length >= 2) {
+      const last = _imuAuditGyr[_imuAuditGyr.length - 1];
+      const prev = _imuAuditGyr[_imuAuditGyr.length - 2];
+      // gyro.z chip ≈ yaw rate boat si chip esta nivelado en boat.
+      yawRateRadS = (last.z + prev.z) / 2;
+    }
+    const headingRad = (hdgT.v != null) ? hdgT.v : hdgM.v;
+    _navCtxBuffer.push({
+      ts: now,
+      sogMs: sog.v,
+      cogDeg: cog.v != null ? (cog.v * 180 / Math.PI) % 360 : null,
+      headingDeg: headingRad != null ? ((headingRad * 180 / Math.PI) + 360) % 360 : null,
+      yawRateRadS,
+    });
+    while (_navCtxBuffer.length > 0 && now - _navCtxBuffer[0].ts > _NAV_CTX_DUR_MS) _navCtxBuffer.shift();
+  }, _NAV_CTX_SAMPLE_MS);
+}
+function _navCtxStopSampling() {
+  if (_navCtxTimer) { clearInterval(_navCtxTimer); _navCtxTimer = null; }
+  _navCtxBuffer.length = 0;
+}
+
+// Helpers para los gates.
+function _angDiffDeg(a: number, b: number): number {
+  let d = a - b; while (d > 180) d -= 360; while (d < -180) d += 360; return d;
+}
+function _stdOf(values: number[]): number {
+  const n = values.length; if (n < 2) return 0;
+  let sum = 0; for (const v of values) sum += v;
+  const mean = sum / n;
+  let sq = 0; for (const v of values) sq += (v - mean) * (v - mean);
+  return Math.sqrt(sq / n);
+}
+function _engineOn(): boolean {
+  // Heurística: cualquier propulsion.X.revolutions > 5 Hz ó propulsion.X.state === "running"
+  try {
+    const props = (app as any).getPath?.("vessels.self.propulsion") ?? {};
+    for (const k of Object.keys(props)) {
+      const e = props[k];
+      const rev = e?.revolutions?.value;
+      if (typeof rev === "number" && rev > 5) return true;
+      const st = e?.state?.value;
+      if (typeof st === "string" && (st === "running" || st === "started")) return true;
+    }
+  } catch { /* ignore */ }
+  return false;
+}
+
+type WaveNavResult = {
+  status: "active" | "not_available";
+  algorithm: "imu-v2-motion-doppler";
+  motionBand: string | null;
+  motionRmsDeg: number | null;
+  periodEncountered: number | null;
+  periodTrue: number | null;
+  relativeAxisDeg: number | null;
+  relativeAxisAmbiguous: boolean;
+  directionTrue: number | null;
+  confidence: number;
+  confidenceDirection: number;
+  confidencePeriodTrue: number;
+  rejectionReason: string | null;
+  dopplerReason: string | null;
+  disclaimer: string;
+  diagnostics?: any;
+};
+
+// === Rev466 (Sprint H V2): PCA pitch/roll para eje dominante robusto. ===
+// Construye la matriz de covarianza 2x2 de pitch/roll desmediados y devuelve
+// el eigenvector dominante (eje de máxima varianza). Mejora respecto a
+// atan2(rmsR, rmsP) porque considera la CORRELACIÓN cruzada: olas que llegan
+// en diagonal correlacionan pitch y roll, lo cual el método antiguo ignora.
+//
+// Output:
+//   axisDegBoat: 0° = eje proa-popa (pitch dominante), 90° = eje traves (roll).
+//   dominance: λ_max / (λ_max + λ_min), 0-1. >0.7 = eje claro; <0.55 = casi
+//     isotropico (ola venia o ruido sin direccion).
+function _pcaPitchRoll(): { axisDegBoat: number; dominance: number } {
+  const n = _waveBuffer.length;
+  if (n < 2) return { axisDegBoat: 0, dominance: 0 };
+  let sumP = 0, sumR = 0;
+  for (const s of _waveBuffer) { sumP += s.pitchDeg; sumR += s.rollDeg; }
+  const meanP = sumP / n, meanR = sumR / n;
+  let cPP = 0, cRR = 0, cPR = 0;
+  for (const s of _waveBuffer) {
+    const dp = s.pitchDeg - meanP;
+    const dr = s.rollDeg - meanR;
+    cPP += dp * dp;
+    cRR += dr * dr;
+    cPR += dp * dr;
+  }
+  cPP /= n; cRR /= n; cPR /= n;
+  const trace = cPP + cRR;
+  const det = cPP * cRR - cPR * cPR;
+  const inner = (trace * trace) / 4 - det;
+  const discr = Math.sqrt(Math.max(0, inner));
+  const lMax = trace / 2 + discr;
+  const lMin = trace / 2 - discr;
+  // Eigenvector dominante. Si cPR != 0: (lMax - cRR, cPR) normalizado.
+  // Si cPR == 0: el eje dominante es el del componente con mayor varianza.
+  let vP: number, vR: number;
+  if (Math.abs(cPR) > 1e-9) {
+    vP = lMax - cRR;
+    vR = cPR;
+  } else {
+    vP = cPP >= cRR ? 1 : 0;
+    vR = cPP >= cRR ? 0 : 1;
+  }
+  // Normalizar para que el "0°=pitch dom" cuadre con convencion del codigo
+  // anterior. atan2(vR, vP) → angulo desde el eje pitch (proa-popa) hacia
+  // el eje roll (traves).
+  const axisRad = Math.atan2(Math.abs(vR), Math.abs(vP));
+  const axisDegBoat = axisRad * 180 / Math.PI;
+  const dominance = (lMax + lMin) > 0 ? lMax / (lMax + lMin) : 0;
+  return { axisDegBoat, dominance };
+}
+
+// === Rev466 (Sprint H V2): Doppler closed-form para periodTrue. ===
+// Resuelve T² − T_enc·T + β·T_enc = 0 donde β = 2π·U/g, U = V·cos(μ),
+// μ = ángulo entre heading del barco y dirección de PROPAGACIÓN de la ola.
+// Validado por GPT y Gemini desde primeros principios.
+//
+// Casos:
+//   - Head sea (U<0): solución única positiva T = (T_enc + √D) / 2.
+//   - Following sea (U>0) con D>0: 2 soluciones positivas → ambigüedad → null.
+//   - Following sea con D<0: sin solución real → null.
+//   - V cercano a 0: T_true = T_enc (no hay Doppler significativo).
+//
+// Argumentos en SI: T_enc en seg, V en m/s, ángulos en rad (compass true).
+function _doppler(
+  T_enc: number | null,
+  V: number | null,
+  headingTrueRad: number | null,
+  waveFromTrueRad: number | null,
+): { T_true: number | null; reason: string | null; geometryScore: number } {
+  if (T_enc == null || !isFinite(T_enc) || T_enc <= 0) {
+    return { T_true: null, reason: "no_T_enc", geometryScore: 0 };
+  }
+  if (V == null || !isFinite(V) || V < 0.25) {
+    // Barco prácticamente quieto (<0.5 kt): no hay Doppler significativo.
+    return { T_true: T_enc, reason: null, geometryScore: 0.5 };
+  }
+  if (headingTrueRad == null || waveFromTrueRad == null) {
+    return { T_true: null, reason: "no_geometry", geometryScore: 0 };
+  }
+  const wavePropRad = waveFromTrueRad + Math.PI; // dir de propagación = from + 180°
+  let mu = wavePropRad - headingTrueRad;
+  // Normalizar a [-π, π] solo para diagnóstico; cos(μ) no necesita normalización.
+  while (mu > Math.PI) mu -= 2 * Math.PI;
+  while (mu < -Math.PI) mu += 2 * Math.PI;
+  const U = V * Math.cos(mu);
+  const g = 9.81;
+  const beta = 2 * Math.PI * U / g;
+  const D = T_enc * T_enc - 4 * T_enc * beta;
+  // Geometría score: penaliza ángulos cercanos a través (μ≈±90°) donde
+  // cos(μ)≈0 hace al Doppler trivial pero también insensible al error de
+  // dirección. Mejor score en head/following sea claros.
+  const geometryScore = Math.abs(Math.cos(mu));
+  if (D < 0) {
+    return { T_true: null, reason: "doppler_no_real_solution", geometryScore };
+  }
+  const sqrtD = Math.sqrt(D);
+  if (U < 0) {
+    // Head sea: T1 positivo, T2 negativo, una solución única válida.
+    const T_true = (T_enc + sqrtD) / 2;
+    if (T_true <= 0 || T_true > 30) {
+      return { T_true: null, reason: "T_true_out_of_range", geometryScore };
+    }
+    return { T_true, reason: null, geometryScore };
+  } else if (U > 0) {
+    // Following sea: dos soluciones positivas posibles → ambiguo.
+    return { T_true: null, reason: "ambiguous_following_sea", geometryScore };
+  } else {
+    // μ = ±90°, U = 0
+    return { T_true: T_enc, reason: null, geometryScore };
+  }
+}
+
+function _computeWaveNav(): WaveNavResult {
+  const base: WaveNavResult = {
+    status: "not_available",
+    algorithm: "imu-v2-motion-doppler",
+    motionBand: null,
+    motionRmsDeg: null,
+    periodEncountered: null,
+    periodTrue: null,
+    relativeAxisDeg: null,
+    relativeAxisAmbiguous: true,
+    directionTrue: null,
+    confidence: 0,
+    confidenceDirection: 0,
+    confidencePeriodTrue: 0,
+    rejectionReason: null,
+    dopplerReason: null,
+    disclaimer: "motion-derived, not certified",
+  };
+  // Gate 1: buffer warmup
+  if (_waveBuffer.length < _WAVE_MIN_SAMPLES) {
+    return { ...base, rejectionReason: "buffer_warming" };
+  }
+  const bufDurMs = Date.now() - _waveBuffer[0].ts;
+  if (bufDurMs < _WAVE_NAV_GATE_MIN_BUF_MS) {
+    return { ...base, rejectionReason: "buffer_warming" };
+  }
+  // Gate 2: sample rate
+  const sampleRateHz = (_waveBuffer.length - 1) / (bufDurMs / 1000);
+  if (sampleRateHz < 4) { // pypilot tipicamente 10Hz; bajo umbral conservador
+    return { ...base, rejectionReason: "low_sample_rate" };
+  }
+  // Gate 3: turning (heading change en 60s)
+  let headingChange60s = 0;
+  if (_navCtxBuffer.length >= 2) {
+    const now = Date.now();
+    const recent = _navCtxBuffer[_navCtxBuffer.length - 1];
+    let past = _navCtxBuffer[0];
+    for (const s of _navCtxBuffer) if (now - s.ts > 55_000 && now - s.ts < 70_000) past = s;
+    if (recent.headingDeg != null && past.headingDeg != null) {
+      headingChange60s = Math.abs(_angDiffDeg(recent.headingDeg, past.headingDeg));
+    }
+  }
+  if (headingChange60s > 20) {
+    return { ...base, rejectionReason: "turning", diagnostics: { headingChange60s } };
+  }
+  // Gate 4: heel drift (mean roll cambio entre 1ª y ultima mitad del buffer)
+  const half = Math.floor(_waveBuffer.length / 2);
+  let rollEarlyMean = 0, rollLateMean = 0;
+  for (let i = 0; i < half; i++) rollEarlyMean += _waveBuffer[i].rollDeg;
+  for (let i = half; i < _waveBuffer.length; i++) rollLateMean += _waveBuffer[i].rollDeg;
+  rollEarlyMean /= half; rollLateMean /= (_waveBuffer.length - half);
+  const heelDrift = Math.abs(rollLateMean - rollEarlyMean);
+  if (heelDrift > 5) {
+    return { ...base, rejectionReason: "heel_drift", diagnostics: { heelDrift } };
+  }
+  // Gate 5: yaw rate inestable (RMS yawRate > 3°/s = 0.052 rad/s)
+  const yawSamples = _navCtxBuffer.filter(s => s.yawRateRadS != null).map(s => s.yawRateRadS as number);
+  const yawRateRms = _stdOf(yawSamples);
+  if (yawSamples.length > 5 && (yawRateRms * 180 / Math.PI) > 3) {
+    return { ...base, rejectionReason: "yaw_unstable", diagnostics: { yawRateRmsDegPerSec: yawRateRms * 180 / Math.PI } };
+  }
+  // Gate 6: surf / aceleraciones SOG variables (std SOG en 30s > 0.7 m/s)
+  const sogRecent = _navCtxBuffer.filter(s => s.sogMs != null && (Date.now() - s.ts) < 30_000).map(s => s.sogMs as number);
+  const sogStd = _stdOf(sogRecent);
+  if (sogRecent.length > 5 && sogStd > 0.7) {
+    return { ...base, rejectionReason: "surf_or_transient", diagnostics: { sogStd } };
+  }
+  // === Pasaron todos los hard gates. Compute outputs ===
+  const stats = _waveStats();
+  if (!stats) {
+    return { ...base, rejectionReason: "stats_unavailable" };
+  }
+  // Soft penalizadores → confidence
+  let confidence = 1.0;
+  let confidenceDirection = 1.0;
+  // Penalizar tasa de muestreo baja
+  if (sampleRateHz < 8) confidence *= 0.7;
+  // Penalizar motor on
+  if (_engineOn()) confidence *= 0.65;
+  // Penalizar bufferDuration corto
+  if (bufDurMs < 120_000) confidence *= 0.85;
+  // Penalizar viento inestable / sin TWD → solo afecta direction
+  let twdStable = false;
+  try {
+    const ws = app.getSelfPath("environment.wind.speedTrue.value");
+    if (typeof ws === "number" && ws >= 5 / 1.94384) twdStable = true; // >=5kt
+  } catch { /* ignore */ }
+  if (!twdStable) confidenceDirection *= 0.5;
+  // Rev466 (V2): eje dominante via PCA. Mejor que atan2(rmsR, rmsP) cuando
+  // pitch/roll correlacionan (olas diagonales).
+  const pca = _pcaPitchRoll();
+  const axisDegBoat = pca.axisDegBoat;
+  const axisDominance = pca.dominance;
+  // Penalizar axis ambiguity (dominance baja → eje poco claro).
+  // PCA dominance: 0.5 = isotrópico (sin eje), 1.0 = línea pura.
+  if (axisDominance < 0.7) confidenceDirection *= 0.6;
+  if (axisDominance < 0.55) confidenceDirection *= 0.3;  // casi isotropico
+  // Clamp
+  confidence = Math.max(0, Math.min(1, confidence));
+  confidenceDirection = Math.max(0, Math.min(1, confidence * confidenceDirection));
+  // Outputs
+  const motionBand = stats.intensity;
+  const motionRmsDeg = stats.rmsDeg;
+  let periodEncountered: number | null = stats.periodSec;
+  const relativeAxisDeg = axisDegBoat;
+  // Rev463: filtros fisicos para evitar publicar ruido como dato.
+  const noSignificantMotion = motionRmsDeg < 0.3;
+  const periodOutOfRange = periodEncountered != null && (periodEncountered < 2 || periodEncountered > 20);
+  if (noSignificantMotion || periodOutOfRange) {
+    periodEncountered = null;
+  }
+  if (noSignificantMotion) {
+    confidenceDirection = 0;
+  }
+  const relativeAxisAmbiguous = noSignificantMotion || confidenceDirection < 0.6;
+  const directionTrue = (!noSignificantMotion && confidenceDirection >= 0.6 && stats.dirFromDeg != null) ? stats.dirFromDeg : null;
+
+  // Rev466 (V2): Doppler closed-form. Solo si tenemos T_enc, V, heading, dir.
+  let periodTrue: number | null = null;
+  let dopplerReason: string | null = null;
+  let confidencePeriodTrue = 0;
+  if (periodEncountered != null && directionTrue != null) {
+    const sogVal = _skVal("navigation.speedOverGround").v;
+    const hdgT = _skVal("navigation.headingTrue").v ?? _skVal("navigation.headingMagnetic").v;
+    const waveFromRad = directionTrue * Math.PI / 180;
+    const dop = _doppler(periodEncountered, sogVal, hdgT, waveFromRad);
+    periodTrue = dop.T_true;
+    dopplerReason = dop.reason;
+    if (periodTrue != null) {
+      // confidencePeriodTrue = confidenceDirection × geometryScore × confidence
+      confidencePeriodTrue = Math.max(0, Math.min(1, confidence * confidenceDirection * dop.geometryScore));
+    }
+  } else if (periodEncountered == null) {
+    dopplerReason = "no_T_enc";
+  } else {
+    dopplerReason = "no_direction";
+  }
+  return {
+    status: "active",
+    algorithm: "imu-v2-motion-doppler",
+    motionBand,
+    motionRmsDeg,
+    periodEncountered,
+    periodTrue,
+    relativeAxisDeg,
+    relativeAxisAmbiguous,
+    directionTrue,
+    confidence,
+    confidenceDirection,
+    confidencePeriodTrue,
+    rejectionReason: null,
+    dopplerReason,
+    disclaimer: "motion-derived, not certified",
+    diagnostics: {
+      pluginRev: PLUGIN_REVISION,
+      bufferDurSec: bufDurMs / 1000,
+      sampleRateHz,
+      headingChange60s,
+      heelDrift,
+      yawRateRmsDegPerSec: yawSamples.length ? yawRateRms * 180 / Math.PI : null,
+      sogStd: sogRecent.length ? sogStd : null,
+      engineOn: _engineOn(),
+      twdStable,
+      axisDominance,
+      pcaAxisDeg: pca.axisDegBoat,    // V2: PCA-based axis (vs legacy atan2)
+      rawPeriodEncountered: stats.periodSec,
+      noSignificantMotion,
+      periodOutOfRange,
+    },
+  };
+}
+
+// Cache + publish loop
+let _lastWaveNav: WaveNavResult | null = null;
+const _WAVE_NAV_PUBLISH_MS = 5000;
+let _waveNavPublishTimer: NodeJS.Timeout | null = null;
+function _publishWaveNavDeltas(r: WaveNavResult) {
+  const base = "environment.outside.waves.estimate";
+  const values: Array<{ path: string; value: any }> = [
+    { path: `${base}.status`, value: r.status },
+    { path: `${base}.algorithm`, value: r.algorithm },
+    { path: `${base}.motionBand`, value: r.motionBand },
+    { path: `${base}.motionRmsDeg`, value: r.motionRmsDeg },
+    { path: `${base}.periodEncountered`, value: r.periodEncountered },
+    { path: `${base}.periodTrue`, value: r.periodTrue },                  // V2
+    { path: `${base}.relativeAxis`, value: r.relativeAxisDeg },
+    { path: `${base}.relativeAxisAmbiguous`, value: r.relativeAxisAmbiguous },
+    { path: `${base}.directionTrue`, value: r.directionTrue },
+    { path: `${base}.confidence`, value: r.confidence },
+    { path: `${base}.confidenceDirection`, value: r.confidenceDirection },
+    { path: `${base}.confidencePeriodTrue`, value: r.confidencePeriodTrue }, // V2
+    { path: `${base}.rejectionReason`, value: r.rejectionReason },
+    { path: `${base}.dopplerReason`, value: r.dopplerReason },              // V2
+    { path: `${base}.disclaimer`, value: r.disclaimer },
+  ];
+  try {
+    const delta: Delta = {
+      context: ("vessels." + app.selfId) as Context,
+      updates: [{
+        timestamp: new Date().toISOString() as Timestamp,
+        values: values as any,
+      }],
+    };
+    app.handleMessage(plugin.id, delta);
+  } catch (e) {
+    app.debug(`[IHM-WAVE-NAV] publish error: ${e}`);
+  }
+}
+function _waveNavStart() {
+  if (_waveNavPublishTimer) return;
+  _navCtxStartSampling();
+  _waveNavPublishTimer = setInterval(() => {
+    try {
+      const r = _computeWaveNav();
+      _lastWaveNav = r;
+      _publishWaveNavDeltas(r);
+    } catch (e) {
+      app.debug(`[IHM-WAVE-NAV] compute error: ${e}`);
+    }
+  }, _WAVE_NAV_PUBLISH_MS);
+}
+function _waveNavStop() {
+  if (_waveNavPublishTimer) { clearInterval(_waveNavPublishTimer); _waveNavPublishTimer = null; }
+  _navCtxStopSampling();
+}
+
+expressApp.get("/signalk-mareas-ihm/api/wave/nav", (_req: any, res: any) => {
+  res.json(_lastWaveNav ?? _computeWaveNav());
+});
+
 // Arrancar el sampling siempre — depende de navigation.attitude que puede venir
 // del bridge pypilot, de un IMU I2C local, o de cualquier otro plugin SK.
 _waveStartSampling();
 _accelInit();
+// Rev462: V1 motion estimator nav (publica deltas SK cada 5s).
+_waveNavStart();
 // Engancha el outer handle para que plugin.stop() pueda parar los setIntervals.
-_waveStopSamplingOuter = () => { _waveStopSampling(); _accelStopSampling(); };
+_waveStopSamplingOuter = () => { _waveStopSampling(); _accelStopSampling(); _waveNavStop(); };
 
 // === Rev106: Pypilot IMU bridge ===
 // pypilot publica el IMU completo en su servidor TCP (port 23322) pero solo
@@ -5176,8 +6884,9 @@ const _bridgeAtt: { pitchDeg: number | null; rollDeg: number | null; headingDeg:
 function _maybeBridgePushAttitude() {
   if (_bridgeAtt.pitchDeg == null || _bridgeAtt.rollDeg == null || _bridgeAtt.headingDeg == null) return;
   const now = Date.now();
-  // Dedup: ignora si acabamos de meter una sample (<80 ms) — evita duplicados
-  // si el setInterval poller del Fase 1 también está vivo.
+  // Rev460: alimentar siempre el audit (sin dedup) para medir tasa real.
+  _recordImuAtt(_bridgeAtt.pitchDeg, _bridgeAtt.rollDeg, (_bridgeAtt.headingDeg + 360) % 360);
+  // Dedup wave buffer: ignora si acabamos de meter una sample (<80 ms).
   if (_waveBuffer.length > 0 && now - _waveBuffer[_waveBuffer.length - 1].ts < 80) return;
   _waveBuffer.push({
     ts: now,
@@ -5203,6 +6912,7 @@ function _pypilotHandleNameValue(name: string, value: any) {
       const ay = Number(vec[1]) * PYPILOT_G_TO_MS2;
       const az = Number(vec[2]) * PYPILOT_G_TO_MS2;
       _feedAccelSample(ax, ay, az);
+      _recordImuAcc(ax, ay, az);
       // Rev146: marca el feed para que el poller SK-agnóstico sepa cuándo
       // suprimir (evita double-feed cuando bridge pypilot y otro publisher
       // coexisten).
@@ -5226,17 +6936,16 @@ function _pypilotHandleNameValue(name: string, value: any) {
     if (Number.isFinite(v)) { _bridgeAtt.headingDeg = v; _maybeBridgePushAttitude(); }
   } else if (name === "imu.gyro") {
     const vec = Array.isArray(value) ? value : null;
-    if (vec && vec.length >= 3 && !_pypilotIsPathFresh("navigation.rateOfTurn")) {
-      // navigation.gyro tampoco es schema oficial — usamos un path composite
-      // similar para uniformidad.
-      values.push({
-        path: "navigation.gyro",
-        value: {
-          x: Number(vec[0]) * PYPILOT_DEG_TO_RAD,
-          y: Number(vec[1]) * PYPILOT_DEG_TO_RAD,
-          z: Number(vec[2]) * PYPILOT_DEG_TO_RAD,
-        },
-      });
+    if (vec && vec.length >= 3) {
+      const gx = Number(vec[0]) * PYPILOT_DEG_TO_RAD;
+      const gy = Number(vec[1]) * PYPILOT_DEG_TO_RAD;
+      const gz = Number(vec[2]) * PYPILOT_DEG_TO_RAD;
+      _recordImuGyr(gx, gy, gz);
+      if (!_pypilotIsPathFresh("navigation.rateOfTurn")) {
+        // navigation.gyro tampoco es schema oficial — usamos un path composite
+        // similar para uniformidad.
+        values.push({ path: "navigation.gyro", value: { x: gx, y: gy, z: gz } });
+      }
     }
   }
   // imu.pitch / imu.roll / imu.heading se ignoran: pypilot plugin oficial ya
@@ -5931,8 +7640,12 @@ const PI_DROP_CONFIRM: Record<string, string> = {
 const ALARM_SILENCE_DEFAULT_MIN = 5;
 let _garreoSilencedUntil = 0;
 let _aisSilencedUntil = 0;
+// Rev480: snooze grounding. Antes el botón snooze del visor solo callaba AIS y
+// el usuario reportaba "sirena loca de grounding no se apaga" (QA barco).
+let _groundingSilencedUntil = 0;
 function _isGarreoSilenced(): boolean { return Date.now() < _garreoSilencedUntil; }
 function _isAisSilenced(): boolean { return Date.now() < _aisSilencedUntil; }
+function _isGroundingSilenced(): boolean { return Date.now() < _groundingSilencedUntil; }
 function _silenceGarreo(minutes: number) {
   _garreoSilencedUntil = Date.now() + minutes * 60_000;
   _piAlarmStop("garreo");
@@ -5971,6 +7684,24 @@ function _silenceAis(minutes: number) {
   } catch { /* defensive */ }
   app.debug(`[IHM-AIS] silenced for ${minutes} min`);
 }
+// Rev480: snooze grounding — para el audio Pi y reseta el sig para reemitir
+// fresco cuando la ventana expire si el riesgo persiste. La FSM reflejará
+// notification.state="snoozed" mientras dure (visto via _buildGroundingFSM).
+function _silenceGrounding(minutes: number) {
+  _groundingSilencedUntil = Date.now() + minutes * 60_000;
+  try { _piAlarmStop("grounding"); } catch { /* defensive */ }
+  try {
+    const delta: Delta = {
+      context: ("vessels." + app.selfId) as Context,
+      updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
+        path: "notifications.signalk-mareas-ihm.groundingRisk" as any,
+        value: { state: "normal", method: [] as string[], message: `Silenced ${minutes} min` },
+      }]}],
+    };
+    app.handleMessage(plugin.id, delta);
+  } catch { /* defensive */ }
+  app.debug(`[IHM-GROUNDING] silenced for ${minutes} min`);
+}
 
 // In-memory language cache, refreshed when /api/settings POST changes lang.
 let _currentLang: "es" | "en" = "es";
@@ -5978,6 +7709,11 @@ let _currentLang: "es" | "en" = "es";
   try {
     const saved = await ihmCache.get("lang");
     if (saved === "en" || saved === "es") _currentLang = saved;
+  } catch { /* ignore */ }
+  // Rev421: load persisted units at boot
+  try {
+    const savedUnits = await ihmCache.get("units");
+    if (isValidUnitSystem(savedUnits)) _currentUnits = savedUnits;
   } catch { /* ignore */ }
 })();
 // Rev47 → Rev54 → Rev55: 3-phase rhythm with per-kind cadence.
@@ -6824,8 +8560,18 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
       const pos = v?.navigation?.position?.value;
       if (!pos?.latitude || !pos?.longitude) continue;
       const sog = v?.navigation?.speedOverGround?.value ?? null;
-      const name = v?.name ?? v?.mmsi ?? id.replace("urn:mrn:signalk:uuid:", "").substring(0, 8);
-      const navState = v?.navigation?.state?.value ?? "";
+      // Rev458 (BUG AIS-1): SK puede devolver vessel.name/mmsi como string crudo
+      // O como { value, timestamp, $source } segun la version y el productor.
+      // Antes asignabamos el objeto entero a `name` → la cache guardaba
+      // "[object Object]" o un JSON literal y el visor mostraba "Target AIS".
+      // Ahora extraemos .value cuando sea objeto y normalizamos a string.
+      const _skVal = (x: any) => (x != null && typeof x === "object" && "value" in x) ? (x as any).value : x;
+      const nameRaw = _skVal(v?.name);
+      const mmsiAltRaw = _skVal(v?.mmsi);
+      const nameFromBus = (nameRaw != null && nameRaw !== "") ? String(nameRaw).trim() : null;
+      const mmsiAlt    = (mmsiAltRaw != null && mmsiAltRaw !== "") ? String(mmsiAltRaw).trim() : null;
+      const name = nameFromBus ?? mmsiAlt ?? id.replace(/^urn:mrn:signalk:uuid:/, "").substring(0, 8);
+      const navState = _skVal(v?.navigation?.state) ?? "";
       const isStatic = navState === "anchored" || navState === "moored" || (sog != null && sog < 0.15);
       const hdgTrue = v?.navigation?.headingTrue?.value ?? null;
       const hdgMag = v?.navigation?.headingMagnetic?.value ?? null;
@@ -7000,8 +8746,34 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
   res.json({ targets });
 });
 
+// Rev478 (C-26): mutex para drop/lift/toggle. Sin esto, un doble-click en el
+// visor o un PUT SK simultáneo puede dejar el estado en mitad de transición
+// (anchorPosition seteado + aisAlarmEnabled=false, p.ej.). Single-flight: el
+// segundo comando responde 409 hasta que el primero termine.
+let _anchorCmdInFlight: { name: string; startedAtMs: number } | null = null;
+async function _withAnchorLock(name: string, res: any, fn: () => Promise<void>): Promise<void> {
+  if (_anchorCmdInFlight) {
+    const ageMs = Date.now() - _anchorCmdInFlight.startedAtMs;
+    // Recovery: si el comando anterior lleva > 10s, asumimos crash y soltamos.
+    if (ageMs > 10_000) {
+      app.debug(`[IHM-LOCK] forcing release of stale ${_anchorCmdInFlight.name} (${ageMs}ms)`);
+      _anchorCmdInFlight = null;
+    } else {
+      res.status(409).json({ error: `anchor command "${_anchorCmdInFlight.name}" in progress`, retryAfterMs: 10_000 - ageMs });
+      return;
+    }
+  }
+  _anchorCmdInFlight = { name, startedAtMs: Date.now() };
+  try {
+    await fn();
+  } finally {
+    _anchorCmdInFlight = null;
+  }
+}
+
 // Drop anchor — accepts {lat,lng} or empty body (uses current GPS bow position)
 expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", async (req: any, res: any) => {
+  await _withAnchorLock("drop", res, async () => {
   let lat = Number(req?.body?.lat);
   let lng = Number(req?.body?.lng);
   // v1.3.1 Sprint E: If no coordinates provided, use current GPS + bow offset
@@ -7055,7 +8827,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", async (req: any, re
   // Add to history (max 5)
   if (!anchorWatch.anchorHistory) anchorWatch.anchorHistory = [];
   anchorWatch.anchorHistory.unshift({ lat, lng, ts: new Date().toISOString() });
-  if (anchorWatch.anchorHistory.length > 5) anchorWatch.anchorHistory = anchorWatch.anchorHistory.slice(0, 5);
+  if (anchorWatch.anchorHistory.length > 20) anchorWatch.anchorHistory = anchorWatch.anchorHistory.slice(0, 20);
   await ihmCache.set("anchorWatch", anchorWatch);
   anchorDragAlarmActive = false;
   // Publish fresh "watching" notification to replace any stale "lifted" message
@@ -7071,10 +8843,12 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", async (req: any, re
   res.json({ ok: true, ...anchorWatch });
   broadcastSSE("drop");
   try { _piAnchorDropConfirm(); } catch { /* non-critical */ }
+  });
 });
 
 // Lift anchor
 expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", async (_req: any, res: any) => {
+  await _withAnchorLock("lift", res, async () => {
   // Snapshot ACKs into the grace-period buffer BEFORE clearing anchorPosition.
   _saveAisAckPending();
   _setAnchored(false); // Rev331 item 13: limpia anchoredSinceMs
@@ -7119,10 +8893,12 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", async (_req: any, r
   res.json({ ok: true });
   broadcastSSE("lift");
   try { _piAlarmStopAll(); } catch { /* defensive */ }
+  });
 });
 
 // Sprint E: Toggle anchor (drop if not anchored, lift if anchored) — for home automation
 expressApp.post("/signalk-mareas-ihm/api/anchor-watch/toggle", async (req: any, res: any) => {
+  await _withAnchorLock("toggle", res, async () => {
   if (anchorWatch.anchored) {
     // Lift
     _saveAisAckPending();
@@ -7172,7 +8948,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/toggle", async (req: any, 
     _restoreAisAckIfClose(lat, lng);
     if (!anchorWatch.anchorHistory) anchorWatch.anchorHistory = [];
     anchorWatch.anchorHistory.unshift({ lat, lng, ts: new Date().toISOString() });
-    if (anchorWatch.anchorHistory.length > 5) anchorWatch.anchorHistory = anchorWatch.anchorHistory.slice(0, 5);
+    if (anchorWatch.anchorHistory.length > 20) anchorWatch.anchorHistory = anchorWatch.anchorHistory.slice(0, 20);
     await ihmCache.set("anchorWatch", anchorWatch);
     anchorDragAlarmActive = false;
     app.debug(`[IHM] Anchor toggled → dropped at ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
@@ -7180,6 +8956,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/toggle", async (req: any, 
   try { _piAnchorDropConfirm(); } catch { /* non-critical */ }
     res.json({ action: "dropped", anchored: true, lat, lng });
   }
+  });
 });
 
 // Rev145: endpoint de diagnóstico del garreo. Devuelve TODAS las piezas que
@@ -7291,7 +9068,7 @@ try {
           _restoreAisAckIfClose(lat, lng);
           if (!anchorWatch.anchorHistory) anchorWatch.anchorHistory = [];
           anchorWatch.anchorHistory.unshift({ lat, lng, ts: new Date().toISOString() });
-          if (anchorWatch.anchorHistory.length > 5) anchorWatch.anchorHistory = anchorWatch.anchorHistory.slice(0, 5);
+          if (anchorWatch.anchorHistory.length > 20) anchorWatch.anchorHistory = anchorWatch.anchorHistory.slice(0, 20);
           ihmCache.set("anchorWatch", anchorWatch);
           anchorDragAlarmActive = false;
           // Publish drop notification + command state
@@ -7736,6 +9513,25 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite-delete", async (r
   res.json({ ok: true, removed, total: _favoritesCache.length });
 });
 
+// Rev441 Sprint B: borra una entrada del historial de fondeos (anchorHistory).
+// Si la entrada esta tambien en favoritos, NO la elimina alli (eso lo hace
+// favorite-delete por separado). Body: { lat, lng }. Match dentro de 10 m.
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/history-delete", async (req: any, res: any) => {
+  const lat = Number(req?.body?.lat);
+  const lng = Number(req?.body?.lng);
+  if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: "invalid coords" });
+  if (!anchorWatch.anchorHistory) anchorWatch.anchorHistory = [];
+  const before = anchorWatch.anchorHistory.length;
+  anchorWatch.anchorHistory = anchorWatch.anchorHistory.filter((h: any) =>
+    _favDistM({ lat, lng }, { lat: h.lat, lng: h.lng }) > 10
+  );
+  const removed = before - anchorWatch.anchorHistory.length;
+  if (removed > 0) {
+    try { await ihmCache.set("anchorWatch", anchorWatch); } catch { /* non-fatal */ }
+  }
+  res.json({ ok: true, removed, total: anchorWatch.anchorHistory.length });
+});
+
 // Rev44: silence alarms for N minutes. Lets visor (or any REST client) ACK
 // from a single button. Default 5 min. POST body: { kind: "garreo"|"ais", minutes?: number }
 // Rev206 (B-02): broadcastSSE("silence") tras setear, así otros visores
@@ -7754,7 +9550,12 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/silence-alarm", (req: any,
     broadcastSSE("silence");
     return res.json({ ok: true, kind, minutes, silencedUntil: _aisSilencedUntil });
   }
-  res.status(400).json({ error: "kind must be 'garreo' or 'ais'" });
+  if (kind === "grounding") {
+    _silenceGrounding(minutes);
+    broadcastSSE("silence");
+    return res.json({ ok: true, kind, minutes, silencedUntil: _groundingSilencedUntil });
+  }
+  res.status(400).json({ error: "kind must be 'garreo', 'ais' or 'grounding'" });
 });
 
 // Rev48: cancel silence window (so backend audio re-arms when user re-enables
@@ -7770,6 +9571,10 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/cancel-silence", (req: any
     _aisSilencedUntil = 0;
     _lastAisNotifSig = null; // force re-emit on next tick
     app.debug("[IHM-AIS] silence cancelled");
+  }
+  if (kind === "grounding" || kind === "all") {
+    _groundingSilencedUntil = 0;
+    app.debug("[IHM-GROUNDING] silence cancelled");
   }
   // Rev206 (B-02): broadcast para que otros visores vean el resume en tiempo
   // real (limpian el countdown 💤 y vuelven al icono 😴 inicial).
@@ -8271,33 +10076,49 @@ function effectiveDraft(draft: number, safetyMargin: number): number {
 // - freeze on the last value (phantom)
 // - jump to an absurd value (spike)
 // In both cases, grounding alarm should NOT fire.
-const DEPTH_HISTORY_SIZE = 20; // ~100s at 5s eval interval
-const DEPTH_FROZEN_TOLERANCE = 0.02; // meters — readings within ±2cm = truly frozen (real sonda varies ±3-5cm even in calm)
-const DEPTH_FROZEN_DURATION_MS = 60_000; // 60s of identical readings = phantom
-const DEPTH_SPIKE_RATIO = 3.0; // >3x change between consecutive = spike
-const depthHistory: Array<{ depth: number; ts: number }> = [];
+// Rev476 (C-01 + C-14): VENTANA TEMPORAL en lugar de cap por tamaño.
+// Antes: SIZE=20 con eval cada 2s = ventana ~38s. Detector de frozen exige
+// >60s. Inalcanzable. Sensor congelado → silencio → varada.
+// Ahora: ventana 75s. Detector pide ≥60s reales entre primera y última muestra.
+//
+// C-14: tracking por sourcePath. Si cambia la fuente (belowKeel → belowSurface),
+// el historial se resetea — no mezclar frames produciría falsos spikes.
+const DEPTH_HISTORY_WINDOW_MS = 75_000;
+const DEPTH_FROZEN_TOLERANCE = 0.02;
+const DEPTH_FROZEN_MIN_SPAN_MS = 60_000;
+const DEPTH_SPIKE_RATIO = 3.0;
+type DepthHistorySample = { depth: number; ts: number; sourcePath: string };
+const depthHistory: DepthHistorySample[] = [];
+let _depthHistorySource: string | null = null;
 
-function isDepthReliable(depthNow: number | null): { reliable: boolean; reason: string } {
+function isDepthReliable(depthNow: number | null, sourcePath: string = "unknown"): { reliable: boolean; reason: string } {
   const now = Date.now();
   if (depthNow == null || !isFinite(depthNow)) return { reliable: false, reason: "null" };
   if (depthNow <= 0) return { reliable: false, reason: "zero" };
-  if (depthNow > 300) return { reliable: false, reason: "absurd" }; // >300m in coastal = sensor error
+  if (depthNow > 300) return { reliable: false, reason: "absurd" };
 
-  // Record reading
-  depthHistory.push({ depth: depthNow, ts: now });
-  if (depthHistory.length > DEPTH_HISTORY_SIZE) depthHistory.shift();
+  // C-14: si cambia la fuente, reset (no mezclar frames).
+  if (_depthHistorySource && _depthHistorySource !== sourcePath) {
+    depthHistory.length = 0;
+  }
+  _depthHistorySource = sourcePath;
 
-  // Need at least 4 readings to judge
+  depthHistory.push({ depth: depthNow, ts: now, sourcePath });
+  // C-01: ventana temporal, no cap por tamaño.
+  const cutoff = now - DEPTH_HISTORY_WINDOW_MS;
+  while (depthHistory.length > 0 && depthHistory[0].ts < cutoff) depthHistory.shift();
+
   if (depthHistory.length < 4) return { reliable: true, reason: "ok" };
 
-  // Check frozen: all readings within tolerance for > FROZEN_DURATION
+  // C-01: frozen check exige span temporal real ≥ 60s, no solo número de muestras.
   const oldest = depthHistory[0];
+  const span = now - oldest.ts;
   const allFrozen = depthHistory.every(h => Math.abs(h.depth - oldest.depth) < DEPTH_FROZEN_TOLERANCE);
-  if (allFrozen && (now - oldest.ts) > DEPTH_FROZEN_DURATION_MS) {
+  if (allFrozen && span >= DEPTH_FROZEN_MIN_SPAN_MS) {
     return { reliable: false, reason: "frozen" };
   }
 
-  // Check spike: sudden jump from previous reading
+  // Spike check sin cambios.
   if (depthHistory.length >= 2) {
     const prev = depthHistory[depthHistory.length - 2].depth;
     const ratio = depthNow / prev;
@@ -8310,6 +10131,42 @@ function isDepthReliable(depthNow: number | null): { reliable: boolean; reason: 
 }
 
 
+// Rev475 paso 3 (C-13): single-flight evaluator. Antes la funcion se
+// invocaba fire-and-forget desde varios sitios sin mutex → evaluaciones
+// concurrentes podian pisar resultados. Ahora todo entra por
+// requestGroundingEvaluation() que garantiza serializacion + coalesce:
+// si llega una nueva peticion mientras corre la anterior, se marca pending
+// y se re-ejecuta tras commit. Excepciones tambien fuerzan re-ejecucion.
+let _groundingEvalRunning = false;
+let _groundingEvalPending = false;
+async function requestGroundingEvaluation(): Promise<void> {
+  if (_groundingEvalRunning) { _groundingEvalPending = true; return; }
+  _groundingEvalRunning = true;
+  try {
+    do {
+      _groundingEvalPending = false;
+      // Cada iteracion lee inputs frescos (no usa args viejos).
+      if (!lastForecast || !Array.isArray(lastForecast.extremes)) return;
+      const tz = stationTimezone({
+        id: lastForecast.station?.id ?? "",
+        name: lastForecast.station?.name ?? "",
+        lat: lastForecast.station?.position?.latitude ?? 0,
+        lon: lastForecast.station?.position?.longitude ?? 0,
+      } as any) || "Europe/Madrid";
+      try {
+        await evaluateAndPublishGroundingRisk(new Date(), tz, lastForecast.extremes);
+      } catch (e: any) {
+        app.debug(`[IHM-GROUNDING] eval error: ${e?.message ?? e}. Marking pending for retry.`);
+        _groundingEvalPending = true;
+        // Pequeno backoff para evitar tight loop si la excepcion es persistente.
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    } while (_groundingEvalPending);
+  } finally {
+    _groundingEvalRunning = false;
+  }
+}
+
 async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: any[]) {
   // BACKEND IS THE SINGLE SOURCE OF TRUTH.
   // v1.3.1: Only evaluate grounding when boat is STOPPED (SOG < 0.5kn = ~0.26m/s).
@@ -8319,7 +10176,16 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
     let sogMs: number | null = null;
     try { const v = app.getSelfPath("navigation.speedOverGround"); sogMs = typeof v === "object" ? (v as any).value : typeof v === "number" ? v : null; } catch {}
     const sogKn = sogMs != null ? sogMs * 1.94384 : null;
-    const isStopped = sogKn == null || sogKn < 0.5; // null SOG = assume stopped (safe default)
+    // Rev475 paso 5 (C-21): SOG ausente NO significa "parado". Si no hay SOG
+    // (sin GPS, sin sensor, fallo del bus), no podemos asumir nada.
+    // - sogKn === null  → operationalMode "unknown" (sin información). NO asumir stopped.
+    // - sogKn < 0.5     → "anchored" (stopped razonablemente).
+    // - sogKn ≥ 0.5     → "moving".
+    // Para grounding eval: si unknown → tratar igual que stopped pero log warning.
+    // Cuando llegue la FSM (Rev477), pasará a estados propios.
+    const operationalMode: "anchored" | "moving" | "unknown" =
+      sogKn == null ? "unknown" : (sogKn < 0.5 ? "anchored" : "moving");
+    const isStopped = operationalMode !== "moving"; // unknown se trata como stopped pero queda marcado
 
     const alarmaCfg = (await ihmCache.get("alarmaConfig")) as any;
     const caladoCfg = (await ihmCache.get("caladoConfig")) as any;
@@ -8358,12 +10224,39 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
     // se inlinea para no depender de imports cross-scope. Cuando todos los
     // paths están stale (>10 s) devuelve null e isDepthReliable de abajo
     // publica "SIN SONDA" / branch correcto.
+    // Rev473 BUG GRAVE FIX: antes la funcion devolvia el valor SK "como vino"
+    // (belowKeel / belowSurface / belowTransducer), pero el cálculo de riesgo
+    // posterior comparaba este valor con `effectiveDraft` (que está medido
+    // desde la SUPERFICIE). Si la sonda publica belowKeel (lo más común),
+    // 3.6 m de agua bajo la quilla se confundía con 3.6 m bajo la superficie
+    // y disparaba alarma falso-positiva. Ahora convertimos siempre a
+    // belowSurface sumando el draft (belowKeel) o el offset transductor→quilla
+    // (belowTransducer). El refactor a belowKeel canónico queda pendiente:
+    // requiere ajustar también todas las comparaciones de eff/safetyMargin.
+    const readTransducerToKeelOffset = (): number => {
+      for (const p of ["design.transducerToKeel", "environment.depth.transducerToKeel"]) {
+        try {
+          const raw: any = app.getSelfPath(p);
+          const v = (raw && typeof raw === "object") ? raw.value : raw;
+          if (typeof v === "number" && isFinite(v) && v >= 0) return v;
+        } catch { /* ignore */ }
+      }
+      return 0;
+    };
     const readDepthBelowTransducer = (): number | null => {
       const nowMs = Date.now();
       const TTL_MS = 5_000;
-      for (const p of ["environment.depth.belowKeel", "environment.depth.belowSurface", "environment.depth.belowTransducer"]) {
+      const draftForConv = (typeof draft === "number" && draft > 0) ? draft : 0;
+      const offsetT2K = readTransducerToKeelOffset();
+      // Todas las fuentes se convierten a BELOW SURFACE (frame del eff).
+      const sources: Array<{ path: string; conv: (v: number) => number }> = [
+        { path: "environment.depth.belowSurface", conv: (v) => v },                              // ya belowSurface
+        { path: "environment.depth.belowKeel", conv: (v) => v + draftForConv },                  // + calado
+        { path: "environment.depth.belowTransducer", conv: (v) => v + draftForConv - offsetT2K }, // + calado − offset T→K (transductor está bajo la quilla offset positivo)
+      ];
+      for (const src of sources) {
         try {
-          const raw: any = app.getSelfPath(p);
+          const raw: any = app.getSelfPath(src.path);
           let v: number | null = null;
           let ts = 0;
           if (raw && typeof raw === "object") {
@@ -8376,8 +10269,8 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
             v = raw;
           }
           if (v === null || v <= 0) continue;
-          if (ts > 0 && nowMs - ts > TTL_MS) continue; // stale, ignora este path
-          return v;
+          if (ts > 0 && nowMs - ts > TTL_MS) continue; // stale
+          return src.conv(v);
         } catch { /* try next */ }
       }
       return null;
@@ -8424,17 +10317,26 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
     let nextLowTimeIso: string | null = null;
     let tideNow: number | null = null;
 
-    const depthNow = readDepthBelowTransducer();
-    // v1.3.1: Check depth quality — frozen/phantom/spike readings treated as unreliable
-    const depthQuality = isDepthReliable(depthNow);
+    // Rev476 (C-05 + C-06 + C-14 + C-19 + C-20): usar el helper único
+    // `_readDepthValidated` (via ref top-level por scope distinto) con offsets
+    // correctos, conflict detection y source priority.
+    const depthValidated = _readDepthValidatedRef ? _readDepthValidatedRef(draft ?? 0) : { vBS: null, vRaw: null, pathUsed: "none", reason: "none" as const };
+    const depthNow = depthValidated.vBS;
+    const depthQuality: { reliable: boolean; reason: string } =
+      depthValidated.reason === "ok"
+        ? { reliable: true, reason: "ok" }
+        : { reliable: false, reason: depthValidated.reason };
     if (!isStopped || !depthQuality.reliable) {
-      // Publish safe status and return — don't evaluate risk with bad data
-      const reasonText = !isStopped ? tr("EN MOVIMIENTO", "UNDERWAY") : 
+      const reasonText = !isStopped ? tr("EN MOVIMIENTO", "UNDERWAY") :
         depthQuality.reason === "frozen" ? tr("SONDA CONGELADA", "SOUNDER FROZEN") :
         depthQuality.reason === "spike" ? tr("SONDA INESTABLE", "SOUNDER UNSTABLE") :
         depthQuality.reason === "null" ? tr("SIN SONDA", "NO SOUNDER") :
         depthQuality.reason === "zero" ? tr("SONDA ERROR", "SOUNDER ERROR") :
-        depthQuality.reason === "absurd" ? tr("SONDA FUERA RANGO", "SOUNDER OUT OF RANGE") : tr("SIN SONDA", "NO SOUNDER");
+        depthQuality.reason === "absurd" ? tr("SONDA FUERA RANGO", "SOUNDER OUT OF RANGE") :
+        depthQuality.reason === "stale" ? tr("SONDA SIN ACTUALIZACION", "DEPTH STALE") :
+        depthQuality.reason === "missing-calibration" ? tr("SONDA SIN CALIBRACION", "DEPTH MISSING CALIBRATION") :
+        depthQuality.reason === "conflict" ? tr("FUENTES SONDA INCOHERENTES", "DEPTH SOURCES CONFLICT") :
+        tr("SIN SONDA", "NO SOUNDER");
       // Rev141: cuando la sonda no es fiable, hay que LIMPIAR las paths de
       // "Sonda mínima esperada" — antes solo se publicaba groundingStatus y
       // los valores numéricos / Resume quedaban con el último cálculo válido.
@@ -8453,6 +10355,54 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
       const d: Delta = { context: ("vessels." + app.selfId) as Context,
         updates: [{ timestamp: now.toISOString() as Timestamp, values: vesselSafe as any }] };
       app.handleMessage(plugin.id, d);
+      // Rev475 paso 8 (C-02): SAFETY LATCH.
+      // Antes (bug grave): si había alarma activa Y datos se vuelven no fiables,
+      // se publicaba state:"normal" SILENCIANDO la alarma. Fallo del sensor =
+      // silencio. Failure mode más peligroso del plugin.
+      // Ahora: si había alarma O latch activo → RETENER. NO publicar normal.
+      const wasInDanger = (lastGroundingNotifState === "alarm") || _safetyLatch.active;
+      if (wasInDanger) {
+        // Activar latch con reasonCode descriptivo
+        const reasonCode = !isStopped ? "MOVEMENT_DETECTED" :
+          (depthQuality.reason === "frozen" ? "DEPTH_FROZEN" :
+          depthQuality.reason === "spike" ? "DEPTH_SPIKE" :
+          depthQuality.reason === "null" ? "DEPTH_MISSING" :
+          depthQuality.reason === "zero" ? "DEPTH_ZERO" :
+          depthQuality.reason === "absurd" ? "DEPTH_ABSURD" :
+          depthQuality.reason === "stale" ? "DEPTH_STALE" :
+          depthQuality.reason === "missing-calibration" ? "MISSING_CALIBRATION" :
+          depthQuality.reason === "conflict" ? "SOURCE_CONFLICT" :
+          "DEPTH_UNRELIABLE");
+        await _activateSafetyLatch(reasonCode);
+        // Publicar alerta DEGRADADA (no normal). Mantiene el zumbador con
+        // mensaje claro de por qué la alarma sigue.
+        const latchMsg = tr(
+          `⚠ RIESGO RETENIDO — ${reasonText}. Sensor degradado durante alarma activa. Volver al fondeo si fue real.`,
+          `⚠ RISK LATCHED — ${reasonText}. Sensor degraded during active alarm. Return to anchor if it was real.`,
+        );
+        const latchNotifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
+          updates: [{ timestamp: now.toISOString() as Timestamp, values: [{
+            path: "notifications.signalk-mareas-ihm.grounding" as any,
+            value: { state: "alert", method: ["visual", "sound"] as string[], message: latchMsg }
+          }]}] };
+        app.handleMessage(plugin.id, latchNotifDelta);
+        lastGroundingNotifState = "alarm"; // mantener
+        // Estado físico: NO sobrescribir con `false`. physicalRisk:null = "unknown".
+        const _grLatched: any = {
+          risk: false, // alarma config-based; el zumbador lo lleva el latch
+          physicalRisk: null, // UNKNOWN, NO false
+          depthNow, depthQuality: depthQuality.reason, enabled,
+          operationalMode,
+          safetyLatchActive: true,
+          safetyLatchReason: _safetyLatch.reasonCode,
+          safetyLatchActivatedAtIso: _safetyLatch.activatedAtIso,
+          updated: now.toISOString(),
+        };
+        _currentGroundingRisk = _grLatched;
+        await _persistSafely("groundingRisk", _grLatched, "latched");
+        return;
+      }
+      // NO había peligro previo: comportamiento normal (publicar normal y reset).
       if (lastGroundingNotifState === "alarm") {
         const clearDelta: Delta = { context: ("vessels." + app.selfId) as Context,
           updates: [{ timestamp: now.toISOString() as Timestamp, values: [{
@@ -8462,9 +10412,9 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
         app.handleMessage(plugin.id, clearDelta);
         lastGroundingNotifState = "cleared";
       }
-      const _gr1 = { risk: false, physicalRisk: false, depthNow, depthQuality: depthQuality.reason, enabled };
-      await ihmCache.set("groundingRisk", _gr1);
-      _currentGroundingRisk = _gr1; // Deploy 3a: mirror
+      const _gr1 = { risk: false, physicalRisk: false, depthNow, depthQuality: depthQuality.reason, enabled, operationalMode };
+      _currentGroundingRisk = _gr1;
+      await _persistSafely("groundingRisk", _gr1, "no-prior-danger");
       return;
     }
     if (depthNow != null && Array.isArray(extremes) && extremes.length >= 2) {
@@ -8548,7 +10498,12 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
     const message = (lang === "en") ? msgEn : msgEs;
 
     // Persist grounding snapshot for the WebApp
-    const groundingRisk = {
+    // Rev475 paso 8 (C-02): chequear si liberar latch.
+    // freshAndSafe = datos completos + physicalRisk explicit false (no null).
+    const freshAndSafe = (depthNow != null && expectedMinDepth != null && physicalRisk === false);
+    await _maybeReleaseSafetyLatch(freshAndSafe);
+
+    const groundingRisk: any = {
       risk: alertRisk,
       physicalRisk,
       enabled,
@@ -8567,9 +10522,16 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
       tz,
       updated: now.toISOString(),
       message,
+      operationalMode,  // Rev475 paso 5 (C-21): "anchored" | "moving" | "unknown"
+      // Rev475 paso 8 (C-02): expose latch state al frontend (info).
+      safetyLatchActive: _safetyLatch.active,
+      safetyLatchReason: _safetyLatch.reasonCode,
+      safetyLatchActivatedAtIso: _safetyLatch.activatedAtIso,
     };
-    await ihmCache.set("groundingRisk", groundingRisk);
-    _currentGroundingRisk = groundingRisk; // Deploy 3a: mirror for SSE state
+    // Rev475 paso 7 (C-27): mirror en memoria PRIMERO, persistir DESPUÉS
+    // best-effort. Si SD readonly, la sesión sigue evaluando correctamente.
+    _currentGroundingRisk = groundingRisk;
+    await _persistSafely("groundingRisk", groundingRisk, "grounding-eval");
 
 
     // Always publish vessel grounding/draft paths (even if alarm disabled) so the user can verify reactivity.
@@ -8745,8 +10707,9 @@ async function updateTides(now = new Date()) {
     isoUtc ? moment.utc(isoUtc).tz(tz).format("YYYY-MM-DDTHH:mm:ssZ") : undefined;
 
       
-      // Evaluate grounding alarm (does not affect tide logic)
-      await evaluateAndPublishGroundingRisk(now, tz, lastForecast.extremes);
+      // Rev475 paso 3 (C-13): single-flight. Antes await directo desde 2 sitios
+      // distintos podia producir resultados pisados. Wrapper garantiza orden.
+      try { await requestGroundingEvaluation(); } catch { /* non-critical */ }
 
 const values: any[] = [
         { path: "environment.tide.stationName" as Path, value: cleanStationName(lastForecast.station.name) },

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IMU Audit · Mareas-IHM</title>
+<style>
+  body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a1929;color:#e0e0e0}
+  h1{margin:0 0 6px;font-size:22px;color:#ffb23f}
+  .sub{font-size:14px;color:#9ad;margin-bottom:18px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+  .card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:14px}
+  .card h2{margin:0 0 10px;font-size:16px;color:#fff;border-bottom:1px solid rgba(255,255,255,.15);padding-bottom:6px}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:14px;border-bottom:1px solid rgba(255,255,255,.05)}
+  .k{color:#9ad;font-weight:600}
+  .v{color:#fff;font-weight:800;font-variant-numeric:tabular-nums;font-family:'SF Mono',Consolas,monospace}
+  .ok{color:#3aa856}
+  .bad{color:#f44336}
+  .warn{color:#ffb23f}
+  .test{background:rgba(154,170,221,.08);border:1px dashed rgba(154,170,221,.4);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:14px}
+  .test b{color:#ffb23f}
+  .test code{background:rgba(0,0,0,.4);padding:1px 6px;border-radius:4px;color:#9f9}
+  .status{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .status.green{background:#3aa856;box-shadow:0 0 8px rgba(58,168,86,.6)}
+  .status.red{background:#f44336;box-shadow:0 0 8px rgba(244,67,54,.6)}
+  .protocol{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:16px;margin-top:20px}
+  .protocol ol{margin:0;padding-left:22px;line-height:1.7}
+  .protocol li{margin-bottom:8px}
+</style>
+</head>
+<body>
+<h1>🛠 IMU Audit · Sprint H V0</h1>
+<div class="sub">Auditoría de signos, frame y sample rate del IMU. Auto-refresh 1 s. Plugin Rev <span id="rev">—</span> · pypilot <span id="pypilot-status">—</span></div>
+
+<div class="grid">
+  <div class="card">
+    <h2>📐 Attitude (pitch / roll / heading)</h2>
+    <div class="row"><span class="k">Samples (30s)</span><span class="v" id="att-samples">—</span></div>
+    <div class="row"><span class="k">Sample rate</span><span class="v" id="att-hz">—</span></div>
+    <div class="row"><span class="k">Pitch mean / last</span><span class="v" id="att-p-mean">—</span></div>
+    <div class="row"><span class="k">Pitch range</span><span class="v" id="att-p-range">—</span></div>
+    <div class="row"><span class="k">Roll mean / last</span><span class="v" id="att-r-mean">—</span></div>
+    <div class="row"><span class="k">Roll range</span><span class="v" id="att-r-range">—</span></div>
+    <div class="row"><span class="k">Heading mean</span><span class="v" id="att-h-mean">—</span></div>
+  </div>
+
+  <div class="card">
+    <h2>📊 Accel (chip-frame, m/s²)</h2>
+    <div class="row"><span class="k">Samples (30s)</span><span class="v" id="acc-samples">—</span></div>
+    <div class="row"><span class="k">Sample rate</span><span class="v" id="acc-hz">—</span></div>
+    <div class="row"><span class="k">X mean / last</span><span class="v" id="acc-x">—</span></div>
+    <div class="row"><span class="k">Y mean / last</span><span class="v" id="acc-y">—</span></div>
+    <div class="row"><span class="k">Z mean / last</span><span class="v" id="acc-z">—</span></div>
+    <div class="row"><span class="k">|g| mean</span><span class="v" id="acc-gmag">—</span></div>
+    <div class="row"><span class="k">+Z hint</span><span class="v" id="acc-zhint" style="font-size:12px">—</span></div>
+  </div>
+
+  <div class="card">
+    <h2>🌀 Gyro (chip-frame, rad/s)</h2>
+    <div class="row"><span class="k">Samples (30s)</span><span class="v" id="gyr-samples">—</span></div>
+    <div class="row"><span class="k">Sample rate</span><span class="v" id="gyr-hz">—</span></div>
+    <div class="row"><span class="k">X mean / std</span><span class="v" id="gyr-x">—</span></div>
+    <div class="row"><span class="k">Y mean / std</span><span class="v" id="gyr-y">—</span></div>
+    <div class="row"><span class="k">Z mean / std</span><span class="v" id="gyr-z">—</span></div>
+  </div>
+
+  <div class="card">
+    <h2>✅ Checks automáticos</h2>
+    <div class="row"><span class="k">Sample rate ≥ 8 Hz</span><span class="v" id="chk-hz">—</span></div>
+    <div class="row"><span class="k">Bias pitch &lt; 1.5°</span><span class="v" id="chk-pbias">—</span></div>
+    <div class="row"><span class="k">Bias roll &lt; 1.5°</span><span class="v" id="chk-rbias">—</span></div>
+    <div class="row"><span class="k">|g| en rango (9.0–10.5)</span><span class="v" id="chk-g">—</span></div>
+    <div class="row"><span class="k">Attitude compensado?</span><span class="v" id="chk-att" style="font-size:12px">—</span></div>
+  </div>
+</div>
+
+<div class="protocol">
+  <h2 style="margin:0 0 10px;font-size:16px;color:#ffb23f">📋 Protocolo de test físico</h2>
+  <p style="margin:0 0 10px;color:#ccc;font-size:14px">Haz cada paso y apunta los valores. Con esto sabré exactamente la convención antes de programar la Fase V1.</p>
+  <ol>
+    <li><b>Test 1 · Barco quieto, IMU en su sitio</b><br>
+      Espera 30 s sin tocar nada → todos los checks de arriba verdes. Si <code>pitch mean</code> o <code>roll mean</code> son distintos de 0 con barco realmente quieto, el chip está rotado o la calibración "boat is level" está mal.</li>
+    <li><b>Test 2 · Cargar la proa</b><br>
+      Alguien camina hacia proa → ¿el <code>pitch mean</code> sube o baja? Apunta el signo. (Sabremos si "+pitch = bow up" o "-pitch = bow up".)</li>
+    <li><b>Test 3 · Cargar banda de estribor</b><br>
+      Alguien camina a estribor → ¿el <code>roll mean</code> sube o baja? Apunta el signo. (Sabremos si "+roll = heel stbd" o al revés.)</li>
+    <li><b>Test 4 · Coger la Pi en la mano, moverla arriba-abajo</b> (sin rotarla)<br>
+      Mira <code>Z last</code> mientras la mueves. Esperado: el módulo medio se mantiene ~9.81; los picos de Z aparecen al acelerar arriba/abajo. Anota qué signo corresponde a "subiendo".</li>
+    <li><b>Test 5 · Coger la Pi en la mano, rotarla en horizontal</b><br>
+      Mira <code>|g| mean</code> — debe seguir siendo ~9.81 incluso aunque X/Y/Z cambien. Si se desvía mucho, el sensor está descalibrado.</li>
+  </ol>
+  <p style="color:#ccc;font-size:13px;margin-top:14px">📨 Cuando tengas todos los datos, dímelo y empiezo Sprint H V1 con la convención correcta.</p>
+</div>
+
+<script>
+function fmt(v, d){ return (v == null || !isFinite(v)) ? '—' : Number(v).toFixed(d == null ? 2 : d); }
+function tick(v){ return v ? '<span class="status green"></span><span class="ok">OK</span>' : '<span class="status red"></span><span class="bad">FAIL</span>'; }
+function load(){
+  fetch('/signalk-mareas-ihm/api/imu/debug', {cache:'no-store'}).then(r => r.ok ? r.json() : null).then(j => {
+    if (!j) return;
+    document.getElementById('rev').textContent = j.pluginRev || '?';
+    document.getElementById('pypilot-status').innerHTML = j.pypilotConnected
+      ? '<span class="status green"></span><span class="ok">conectado</span>'
+      : '<span class="status red"></span><span class="bad">desconectado</span>';
+    var a = j.attitude || {};
+    document.getElementById('att-samples').textContent = a.samples || 0;
+    document.getElementById('att-hz').innerHTML = fmt(a.hz10s, 1) + ' Hz';
+    if (a.pitchDeg) {
+      document.getElementById('att-p-mean').textContent = fmt(a.pitchDeg.mean) + '° / ' + fmt(a.pitchDeg.last) + '°';
+      document.getElementById('att-p-range').textContent = fmt(a.pitchDeg.min) + '° … ' + fmt(a.pitchDeg.max) + '°';
+    }
+    if (a.rollDeg) {
+      document.getElementById('att-r-mean').textContent = fmt(a.rollDeg.mean) + '° / ' + fmt(a.rollDeg.last) + '°';
+      document.getElementById('att-r-range').textContent = fmt(a.rollDeg.min) + '° … ' + fmt(a.rollDeg.max) + '°';
+    }
+    if (a.headingDeg) {
+      document.getElementById('att-h-mean').textContent = fmt(a.headingDeg.mean, 0) + '°';
+    }
+    var ac = j.accel || {};
+    document.getElementById('acc-samples').textContent = ac.samples || 0;
+    document.getElementById('acc-hz').textContent = fmt(ac.hz10s, 1) + ' Hz';
+    if (ac.x) document.getElementById('acc-x').textContent = fmt(ac.x.mean) + ' / ' + fmt(ac.x.last);
+    if (ac.y) document.getElementById('acc-y').textContent = fmt(ac.y.mean) + ' / ' + fmt(ac.y.last);
+    if (ac.z) document.getElementById('acc-z').textContent = fmt(ac.z.mean) + ' / ' + fmt(ac.z.last);
+    document.getElementById('acc-gmag').textContent = fmt(ac.gMagMean, 3) + ' m/s²';
+    document.getElementById('acc-zhint').textContent = ac.zSignHint || '—';
+    var g = j.gyro || {};
+    document.getElementById('gyr-samples').textContent = g.samples || 0;
+    document.getElementById('gyr-hz').textContent = fmt(g.hz10s, 1) + ' Hz';
+    if (g.x) document.getElementById('gyr-x').textContent = fmt(g.x.mean, 4) + ' / σ ' + fmt(g.x.std, 4);
+    if (g.y) document.getElementById('gyr-y').textContent = fmt(g.y.mean, 4) + ' / σ ' + fmt(g.y.std, 4);
+    if (g.z) document.getElementById('gyr-z').textContent = fmt(g.z.mean, 4) + ' / σ ' + fmt(g.z.std, 4);
+    var i = j.interpretation || {};
+    document.getElementById('chk-hz').innerHTML = tick(i.sampleRate_ok);
+    document.getElementById('chk-pbias').innerHTML = tick(i.bias_pitch_ok);
+    document.getElementById('chk-rbias').innerHTML = tick(i.bias_roll_ok);
+    document.getElementById('chk-g').innerHTML = tick(i.gravity_ok);
+    document.getElementById('chk-att').textContent = i.attitudeIsCompensated_hint || '—';
+  }).catch(function(){});
+}
+setInterval(load, 1000);
+load();
+</script>
+</body>
+</html>

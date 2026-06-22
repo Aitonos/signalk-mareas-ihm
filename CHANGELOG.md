@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.2.2] - 2026-06-20
+
+### English
+
+- **Fix:** `tests/` directory now included in the published npm tarball via `files[]`. In 2.2.1 the `npm test` script was declared but the test files themselves were excluded, so the Signal K Plugin Registry could not detect any tests and showed the "no plugin-level tests provided" warning. This release ships the suite inside the package so `npm test` runs from the installed tarball.
+
+### Español
+
+- **Corrección:** el directorio `tests/` ahora va dentro del tarball npm publicado (añadido a `files[]`). En 2.2.1 declaramos el script `npm test` pero los archivos de test no viajaban en el paquete, así que el Signal K Plugin Registry no detectaba ninguno y mostraba el aviso "no plugin-level tests provided". Esta versión incluye la suite dentro del paquete para que `npm test` se ejecute desde el tarball instalado.
+
 ## [2.2.1] - 2026-06-20
 
 ### English

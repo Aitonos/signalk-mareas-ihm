@@ -1,7 +1,7 @@
 {
   "name": "signalk-mareas-ihm",
-  "version": "2.2.1",
-  "description": "Advanced anchor watch manager for Signal K — user-friendly UI, multi-layer charts and transparencies (online and offline), AIS anti-collision surveillance, multi-device ringing alarms (drift, AIS, grounding, weather), shelter forecast and assessment, on-board wave measurement, IHM Spain tides, and much more!",
+  "version": "2.2.2",
+  "description": "User-friendly UI, multi-layer charts and transparencies (online and offline), AIS anti-collision surveillance, multi-device ringing alarms (drift, AIS, grounding, weather), shelter forecast and assessment.",
   "type": "module",
   "main": "./dist/index.js",
   "exports": "./dist/index.js",
@@ -21,6 +21,9 @@
     "signalk-category-weather",
     "signalk-category-utility",
     "signalk-category-instruments",
+    "signalk-category-ais",
+    "signalk-category-notifications",
+    "signalk-category-chart-plotters",
     "signalk-plugin",
     "anchor",
     "anchor-watch",
@@ -135,7 +138,7 @@
   "signalk-plugin-enabled-by-default": true,
   "signalk": {
     "appIcon": "./icon.svg",
-    "displayName": "Mareas – IHM",
+    "displayName": "AnchorWatch Pro: Smart Anchoring, AIS & Tides",
     "webapp": "./public",
     "screenshots": [
       "./screenshots/01_main.jpg",
@@ -143,16 +146,14 @@
       "./screenshots/03_mobile.jpg",
       "./screenshots/04_mobile.jpg",
       "./screenshots/05_mobile.jpg",
-      "./screenshots/06_mobile.jpg",
-      "./screenshots/07_mobile.jpg",
-      "./screenshots/08_mobile.jpg",
-      "./screenshots/09_mobile.jpg"
+      "./screenshots/06_mobile.jpg"
     ]
   },
   "files": [
     "dist/",
     "public/",
     "screenshots/",
+    "tests/",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",

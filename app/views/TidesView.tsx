@@ -54,6 +54,18 @@ function fmtDecimal(value: number, decimals = 2): string {
   return value.toFixed(decimals).replace(".", ",");
 }
 
+// Rev431: helper top-level para formato de altura de marea segun units configurados.
+// Devuelve "X,XX m" (metric) o "X.XX ft" (imperial). Util tanto en TidesView
+// principal como en sub-componentes (TideChartModal). Pasado como prop a sub.
+function makeFmtTideHeight(units: string): (m: number | null | undefined, decimals?: number) => string {
+  const isImperial = (units || "metric_nautical").indexOf("imperial") === 0;
+  return (m, decimals = 2) => {
+    if (m == null || !Number.isFinite(m)) return "–";
+    if (isImperial) return (m * 3.28084).toFixed(decimals) + " ft";
+    return m.toFixed(decimals).replace(".", ",") + " m";
+  };
+}
+
 function easeSine(progress: number) {
   return (1 - Math.cos(progress * Math.PI)) / 2;
 }
@@ -79,7 +91,7 @@ function findPrevNext(extremes: { time: string; value: number; type?: string }[]
 type StationInfo = { id: string; name: string; inRange?: boolean; distance?: number | null; tz?: string; synthetic?: boolean };
 
 // ===== v1.129: TIDE CHART MODAL =====
-function TideChartModal({ extremes, now, heightNow, riskTimeIso, stationSampleIso, stationName, onClose, tr }: {
+function TideChartModal({ extremes, now, heightNow, riskTimeIso, stationSampleIso, stationName, onClose, tr, fmtH }: {
   extremes: { time: string; value: number; type?: string }[];
   now: Date;
   heightNow: number;
@@ -88,6 +100,7 @@ function TideChartModal({ extremes, now, heightNow, riskTimeIso, stationSampleIs
   stationName?: string;
   onClose: () => void;
   tr: (es: string, en: string) => string;
+  fmtH: (m: number | null | undefined, decimals?: number) => string;
 }) {
   const [cursor, setCursor] = useState<{ x: number; time: Date; height: number } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -184,7 +197,7 @@ function TideChartModal({ extremes, now, heightNow, riskTimeIso, stationSampleIs
           {hGrids.map(h => (
             <g key={h}>
               <line x1={PAD_L} y1={toY(h)} x2={W - PAD_R} y2={toY(h)} stroke="#e0e0e0" strokeWidth="0.5" />
-              <text x={PAD_L - 5} y={toY(h) + 3.5} textAnchor="end" fontSize="10" fill="#666">{h.toFixed(1)}m</text>
+              <text x={PAD_L - 5} y={toY(h) + 3.5} textAnchor="end" fontSize="10" fill="#666">{fmtH(h, 1)}</text>
             </g>
           ))}
 
@@ -203,7 +216,7 @@ function TideChartModal({ extremes, now, heightNow, riskTimeIso, stationSampleIs
           <circle cx={nowX} cy={nowY} r="4.5" fill="#333" stroke="#fff" strokeWidth="1" />
           <rect x={nowX - 70} y={Math.max(PAD_T, nowY - 34)} width="140" height="24" rx="4" fill="rgba(0,0,0,0.8)" />
           <text x={nowX} y={Math.max(PAD_T + 15, nowY - 18)} textAnchor="middle" fontSize="11" fill="#fff" fontWeight="bold">
-            {tr("AHORA", "NOW")}: {fmtLocal(now.getTime())} {heightNow.toFixed(2)}m
+            {tr("AHORA", "NOW")}: {fmtLocal(now.getTime())} {fmtH(heightNow, 2)}
           </text>
 
           {/* Extreme dots */}
@@ -214,7 +227,7 @@ function TideChartModal({ extremes, now, heightNow, riskTimeIso, stationSampleIs
               <g key={i}>
                 <circle cx={toX(t)} cy={toY(e.value)} r="5" fill={isHigh ? "#28a745" : "#dc3545"} stroke="#fff" strokeWidth="1.5" />
                 <text x={toX(t)} y={toY(e.value) + (isHigh ? -10 : 14)} textAnchor="middle" fontSize="9" fontWeight="bold" fill={isHigh ? "#28a745" : "#dc3545"}>
-                  {e.value.toFixed(2)}m {fmtLocal(t)}
+                  {fmtH(e.value, 2)} {fmtLocal(t)}
                 </text>
               </g>
             );
@@ -227,7 +240,7 @@ function TideChartModal({ extremes, now, heightNow, riskTimeIso, stationSampleIs
               <circle cx={cursor.x} cy={toY(cursor.height)} r="5" fill="#f59e0b" stroke="#fff" strokeWidth="1.5" />
               <rect x={Math.min(Math.max(cursor.x - 45, PAD_L), W - PAD_R - 95)} y={toY(cursor.height) - 28} width="95" height="20" rx="3" fill="rgba(0,0,0,0.85)" />
               <text x={Math.min(Math.max(cursor.x, PAD_L + 48), W - PAD_R - 48)} y={toY(cursor.height) - 13} textAnchor="middle" fontSize="10" fill="#fff" fontWeight="bold">
-                {fmtLocal(cursor.time.getTime())} — {cursor.height.toFixed(2)}m
+                {fmtLocal(cursor.time.getTime())} — {fmtH(cursor.height, 2)}
               </text>
             </g>
           )}
@@ -361,7 +374,13 @@ function useAutoReloadOnBuildChange() {
 
 export default function TidesView() {
   type UiLang = "en" | "es";
+  type UnitSystem = "metric" | "metric_nautical" | "imperial_us" | "imperial_us_nautical" | "imperial_uk" | "imperial_uk_nautical";
   const [lang, setLang] = useState<UiLang>("es");
+  const [units, setUnits] = useState<UnitSystem>("metric_nautical");
+  // Rev431: helper de formato de altura (m / ft) consistente con visor mobile.
+  const fmtTideHeight = useMemo(() => makeFmtTideHeight(units), [units]);
+  const isImperialUnits = units.indexOf("imperial") === 0;
+  const labelDepth = isImperialUnits ? "ft" : "m";
   useAutoReloadOnBuildChange();
   const { snapshot, forecast, error, refetch } = useTideData(30);
   const [allStations, setAllStations] = useState<StationInfo[]>([]);
@@ -592,19 +611,23 @@ export default function TidesView() {
         qHadLang = true;
       }
     } catch { /* ignore */ }
-    if (!qHadLang) {
-      (async () => {
-        try {
-          const r = await fetch(SETTINGS_URL, { cache: "no-store" });
-          if (!r.ok) return;
-          const js = await r.json();
+    // Rev431: cargar siempre units desde backend (no dependiente del query lang).
+    (async () => {
+      try {
+        const r = await fetch(SETTINGS_URL, { cache: "no-store" });
+        if (!r.ok) return;
+        const js = await r.json();
+        if (!qHadLang) {
           const l = String(js?.lang ?? "").toLowerCase();
           if (alive && (l === "es" || l === "en")) setLang(l);
-        } catch {
-          // ignore
         }
-      })();
-    }
+        const u = String(js?.units ?? "").toLowerCase();
+        const valid: UnitSystem[] = ["metric","metric_nautical","imperial_us","imperial_us_nautical","imperial_uk","imperial_uk_nautical"];
+        if (alive && (valid as string[]).indexOf(u) >= 0) setUnits(u as UnitSystem);
+      } catch {
+        // ignore
+      }
+    })();
     return () => {
       alive = false;
     };
@@ -934,7 +957,7 @@ const disableAlarm = async () => {
   })();
   const deltaText = delta10m != null ? `${delta10m >= 0 ? "+" : ""}${Math.round(delta10m * 100)} cm` : "–";
   const statusText = tendency
-    ? `${tendency === "rising" ? tr("SUBIENDO", "RISING") : tr("BAJANDO", "FALLING")} ${tr("DESDE", "SINCE")} ${fmtDecimal(prevHeight)} m ${tr("A LAS", "AT")} ${prevTime}`
+    ? `${tendency === "rising" ? tr("SUBIENDO", "RISING") : tr("BAJANDO", "FALLING")} ${tr("DESDE", "SINCE")} ${fmtTideHeight(prevHeight, 2)} ${tr("A LAS", "AT")} ${prevTime}`
     : tr("SIN DATOS", "NO DATA");
   const statusClass = tendency === "rising" ? "tide-status up" : tendency === "falling" ? "tide-status down" : "tide-status neutral";
 
@@ -1169,7 +1192,7 @@ const disableAlarm = async () => {
               {tendency === "rising" && <div className="trend-arrow up" />}
               <div className="tide-box now-box" ref={nowBoxRef}>
                 <div className="box-title now">{tr("AHORA", "NOW")} ({fmtNowByStationOffset(now, nextHigh?.time ?? nextLow?.time) ?? fmtIsoUtcByStationOffset(snapshot?.navDatetime, nextHigh?.time ?? nextLow?.time)})</div>
-                <div className="box-value now">{Number.isFinite(heightNow) ? `${fmtDecimal(heightNow)} m` : "– m"}</div>
+                <div className="box-value now">{Number.isFinite(heightNow) ? fmtTideHeight(heightNow, 2) : "–"}</div>
                 <div className="box-delta">{tr("EN 10 MIN", "IN 10 MIN")}: {deltaText}</div>
               </div>
               {tendency === "falling" && <div className="trend-arrow down" />}
@@ -1227,7 +1250,7 @@ const disableAlarm = async () => {
               <div className="tide-line-vert high" style={{ top: `${highGeom.lineTop}px`, height: `${highGeom.lineHeight}px` }} />
             )}
                 <div className="tide-box-wrapper high-wrapper" style={{ top: `${highGeom.top}px` }}>
-                  <div className="tide-box high-box" ref={highBoxRef}><div className="box-title high">{tr("PRÓX. PLEAMAR", "NEXT HIGH")}</div><div className="box-value high">{fmtDecimal(nextHigh.value)} m</div><div className="box-when">{tr("A las", "At")} {fmtHHMMFromIso(nextHigh.time)}</div></div>
+                  <div className="tide-box high-box" ref={highBoxRef}><div className="box-title high">{tr("PRÓX. PLEAMAR", "NEXT HIGH")}</div><div className="box-value high">{fmtTideHeight(nextHigh.value, 2)}</div><div className="box-when">{tr("A las", "At")} {fmtHHMMFromIso(nextHigh.time)}</div></div>
                 </div>
               </>
             )}
@@ -1238,7 +1261,7 @@ const disableAlarm = async () => {
               <div className="tide-line-vert low" style={{ top: `${lowGeom.lineTop}px`, height: `${lowGeom.lineHeight}px` }} />
             )}
                 <div className="tide-box-wrapper low-wrapper" style={{ top: `${lowGeom.top}px` }}>
-                  <div className="tide-box low-box" ref={lowBoxRef}><div className="box-title low">{tr("PRÓX. BAJAMAR", "NEXT LOW")}</div><div className="box-value low">{fmtDecimal(nextLow.value)} m</div><div className="box-when">{tr("A las", "At")} {fmtHHMMFromIso(nextLow.time)}</div></div>
+                  <div className="tide-box low-box" ref={lowBoxRef}><div className="box-title low">{tr("PRÓX. BAJAMAR", "NEXT LOW")}</div><div className="box-value low">{fmtTideHeight(nextLow.value, 2)}</div><div className="box-when">{tr("A las", "At")} {fmtHHMMFromIso(nextLow.time)}</div></div>
                 </div>
               </>
             )}
@@ -2266,7 +2289,7 @@ const disableAlarm = async () => {
               <label>{tr("Altura roldana sobre el agua", "Bow roller height above water")}</label>
               <div className="anchor-input-row">
                 <input type="number" min="0" max="10" step="0.1" value={hBowStr} onChange={(e) => { setHBowStr(e.target.value); const v = parseFloat(e.target.value); if (Number.isFinite(v)) setAnchorCfg((p) => ({ ...p, hBowMeters: v })); }} onBlur={() => { const v = parseFloat(hBowStr); if (!Number.isFinite(v) || v < 0) { setHBowStr(""); setAnchorCfg((p) => ({ ...p, hBowMeters: 0 })); } }} placeholder="ej: 1.2" />
-                <span className="anchor-unit">m</span>
+                <span className="anchor-unit">{labelDepth}</span>
               </div>
             </div>
             <div className="anchor-field">
@@ -2282,7 +2305,7 @@ const disableAlarm = async () => {
               <label>{tr("Introduce manualmente la profundidad", "Enter depth manually")}</label>
               <div className="anchor-input-row">
                 <input type="number" min="0" max="100" step="0.1" className="anchor-input-wide" value={anchorDepthManual} onChange={(e) => setAnchorDepthManual(e.target.value)} placeholder={tr("SOLO SI NO HAY DATO SONDA", "ONLY IF NO SOUNDER DATA")} />
-                <span className="anchor-unit">m</span>
+                <span className="anchor-unit">{labelDepth}</span>
               </div>
             </div>
             <div className="anchor-field">
@@ -2327,40 +2350,40 @@ const disableAlarm = async () => {
                       setEditingChain(false);
                     }}
                     style={{ width: '60px', background: 'rgba(255,255,255,0.15)', border: '1px solid #ff9800', borderRadius: '4px', color: '#fff', textAlign: 'center', fontSize: '18px', padding: '2px' }} />
-                  <span style={{ fontSize: '18px', fontWeight: 700 }}>m</span>
+                  <span style={{ fontSize: '18px', fontWeight: 700 }}>{labelDepth}</span>
                 </div>
               ) : (
-                <span className="anchor-rbox-value">{chainDeployedVal ? `${chainDeployedVal} m` : `${anchorResult.chainL} m`}</span>
+                <span className="anchor-rbox-value">{chainDeployedVal ? fmtTideHeight(chainDeployedVal, 0) : fmtTideHeight(anchorResult.chainL, 0)}</span>
               )}
               <span style={{ position: 'absolute', bottom: '3px', right: '6px', fontSize: '23px', opacity: 0.9, fontWeight: 700, color: '#ffb74d' }}>
-                {chainDeployedVal ? `rec: ${anchorResult.chainL}m` : tr("pulsa para editar", "tap to edit")}
+                {chainDeployedVal ? `rec: ${fmtTideHeight(anchorResult.chainL, 0)}` : tr("pulsa para editar", "tap to edit")}
               </span>
             </div>
             <div className="anchor-rbox anchor-rbox-highlight">
               <span className="anchor-rbox-label">🌊 {tr("Profundidad ahora", "Depth now")}</span>
-              <span className="anchor-rbox-value">{anchorResult.dNow?.toFixed(2) ?? "–"} m</span>
+              <span className="anchor-rbox-value">{fmtTideHeight(anchorResult.dNow, 2)}</span>
               {anchorResult.depthPathUsed && <span style={{ fontSize: '10px', opacity: 0.5 }}>{anchorResult.depthPathUsed === "none" ? tr("⚠ manual", "⚠ manual") : "SK ✓"}</span>}
             </div>
 
             {/* Row 2 */}
             <div className="anchor-rbox">
               <span className="anchor-rbox-label">📈 {tr("Profundidad máxima", "Max depth")}</span>
-              <span className="anchor-rbox-value">{anchorResult.depthMax?.toFixed(2) ?? "–"} m</span>
+              <span className="anchor-rbox-value">{fmtTideHeight(anchorResult.depthMax, 2)}</span>
             </div>
             <div className={`anchor-rbox${anchorResult.draftEffective != null && anchorResult.depthMin != null && anchorResult.depthMin < anchorResult.draftEffective ? " anchor-rbox-danger" : ""}`}>
               <span className="anchor-rbox-label">📉 {tr("Profundidad mínima", "Min depth")}</span>
-              <span className="anchor-rbox-value">{anchorResult.depthMin?.toFixed(2) ?? "–"} m</span>
-              {anchorResult.draftEffective != null && anchorResult.depthMin != null && anchorResult.depthMin < anchorResult.draftEffective && <span className="anchor-rbox-alert">⚠ &lt; {tr("calado ef.", "eff. draft")} {anchorResult.draftEffective}m</span>}
+              <span className="anchor-rbox-value">{fmtTideHeight(anchorResult.depthMin, 2)}</span>
+              {anchorResult.draftEffective != null && anchorResult.depthMin != null && anchorResult.depthMin < anchorResult.draftEffective && <span className="anchor-rbox-alert">⚠ &lt; {tr("calado ef.", "eff. draft")} {fmtTideHeight(anchorResult.draftEffective, 2)}</span>}
             </div>
 
             {/* Row 3 */}
             <div className="anchor-rbox">
               <span className="anchor-rbox-label">↔ {tr("Radio de borneo ahora", "Swing radius now")}</span>
-              <span className="anchor-rbox-value">{anchorResult.swingRadiusNow ?? anchorResult.swingRadiusMax} m</span>
+              <span className="anchor-rbox-value">{fmtTideHeight(anchorResult.swingRadiusNow ?? anchorResult.swingRadiusMax, 1)}</span>
             </div>
             <div className="anchor-rbox">
               <span className="anchor-rbox-label">↔ {tr("Radio de borneo máximo", "Max swing radius")}</span>
-              <span className="anchor-rbox-value">{anchorResult.swingRadiusMax} m</span>
+              <span className="anchor-rbox-value">{fmtTideHeight(anchorResult.swingRadiusMax, 1)}</span>
             </div>
 
             {/* Row 4 */}
@@ -2407,6 +2430,7 @@ const disableAlarm = async () => {
         stationName={snapshot?.stationName ?? ""}
         onClose={() => setShowTideChart(false)}
         tr={tr}
+        fmtH={fmtTideHeight}
       />
     )}
     </>
