@@ -105,7 +105,7 @@
     "better-sqlite3": "^11.0.0",
     "leaflet": "^1.9.4",
     "moment-timezone": "^0.6.2",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
