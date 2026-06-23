@@ -1,5 +1,49 @@
 # Changelog
 
+## [2.3.1] - 2026-06-23
+
+### English
+
+**Skipper feedback round 1 (Vicente / Tunatunes Vigo)**
+
+- **New bottom-bar widget "Drop to LW"** — large number = how many centimetres the tide will drop until the next low water (negative). Sub-label = expected final depth. Visible permanently (not only on grounding alert). Lets you decide whether to anchor with enough margin.
+- **New bottom-bar widget "At LW"** — large number = expected depth at next low water (consistent with the main SONDA cell, raw sensor reference, not below-surface). Sub-label = LW time. Amber if <2m, red if <1m.
+- **Depth cell sub-label rewritten** — now compact "(final X.X m)" in parentheses below the depth reading. Coherent with the new widgets above.
+- **Bottom-bar config bug fixed** — disabling and re-enabling cells in the config UI now actually persists. The backend whitelist was filtering out new keys silently.
+- **Left arrow of bottom-bar always visible** when the bar is open, matching the right arrow. Previously the left arrow hid when no horizontal scroll was available, getting covered by the bar.
+
+**Signal K data hygiene (skipper feedback)**
+
+- `environment.tide.vessel.finalExpctDepthBKeel` — **fixed historic bug**: the path name said "below keel" but the value was actually "below surface" (off by the boat's draft). Now finally publishes the real below-keel value.
+- `environment.tide.finalExpctDepthBKeelResume` — same fix applied to the text summary "Min. depth X m at HH:MM".
+- New: `environment.tide.expectedDropToLW` (m) — how much the tide will drop until next low water.
+- New: `environment.depth.belowKeelExpectedAtLW` (m) — expected depth under keel at next LW.
+- Removed `environment.depth.belowSurfaceExpectedAtLW` (it was confusing — skipper asked for below-keel only).
+
+**Dep hygiene**
+- `@signalk/server-api` range tagged with explicit patch `^2.0.0` (was `^2.0`) — cosmetic, fixes Socket.dev "floating dependency" warning. NPM resolution unchanged.
+
+### Español
+
+**Feedback navegante ronda 1 (Vicente / Tunatunes Vigo)**
+
+- **Nuevo widget bottom-bar "Dif. Bajamar"** — número grande = cuántos centímetros bajará la marea hasta la próxima bajamar (negativo). Sub-label = profundidad final esperada. Visible permanentemente (no solo cuando hay alerta de varada). Permite decidir si fondear con margen suficiente.
+- **Nuevo widget bottom-bar "En B.M."** — número grande = profundidad esperada en la próxima bajamar (coherente con la celda SONDA principal, referencia del sensor crudo, no bajo superficie). Sub-label = hora de la bajamar. Ámbar si <2m, rojo si <1m.
+- **Sub-label de la celda Sonda reescrito** — ahora compacto "(final X.X m)" entre paréntesis bajo el valor de sonda. Coherente con los nuevos widgets.
+- **Bug del config del bottom-bar arreglado** — desactivar y reactivar celdas en el config UI ahora persiste de verdad. El backend filtraba silenciosamente las claves nuevas.
+- **Flecha izquierda del bottom-bar siempre visible** cuando la barra está abierta, igual que la derecha. Antes solo aparecía si había scroll horizontal posible, quedando tapada por la barra.
+
+**Limpieza de datos en Signal K (feedback navegante)**
+
+- `environment.tide.vessel.finalExpctDepthBKeel` — **bug histórico corregido**: el nombre del path decía "bajo quilla" pero el valor era "bajo superficie" (desfase = calado del barco). Ahora por fin publica el valor real bajo quilla.
+- `environment.tide.finalExpctDepthBKeelResume` — el mismo fix aplicado al resumen textual "Prof. mínima X m a las HH:MM".
+- Nuevo: `environment.tide.expectedDropToLW` (m) — cuánto bajará la marea hasta la próxima bajamar.
+- Nuevo: `environment.depth.belowKeelExpectedAtLW` (m) — sonda esperada bajo quilla en la próxima bajamar.
+- Eliminado `environment.depth.belowSurfaceExpectedAtLW` (creaba confusión — el navegante pidió solo bajo quilla).
+
+**Limpieza de deps**
+- `@signalk/server-api` rango etiquetado con patch explícito `^2.0.0` (antes `^2.0`) — cosmético, resuelve el aviso "floating dependency" de Socket.dev. Resolución de NPM idéntica.
+
 ## [2.3.0] - 2026-06-22
 
 ### English

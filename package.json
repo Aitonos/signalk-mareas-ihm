@@ -1,6 +1,6 @@
 {
   "name": "signalk-mareas-ihm",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "User-friendly UI, multi-layer charts and transparencies (online and offline), AIS anti-collision surveillance, multi-device ringing alarms (drift, AIS, grounding, weather), shelter forecast and assessment.",
   "type": "module",
   "main": "./dist/index.js",
