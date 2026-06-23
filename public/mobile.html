@@ -348,7 +348,23 @@ body.wx-bar-active #approach-bar{bottom:60px;left:50%;transform:translateX(-50%)
 #ais-alarm-panel #ais-alarm-list{flex:1 1 auto;overflow-y:auto;min-height:0}
 #ais-alarm-panel .ais-panel-header{flex:0 0 auto}
 #ais-alarm-panel.borneo-alert{border-color:var(--red)}
-#ais-alarm-panel h5{color:#fff;margin-bottom:4px;font-size:14px}
+/* Rev496 (feedback Vicente): h5 VUELVE al tamano original 14px. Lo que se
+   sube es el .m-title del header inyectado (faldon naranja superior, 32→36px).
+   El h5 sigue siendo flex para acomodar los toggles, pero su font-size es
+   el original. */
+#ais-alarm-panel h5{color:#fff;margin-bottom:4px;font-size:14px;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+/* Toggles compactos a la derecha. */
+#ais-alarm-panel h5 .ais-hdr-toggles{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600}
+#ais-alarm-panel h5 .ais-hdr-toggles label{display:inline-flex;align-items:center;gap:3px;cursor:pointer;color:#cfd8dc;padding:2px 5px;border-radius:5px;border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.25);user-select:none}
+#ais-alarm-panel h5 .ais-hdr-toggles label:hover{background:rgba(255,255,255,.08)}
+#ais-alarm-panel h5 .ais-hdr-toggles input[type=checkbox]{margin:0;cursor:pointer;accent-color:#3aa856;width:14px;height:14px}
+#ais-alarm-panel h5 .ais-hdr-toggles label.off{opacity:.5}
+/* Rev500: Tracks queda visualmente gris/disabled si AIS (maestro) esta OFF. */
+#ais-alarm-panel h5 .ais-hdr-toggles label.locked{opacity:.3;cursor:not-allowed;filter:grayscale(1)}
+#ais-alarm-panel h5 .ais-hdr-toggles label.locked input{cursor:not-allowed}
+/* Rev497: titulo del header inyectado (faldon naranja) ajustado a 34px
+   (Vicente lo encontro demasiado grande a 36, +2 sobre 32). */
+body.mobile-ui #ais-alarm-panel .m-modal-hdr .m-title{font-size:34px!important}
 #ais-alarm-panel.borneo-alert h5{color:var(--red)}
 .ais-alert-item{font-size:14px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-between;cursor:pointer}
 .ais-collapsed{max-height:0!important;overflow:hidden!important;padding:0!important;margin:0!important}
@@ -2403,7 +2419,11 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
   <div class="ap-cell ap-falta-cell" id="ap-falta-cell" style="display:none"><span class="ap-falta-lbl">⚠ <span data-i18n="faltan">FALTAN</span></span><span class="ap-falta-val" id="ap-falta-val">–</span></div>
   <div class="ap-cell ap-risk-cell" id="ap-risk-cell" style="display:none"><span class="ap-risk-label" id="ap-risk-text">–</span></div>
 </div>
-<div id="ais-alarm-panel"><!-- Rev400: header agrupado (titulo + slider + sort+filtro) FIJO. Solo la lista scrolea. Tamaños touch (CSS aplica las !important). --><div class="ais-panel-header"><h5 onclick="document.getElementById('ais-alarm-list').classList.toggle('ais-collapsed')" style="cursor:pointer;margin:0"><span id="ais-panel-title" data-i18n="ais_zona">⚠ AIS en zona</span> (<span id="ais-total-count">0</span>) <span id="ais-borneo-badge" style="display:none;color:var(--red);font-weight:700"> | 🔴 <span id="ais-borneo-label">Colisión:</span> <span id="ais-borneo-count">0</span></span> <span style="float:right;font-size:11px;color:#888">▼</span></h5><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_radio_lbl">Radio:</span><input type="range" id="ais-radius-slider" min="0.5" max="50" step="0.5" value="5" style="flex:1" oninput="_setAisRadius(this.value)"><span id="ais-radius-val" style="min-width:60px;text-align:right;font-weight:700;color:#fff">5 km</span></div><!-- Rev400: linea de ordenar+filtro mitad/mitad del ancho. --><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_sort_lbl" style="flex:0 0 auto">Ordenar:</span><select id="ais-sort-by" onchange="_setAisSort(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"><option value="dist" data-i18n="ais_sort_dist">Distancia</option><option value="name" data-i18n="ais_sort_name">Nombre</option><option value="fav" data-i18n="ais_sort_fav">Favoritos</option><option value="mmsi" data-i18n="ais_sort_mmsi">MMSI</option><option value="type" data-i18n="ais_sort_type">Tipo</option></select><input type="text" id="ais-filter-txt" placeholder="🔎" data-i18n-placeholder="ais_filter_ph" oninput="_setAisFilter(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"></div></div><div id="ais-alarm-list"></div></div>
+<div id="ais-alarm-panel"><!-- Rev400: header agrupado (titulo + slider + sort+filtro) FIJO. Solo la lista scrolea. Tamaños touch (CSS aplica las !important). --><div class="ais-panel-header"><h5 onclick="document.getElementById('ais-alarm-list').classList.toggle('ais-collapsed')" style="cursor:pointer;margin:0"><span id="ais-panel-title" data-i18n="ais_zona">⚠ AIS en zona</span> (<span id="ais-total-count">0</span>) <span id="ais-borneo-badge" style="display:none;color:var(--red);font-weight:700"> | 🔴 <span id="ais-borneo-label">Colisión:</span> <span id="ais-borneo-count">0</span></span><!-- Rev495 (feedback Vicente): 3 toggles independientes en el header.
+     AIS    = solo iconos de targets en mapa (no afecta a alarmas ni ACKs).
+     Tracks = tracks de otros AIS (NO afecta al track del barco propio).
+     Alarma = alarmas AIS (delega en setAlarm legacy: cierra popups, ACKs, etc).
+     Click stopPropagation para no colapsar el panel. --><span class="ais-hdr-toggles" onclick="event.stopPropagation()"><label id="ais-hdr-icons-lbl" title="Mostrar/ocultar iconos AIS en el mapa"><input type="checkbox" id="ais-hdr-icons-chk" onchange="m_aisHdrToggleIcons(this.checked)"><span data-i18n="ais_hdr_icons">AIS</span></label><label id="ais-hdr-tracks-lbl" title="Mostrar/ocultar tracks de otros AIS (no afecta al propio)"><input type="checkbox" id="ais-hdr-tracks-chk" onchange="m_aisHdrToggleTracks(this.checked)"><span data-i18n="ais_hdr_tracks">Tracks</span></label><label id="ais-hdr-alarm-lbl" title="Activar/desactivar alarmas de proximidad AIS"><input type="checkbox" id="ais-hdr-alarm-chk" onchange="m_aisHdrToggleAlarm(this.checked)"><span data-i18n="ais_hdr_alarm">Alarma</span></label></span><span style="font-size:11px;color:#888;margin-left:4px">▼</span></h5><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_radio_lbl">Radio:</span><input type="range" id="ais-radius-slider" min="0.5" max="50" step="0.5" value="5" style="flex:1" oninput="_setAisRadius(this.value)"><span id="ais-radius-val" style="min-width:60px;text-align:right;font-weight:700;color:#fff">5 km</span></div><!-- Rev400: linea de ordenar+filtro mitad/mitad del ancho. --><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_sort_lbl" style="flex:0 0 auto">Ordenar:</span><select id="ais-sort-by" onchange="_setAisSort(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"><option value="dist" data-i18n="ais_sort_dist">Distancia</option><option value="name" data-i18n="ais_sort_name">Nombre</option><option value="fav" data-i18n="ais_sort_fav">Favoritos</option><option value="mmsi" data-i18n="ais_sort_mmsi">MMSI</option><option value="type" data-i18n="ais_sort_type">Tipo</option></select><input type="text" id="ais-filter-txt" placeholder="🔎" data-i18n-placeholder="ais_filter_ph" oninput="_setAisFilter(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"></div></div><div id="ais-alarm-list"></div></div>
 <div class="popup-overlay" id="levar-confirm-pop" onclick="closePopup('levar-confirm-pop')">
   <div class="popup-box" onclick="event.stopPropagation()" style="min-width:300px;text-align:center">
     <h4 style="font-size:18px"data-i18n="levar_titulo">⚓ Levar ancla</h4>
@@ -3976,6 +3996,11 @@ var _i18n={
   estatico:{es:'Estático/Fondeado',en:'Static/Anchored'},
   dinamico:{es:'Dinámico',en:'Dynamic'},
   ais_zona:{es:'⚠ AIS en zona',en:'⚠ AIS in zone'},
+  /* Rev493-495 (feedback Vicente): 3 toggles independientes en el header
+     AIS = iconos, Tracks = tracks otros, Alarma = alarmas proximidad. */
+  ais_hdr_icons:{es:'AIS',en:'AIS'},
+  ais_hdr_tracks:{es:'Tracks',en:'Tracks'},
+  ais_hdr_alarm:{es:'Alarma',en:'Alarm'},
   ais_radio_lbl:{es:'Radio:',en:'Radius:'},
   ais_sort_lbl:{es:'Ordenar:',en:'Sort by:'},
   ais_sort_dist:{es:'Distancia',en:'Distance'},
@@ -4252,6 +4277,164 @@ var _pendingAckOps={};
 var _ACK_PENDING_MS=5000;
 var trkDismissed=localStorage.getItem('ihm-trk-dismissed')==='1';
 var aisAlarmEnabled=localStorage.getItem('ihm-ais-alarm')==='1';
+/* Rev493-495 (feedback Vicente): toggles del header del panel AIS.
+   3 dimensiones independientes:
+   - aisIconsEnabled : iconos AIS en mapa (aisLyrGroup). NO toca alarmas.
+   - aisTracksEnabled: tracks de otros AIS (aisTrackGroup). NO toca al barco propio.
+   - aisAlarmEnabled : alarmas de proximidad (ya existia, delega en setAlarm legacy). */
+var aisIconsEnabled =localStorage.getItem('ihm-ais-icons')!=='0';   /* default ON */
+var aisTracksEnabled=localStorage.getItem('ihm-ais-tracks')!=='0';  /* default ON */
+/* Rev497 (feedback Vicente): pendingChange para que el SSE no pise mi OFF
+   inmediato durante los ~5s que tarda el backend en propagar. Sin esto, el
+   usuario apaga la alarma, el siguiente state SSE llega con true y vuelve a
+   abrirse el popup. */
+var _aisAlarmPendingChange = null; /* {value:bool, until:msTimestamp} */
+function m_aisHdrToggleIcons(on){
+  /* Rev501 (feedback Vicente): AIS = MAESTRO de "vision AIS" completa.
+     AIS OFF debe limpiar TODO lo visual relacionado con targets AIS:
+     - iconos (aisLyrGroup)
+     - rings rojos de borneo (_aisBorneoRings)
+     - popup ACK abierto (ais-pop)
+     - target seleccionado + highlight + label flotante
+     - tracks (cascada al Tracks toggle, que tambien se apaga + queda locked).
+     AIS ON solo enciende iconos + Tracks. El resto (rings, popup, seleccion)
+     aparece cuando el usuario interactua o el backend detecta borneo.
+     NO afecta a alarmas audibles (toggle Alarma independiente). */
+  aisIconsEnabled=!!on;
+  localStorage.setItem('ihm-ais-icons',on?'1':'0');
+  try{
+    if (typeof map !== 'undefined' && map && typeof aisLyrGroup !== 'undefined' && aisLyrGroup) {
+      if (aisIconsEnabled) aisLyrGroup.addTo(map);
+      else map.removeLayer(aisLyrGroup);
+    }
+  }catch(_){}
+  if (!aisIconsEnabled) {
+    /* Limpiar rings rojos de borneo. */
+    try{
+      if (typeof _aisBorneoRings !== 'undefined' && _aisBorneoRings) {
+        _aisBorneoRings.clearLayers();
+        if (typeof map !== 'undefined' && map) map.removeLayer(_aisBorneoRings);
+      }
+    }catch(_){}
+    /* Cerrar popup ACK + deseleccionar target + quitar highlight. */
+    try{ if (typeof _deselectAis === 'function') _deselectAis(); }catch(_){}
+  } else {
+    /* Reactivar capa de rings (vacia hasta proximo eval del backend). */
+    try{
+      if (typeof _aisBorneoRings !== 'undefined' && _aisBorneoRings && typeof map !== 'undefined' && map) {
+        _aisBorneoRings.addTo(map);
+      }
+    }catch(_){}
+  }
+  /* Tracks sincronizado al mismo estado que AIS (cascada maestro). */
+  aisTracksEnabled = aisIconsEnabled;
+  try{ localStorage.setItem('ihm-ais-tracks', aisTracksEnabled?'1':'0'); }catch(_){}
+  try{ if(typeof drawAisTracks==='function') drawAisTracks(); }catch(_){}
+  try{ m_aisHdrSyncUI(); }catch(_){}
+}
+function m_aisHdrToggleTracks(on){
+  /* Rev500: si AIS (maestro) esta OFF, Tracks no puede activarse — forzar OFF
+     y resincronizar UI. */
+  if (!aisIconsEnabled) {
+    aisTracksEnabled = false;
+    try{ localStorage.setItem('ihm-ais-tracks','0'); }catch(_){}
+    try{ if(typeof drawAisTracks==='function') drawAisTracks(); }catch(_){}
+    try{ m_aisHdrSyncUI(); }catch(_){}
+    return;
+  }
+  aisTracksEnabled=!!on;
+  localStorage.setItem('ihm-ais-tracks',on?'1':'0');
+  try{ if(typeof drawAisTracks==='function') drawAisTracks(); }catch(_){}
+  try{ m_aisHdrSyncUI(); }catch(_){}
+}
+function m_aisHdrToggleAlarm(on){
+  /* Rev496 (feedback Vicente): activar alarma NO debe limpiar ACKs — los
+     targets ya ACKed por el navegante deben seguir ACK mientras esten en el
+     mismo sitio y no sean viejos. El backend ya tiene logica de caducidad por
+     movimiento/tiempo; no forzar reset desde aqui.
+     Comportamiento:
+     - on=false: silenciar (igual que setAlarm legacy pero SIN reset ACKs).
+     - on=true : reactivar (sin tocar ACKs existentes).
+     - Sincroniza chk-alarm-ais y btn-ais-alarm para compatibilidad UI. */
+  on = !!on;
+  /* Si on=true sin fondeo, abortar y avisar (como setAlarm legacy). */
+  if (on && (typeof anch === 'undefined' || !anch)) {
+    try{
+      var c = document.getElementById('chk-alarm-ais'); if (c) c.checked = false;
+      openPopup('ais-noanchor-pop');
+    }catch(_){}
+    try{ m_aisHdrSyncUI(); }catch(_){}
+    return;
+  }
+  aisAlarmEnabled = on;
+  /* Rev497: registrar el cambio pendiente para que el SSE no lo pise durante
+     ~5s mientras el backend procesa nuestro POST. */
+  _aisAlarmPendingChange = { value: on, until: Date.now() + 5000 };
+  try{ localStorage.setItem('ihm-ais-alarm', on?'1':'0'); }catch(_){}
+  /* Rev502 (feedback Vicente): activar Alarma debe ENCENDER tambien iconos
+     AIS + Tracks (no tiene sentido alarma sin ver de que avisa). Silenciar
+     alarma NO apaga iconos (mantiene independencia logica). */
+  if (on && !aisIconsEnabled) {
+    try{ m_aisHdrToggleIcons(true); }catch(_){}
+  }
+  /* Sync checkbox legacy del panel de alarmas. */
+  try{ var c2 = document.getElementById('chk-alarm-ais'); if (c2) c2.checked = on; }catch(_){}
+  /* Sync clase active del boton sidebar. */
+  try{
+    var btn = document.getElementById('btn-ais-alarm');
+    if (btn) btn.classList.toggle('active', aisAlarmEnabled || (typeof _alarmGarreoEnabled !== 'undefined' && _alarmGarreoEnabled) || (typeof _alarmSondaEnabled !== 'undefined' && _alarmSondaEnabled));
+  }catch(_){}
+  /* Sync texto del status del panel de alarmas (si visible). */
+  try{
+    var aisSt = document.getElementById('alarm-ais-st');
+    if (aisSt) {
+      if (on) { aisSt.textContent = (typeof T==='function')?T('activa','Activa'):'Activa'; aisSt.style.color = 'var(--grn)'; }
+      else    { aisSt.textContent = (typeof T==='function')?T('desact_targets','Desactivada'):'Desactivada'; aisSt.style.color = '#666'; }
+    }
+  }catch(_){}
+  /* Si OFF, cerrar popup AIS si esta abierto + parar loops de alarma audibles. */
+  if (!on) {
+    try{
+      var ap = document.getElementById('ais-pop');
+      if (ap && ap.classList.contains('open')) closePopup('ais-pop');
+    }catch(_){}
+    /* Rev497: parar tambien el loop de audio AIS local inmediato (sin esperar
+       al proximo checkAisBorneoAlarm). Sin esto la sirena seguia hasta el
+       siguiente tick aunque el popup ya estaba cerrado. */
+    try{ if (typeof setAlarmActive === 'function') setAlarmActive('ais', false); }catch(_){}
+    /* Forzar re-cierre por si checkAisBorneoAlarm corre antes de propagar. */
+    setTimeout(function(){
+      try{
+        var ap2 = document.getElementById('ais-pop');
+        if (ap2 && ap2.classList.contains('open')) closePopup('ais-pop');
+      }catch(_){}
+    }, 100);
+  }
+  /* POST al backend para sincronizar cross-device. NO POST a /ais-ack-clear. */
+  try{
+    fetch(A+'/anchor-watch/ais-alarm-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:on})}).catch(function(){});
+  }catch(_){}
+  try{ m_aisHdrSyncUI(); }catch(_){}
+}
+function m_aisHdrSyncUI(){
+  try{
+    var ci=document.getElementById('ais-hdr-icons-chk');
+    var ct=document.getElementById('ais-hdr-tracks-chk');
+    var ca=document.getElementById('ais-hdr-alarm-chk');
+    var li=document.getElementById('ais-hdr-icons-lbl');
+    var lt=document.getElementById('ais-hdr-tracks-lbl');
+    var la=document.getElementById('ais-hdr-alarm-lbl');
+    if(ci){ci.checked=!!aisIconsEnabled;}
+    if(ct){ct.checked=!!aisTracksEnabled;}
+    if(ca){ca.checked=!!aisAlarmEnabled;}
+    if(li){li.classList.toggle('off',!aisIconsEnabled);}
+    if(lt){lt.classList.toggle('off',!aisTracksEnabled);}
+    if(la){la.classList.toggle('off',!aisAlarmEnabled);}
+    /* Rev500: Tracks queda DISABLED visualmente si AIS (maestro) esta OFF. */
+    if(ct){ ct.disabled = !aisIconsEnabled; }
+    if(lt){ lt.classList.toggle('locked', !aisIconsEnabled); }
+  }catch(_){}
+}
 var _alarmGarreoEnabled=localStorage.getItem('ihm-garreo-alarm')!=='0'; /* default ON */
 var _alarmGpsLostEnabled=localStorage.getItem('ihm-gps-lost-alarm')!=='0'; /* Rev354 default ON */
 var _prevGpsLost=false; /* Rev358: detección de transición false→true para abrir modal */
@@ -4723,6 +4906,10 @@ function init(){
   chainLine=L.polyline([[0,0],[0,0]],{color:'#ffa726',weight:3,opacity:.9,dashArray:'6,4'});
   aisLyrGroup=L.layerGroup().addTo(map);
   aisTrackGroup=L.layerGroup().addTo(map);
+  /* Rev495: respetar preferencia persistida del usuario al cargar el mapa. */
+  try{
+    if (typeof aisIconsEnabled !== 'undefined' && aisIconsEnabled === false) map.removeLayer(aisLyrGroup);
+  }catch(_){}
   _aisBorneoRings=L.layerGroup().addTo(map);
   map.on('zoomend',onZoom);
   // Suppress browser tooltips and status bar text on zoom buttons
@@ -5885,7 +6072,25 @@ function processPollData(s){
     }
     document.getElementById('sl-al-rec').textContent='('+T('eslora')+': '+unitFmt.shortDistance(designLen,0)+')';
     /* Sync alarm toggles from backend state (SSE/poll) */
-    if(typeof s.aisAlarmEnabled==='boolean'){aisAlarmEnabled=s.aisAlarmEnabled;try{document.getElementById('chk-alarm-ais').checked=aisAlarmEnabled;}catch(e){}}
+    if(typeof s.aisAlarmEnabled==='boolean'){
+      /* Rev497: respetar pendingChange. Si el usuario acaba de togglear desde
+         el header (ultimos 5s), nuestro valor LOCAL gana — esperamos a que el
+         backend propague y el siguiente SSE traiga el valor correcto. Sin
+         este guard, un SSE en flight con el valor viejo podia pisar la
+         desactivacion y el popup volvia a abrirse. */
+      if (_aisAlarmPendingChange && _aisAlarmPendingChange.until > Date.now()) {
+        if (s.aisAlarmEnabled === _aisAlarmPendingChange.value) {
+          /* backend ya propago, limpiar pending. */
+          _aisAlarmPendingChange = null;
+          aisAlarmEnabled = s.aisAlarmEnabled;
+        }
+        /* else: ignorar este tick, mantener pending.value. */
+      } else {
+        aisAlarmEnabled = s.aisAlarmEnabled;
+      }
+      try{document.getElementById('chk-alarm-ais').checked=aisAlarmEnabled;}catch(e){}
+      try{ m_aisHdrSyncUI(); }catch(_){}
+    }
     if(s.predictiveSwing)_predictiveSwing=s.predictiveSwing;
     /* Bug 1 + 10 (Deploy 2): track points come from backend. Convert format:
        backend uses {lat,lng,t}, frontend gradient code uses {ll:[lat,lng],t}. */
@@ -8945,10 +9150,17 @@ var mk=L.marker([t.lat,t.lng],{icon:mkAisBoatIcon(lenPx,hdgDeg,t.isStatic,t.aisC
 function drawAisTracks(){
   aisTrackGroup.clearLayers();
   if(!bPos)return;
+  /* Rev493 (feedback Vicente): toggle "Tracks" del panel AIS. Si esta OFF,
+     limpiamos el layer y no pintamos nada. El track propio del barco vive en
+     otro layer (anchorWatch.trackPoints / variable track) y NO se ve afectado. */
+  if(aisTracksEnabled===false)return;
   /* Skip "ghost tracks": targets that haven't transmitted in the last 5 min.
      This is the fix for the "tracks aparecen al reiniciar SK antes que los
      targets" issue — without fresh data, the track shouldn't render. */
-  var staleCut=Date.now()-5*60000;
+  /* Rev498 (feedback Vicente): tiempo de track AIS de otros targets subido de
+     5 a 10 minutos. Si el target sigue sin transmitir tras 10 min, su track
+     se considera fantasma y no se pinta. */
+  var staleCut=Date.now()-10*60000;
   for(var mmsi in aisTrackHist){
     var pts=aisTrackHist[mmsi];
     if(pts.length<2)continue;
@@ -12036,6 +12248,8 @@ function m_toggleAisList(){
     if (list) list.classList.remove('ais-collapsed');
     if (typeof loadAIS === 'function') { try { loadAIS(); } catch(e){} }
     panel.classList.add('m-open');
+    /* Rev493: sincronizar estado visual de los toggles AIS+Tracks al abrir. */
+    try{ m_aisHdrSyncUI(); }catch(_){}
     /* Rev408 — AUDIT FIX: ELIMINADO style.cssText inline. Inline !important
        tenia maxima specificity y machacaba TODA mi CSS externa, causando
        el gap superior (padding-top:96px en lugar de top:96px) y el background
