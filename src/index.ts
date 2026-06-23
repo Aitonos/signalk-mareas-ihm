@@ -73,7 +73,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev488";
+const PLUGIN_REVISION = "Rev492";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -344,7 +344,10 @@ const MAX_SIDE_BUTTONS_PER_SIDE = 5;
 // Whitelist de keys soportadas. Cualquier key NO en este set se descarta.
 // El orden recibido define el orden de pintado; las celdas no listadas se ocultan.
 // Whitelist incluye celdas opt-in (sunrise, wx_6h, wave) que NO van en defaults.
-const BB_CELL_KEYS = ["sog","heading","wind","sonda","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","sunrise","wx_6h","wave"] as const;
+/* Rev491 (feedback Vicente): añadidas dif_lw y prof_min a la whitelist del
+   backend. Sin esto, sanitizeBBOrder() las filtraba al guardar, haciendo que
+   no se pudieran reactivar tras desactivarlas en config. */
+const BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","sunrise","wx_6h","wave"] as const;
 type BBCellKey = typeof BB_CELL_KEYS[number];
 const DEFAULT_BB_ORDER: BBCellKey[] = ["sog","heading","wind","sonda","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo"];
 function sanitizeBBOrder(arr: any): BBCellKey[] {
@@ -5223,6 +5226,13 @@ function getAnchorWatchState() {
       risk: !!_currentGroundingRisk.risk,
       physicalRisk: !!(_currentGroundingRisk as any).physicalRisk,
       expectedMinDepthM: (_currentGroundingRisk as any).expectedMinDepth ?? null,
+      // Rev488 (feedback Vicente): "Bajará máximo X cm" — la magnitud que el
+      // navegante usa para decidir si fondea con margen suficiente. El evaluator
+      // ya lo calcula como remainingDrop = tideNow - nextLowHeight. Lo exponemos
+      // siempre (no solo cuando hay riesgo) para que el bottom-bar muestre el
+      // sub-label permanente.
+      remainingDropM: (_currentGroundingRisk as any).remainingDrop ?? null,
+      depthNowM: (_currentGroundingRisk as any).depthNow ?? null,
       effectiveDraftM: (_currentGroundingRisk as any).effectiveDraft ?? null,
       safetyMarginM: (_currentGroundingRisk as any).safetyMargin ?? null,
       nextLowTimeIso: (_currentGroundingRisk as any).nextLowTime ?? null,
@@ -10550,8 +10560,35 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
     // This is what KIP/external instruments need. Alarm state is in groundingAlarm.
     vesselValues.push({ path: "environment.tide.vessel.groundingRisk", value: physicalRisk });
 
-    // Expected minimum depth at next low tide (2 decimals)
-    if (expectedMinDepth != null) vesselValues.push({ path: "environment.tide.vessel.finalExpctDepthBKeel", value: Math.round(expectedMinDepth * 100) / 100 });
+    // Rev489-491 (feedback Vicente): publicar SOLO valores BELOW KEEL en SK.
+    // Vicente: "Elimina todos los datos que sean SURFACE, lo que nos interesa
+    // es el dato Below keel o below transducer (que debera ser elegido en la
+    // configuracion). Por ahora belowKeel."
+    //
+    // Paths publicados:
+    //   environment.tide.expectedDropToLW       = bajada hasta proxima bajamar (m)
+    //   environment.depth.belowKeelExpectedAtLW = sonda final esperada bajo
+    //     quilla (m). Coherente con environment.depth.belowKeel actual.
+    //   environment.tide.vessel.finalExpctDepthBKeel = MISMO valor que
+    //     belowKeelExpectedAtLW. Compatibilidad con KIP/integraciones que ya
+    //     usaban este path historico. CORREGIDO Rev491: antes publicaba el
+    //     valor belowSurface por bug historico (el nombre era BKeel pero el
+    //     valor era surface). Ahora corregido a belowKeel real.
+    //
+    // SK paths ELIMINADOS Rev491 (eran SURFACE, confusion garantizada):
+    //   environment.depth.belowSurfaceExpectedAtLW
+    if (remainingDrop != null) {
+      vesselValues.push({ path: "environment.tide.expectedDropToLW", value: Math.round(remainingDrop * 100) / 100 });
+    }
+    if (expectedMinDepth != null && typeof draft === "number" && draft > 0) {
+      /* CUIDADO: baseDraft incluye el safetyMargin. Para belowKeel real
+         restamos SOLO el calado, no el baseDraft. */
+      const belowKeelAtLW = Math.round((expectedMinDepth - draft) * 100) / 100;
+      vesselValues.push({ path: "environment.depth.belowKeelExpectedAtLW", value: belowKeelAtLW });
+      /* Path historico — ahora publica el MISMO valor (belowKeel real) para
+         que finalmente haga honor a su nombre "BKeel". */
+      vesselValues.push({ path: "environment.tide.vessel.finalExpctDepthBKeel", value: belowKeelAtLW });
+    }
 
     // v1.127: NEW — Free water between effective draft and seabed at next low tide.
     // Positive = safe clearance. Negative = GROUNDING (keel below seabed).

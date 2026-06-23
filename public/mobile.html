@@ -1892,6 +1892,22 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <span class="vl" id="m-bb-tide-val">—</span>
     <span id="m-bb-tide-next" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
   </div>
+  <!-- Rev489 (feedback Vicente): widget "Dif. Bajamar" — cuánto bajará la
+       marea hasta la próxima bajamar (cm). Click abre modal Cálculo Sonda. -->
+  <div class="it" data-bb-cell="dif_lw" data-i18n-title="bb_dif_lw_tip" title="Diferencia hasta próxima bajamar · click → Cálculo Sonda" onclick="openPopup&&openPopup('sonda-pop');typeof fetchSondaData==='function'&&fetchSondaData()">
+    <span class="lb" data-i18n="bb_dif_lw">Dif. Bajamar</span>
+    <span class="vl" id="m-bb-dif-lw">—</span>
+    <span id="m-bb-dif-lw-end" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
+  </div>
+  <!-- Rev490 (feedback Vicente): widget "Prof. Mínima" — sonda esperada en la
+       próxima bajamar. Numero grande = profundidad final en metros (coherente
+       con el numero grande de SONDA, misma referencia). Sub-label = hora de la
+       proxima bajamar. Click abre modal Cálculo Sonda. -->
+  <div class="it" data-bb-cell="prof_min" data-i18n-title="bb_prof_min_tip" title="Profundidad mínima esperada en la próxima bajamar · click → Cálculo Sonda" onclick="openPopup&&openPopup('sonda-pop');typeof fetchSondaData==='function'&&fetchSondaData()">
+    <span class="lb" data-i18n="bb_prof_min">Prof. mín.</span>
+    <span class="vl" id="m-bb-prof-min">—</span>
+    <span id="m-bb-prof-min-when" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
+  </div>
   <div class="it" data-bb-cell="cad_rec" data-i18n-title="bb_cadena_tip" title="Cadena recomendada" onclick="m_openInfoModal&&m_openInfoModal()"><span class="lb" data-i18n="bb_cadena_rec">Cadena rec.</span><span class="vl" id="m-bb-cad">—</span></div>
   <div class="it" data-bb-cell="dist_ancla" data-i18n-title="bb_dist_tip" title="Distancia al ancla" onclick="m_openInfoModal&&m_openInfoModal()"><span class="lb" data-i18n="bb_dist_ancla">Dist. ancla</span><span class="vl" id="m-bb-dist">—</span></div>
   <!-- Rev331 (item 13): HORA del fondeo (HH:MM del drop, +N si han pasado días). Siempre visible con '—' cuando no fondeado. -->
@@ -2711,10 +2727,36 @@ var _unitsSystem = localStorage.getItem('ihm-visor-units') || 'metric_nautical';
       window._sideButtons = j.buttons.slice();
       try{ if(typeof m_renderSideButtons === 'function') m_renderSideButtons(window._sideButtons); }catch(_){}
     }
-    /* Sprint F (Rev454): cargar y aplicar orden/visibilidad del bottom-bar. */
+    /* Sprint F (Rev454): cargar y aplicar orden/visibilidad del bottom-bar.
+       Rev491: AUTO-MIGRACIoN — si el bbOrder guardado no contiene celdas
+       nuevas (dif_lw, prof_min, etc.) las insertamos automaticamente tras
+       'sonda' para que el usuario las vea sin tener que entrar a config. */
     if (j && Array.isArray(j.bbOrder)) {
-      window._bbOrder = j.bbOrder.slice();
+      var loaded = j.bbOrder.slice();
+      var MIGRATE_TARGETS = ['dif_lw','prof_min'];
+      var anchorKey = 'sonda';
+      var anchorIdx = loaded.indexOf(anchorKey);
+      var didMigrate = false;
+      MIGRATE_TARGETS.forEach(function(k){
+        if (loaded.indexOf(k) < 0) {
+          if (anchorIdx >= 0) {
+            loaded.splice(anchorIdx + 1, 0, k);
+            anchorIdx++;  // siguiente nueva celda va tras esta
+          } else {
+            loaded.push(k);
+          }
+          didMigrate = true;
+        }
+      });
+      window._bbOrder = loaded;
       try{ if(typeof m_applyBBOrder === 'function') m_applyBBOrder(window._bbOrder); }catch(_){}
+      /* Si migramos, persistir para que el siguiente boot no vuelva a hacerlo. */
+      if (didMigrate) {
+        try {
+          fetch(A+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bbOrder:loaded})}).catch(function(){});
+          console.log('[IHM-BB] migrated bbOrder, added missing cells:', MIGRATE_TARGETS.filter(function(k){return j.bbOrder.indexOf(k)<0;}));
+        } catch(_){}
+      }
     }
   }).catch(function(){});
 })();
@@ -2723,8 +2765,11 @@ var _unitsSystem = localStorage.getItem('ihm-visor-units') || 'metric_nautical';
    Whitelist de keys + defaults. Cada celda tiene data-bb-cell="key".
    m_applyBBOrder(arr): reordena los hijos del #m-bottom-bar segun arr y
    oculta los que no esten en arr (display:none). */
-window._BB_CELL_KEYS = ["sog","heading","wind","sonda","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","sunrise","wx_6h","wave"];
-window._BB_DEFAULT_ORDER = ["sog","heading","wind","sonda","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo"];
+/* Rev489-490: dos celdas nuevas tras "sonda" — "dif_lw" (bajada en cm hasta
+   próxima bajamar) y "prof_min" (sonda esperada en esa bajamar). Vicente
+   pidió ambas para fondear con margen. */
+window._BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","sunrise","wx_6h","wave"];
+window._BB_DEFAULT_ORDER = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo"];
 window._bbOrder = window._bbOrder || window._BB_DEFAULT_ORDER.slice();
 function m_applyBBOrder(arr){
   var bar = document.getElementById('m-bottom-bar');
@@ -3615,6 +3660,14 @@ var _i18n={
   /* Sprint C (Rev452): celda marea bottom-bar. */
   bb_marea:{es:'Marea',en:'Tide'},
   bb_marea_tip:{es:'Estado marea: subiendo (▲) o bajando (▼) · % entre extremos · proximo extremo y hora · click → Curvas',en:'Tide state: rising (▲) or falling (▼) · % between extremes · next extreme + time · click → Tide chart'},
+  /* Rev489 (feedback Vicente): nueva celda Diferencia Bajamar. */
+  bb_dif_lw:{es:'Dif. Bajamar',en:'Drop to LW'},
+  bb_dif_lw_tip:{es:'Cuánto bajará la marea hasta la próxima bajamar (cm) y sonda final esperada · click → Cálculo Sonda',en:'How much the tide will drop until next low water (cm) and expected final depth · click → Depth calc'},
+  /* Rev490 (feedback Vicente): nueva celda Profundidad Mínima esperada.
+     Rev491: titulo cambiado a "En B.M." (En Bajamar) — mas claro para el
+     navegante que "Prof. mín." segun Vicente. */
+  bb_prof_min:{es:'En B.M.',en:'At LW'},
+  bb_prof_min_tip:{es:'Profundidad mínima esperada en la próxima bajamar (coherente con sonda actual) · click → Cálculo Sonda',en:'Minimum expected depth at next low water (consistent with current depth display) · click → Depth calc'},
   tide_pm_short:{es:'PM',en:'HW'},
   tide_bm_short:{es:'BM',en:'LW'},
   /* Sprint F (Rev454): nueva celda Heading + motor bottom-bar configurable. */
@@ -5341,6 +5394,9 @@ function _groundingDisplay(s){
       physicalRisk:     (g.physics.state === 'danger') || legacyPhysRisk,
       currentDepthM:    (typeof g.physics.depthBelowSurfaceM === 'number') ? g.physics.depthBelowSurfaceM : null,
       expectedMinDepthM:(typeof g.physics.expectedMinDepthM === 'number') ? g.physics.expectedMinDepthM : null,
+      /* Rev488: remainingDropM = cuanto bajara la marea hasta la proxima bajamar.
+         Vicente lo pidio expresamente como dato principal para decidir fondear. */
+      remainingDropM:   (typeof (s.groundingDetail||{}).remainingDropM === 'number') ? s.groundingDetail.remainingDropM : null,
       effectiveDraftM:  (typeof g.config.effectiveDraftM === 'number') ? g.config.effectiveDraftM
                         : (typeof g.config.draftM === 'number' && typeof g.config.safetyMarginM === 'number'
                             ? (g.config.draftM + g.config.safetyMarginM) * 1.15 : null),
@@ -5363,6 +5419,7 @@ function _groundingDisplay(s){
     physicalRisk:     typeof gd.physicalRisk === 'boolean' ? gd.physicalRisk : null,
     currentDepthM:    (typeof gd.depthNowM === 'number') ? gd.depthNowM : null,
     expectedMinDepthM:(typeof gd.expectedMinDepthM === 'number') ? gd.expectedMinDepthM : null,
+    remainingDropM:   (typeof gd.remainingDropM === 'number') ? gd.remainingDropM : null,
     effectiveDraftM:  (typeof gd.effectiveDraftM === 'number') ? gd.effectiveDraftM : null,
     nextLowTimeIso:   gd.nextLowTimeIso || null,
     timeUntilMin:     (typeof gd.timeUntilMin === 'number') ? gd.timeUntilMin : null,
@@ -11644,10 +11701,110 @@ function m_pollBottomBar(){
           sublabel = (typeof T==='function') ? T('bb_sonda_riesgo','⚠ Atención: riesgo varada') : '⚠ Atención: riesgo varada';
         }
         sst.textContent = sublabel; sst.style.color = '#f44336'; sst.style.display = 'block';
-      } else if (s.tideResume) {
-        sst.textContent = (typeof T==='function')?T('bb_sonda_ok','OK · sin riesgo de varada'):'OK · sin riesgo de varada'; sst.style.color = '#66ffaa'; sst.style.display = 'block';
-      } else { sst.style.display = 'none'; }
+      } else {
+        /* Rev488 (feedback Vicente): mostrar SIEMPRE el dato de la proxima
+           bajamar, este la marea subiendo o bajando. El navegante decide si
+           fondea en funcion de "cuanto bajara hasta la proxima LW" y "que
+           profundidad final habra". Si la marea esta subiendo y la proxima LW
+           es similar o mas alta que ahora (raro pero posible en cambios de
+           coeficiente), el drop sera ~0 y mostramos solo la profundidad final.
+
+           FIX coherencia (Vicente QA): el backend calcula expectedMinDepth en
+           referencia belowSurface (incluye calado), pero el numero grande de
+           SONDA muestra valor RAW del sensor (sin calado). Para que "Fin Y.Z"
+           sea visualmente coherente con el numero grande, calculamos fin como
+           "valor_display_actual - bajada", no usamos el del backend directo.
+           Ej: sonda raw 4.2m, bajada 1.59m -> fin 2.6m (no 3.9m). */
+        var dropM = _gdisp.remainingDropM;
+        var finM;
+        if (typeof _lastDepthM === 'number' && isFinite(_lastDepthM)
+            && typeof dropM === 'number' && isFinite(dropM)) {
+          finM = _lastDepthM - dropM;
+        } else {
+          finM = _gdisp.expectedMinDepthM;  /* fallback backend (referencia belowSurface) */
+        }
+        var en2 = (_lang === 'en');
+        if (typeof finM === 'number' && isFinite(finM)) {
+          var critical = finM < 1.0;  /* < 1m de sonda final = atencion aunque alarma OFF */
+          /* Rev490 (feedback usuario): sub-label SONDA mas compacto entre
+             parentesis. Los detalles "bajada -Xcm" + "hora LW" ya viven en
+             los widgets propios "Dif. Bajamar" y "Prof. min.". */
+          sst.textContent = '(' + (en2 ? 'final ' : 'final ') + unitFmt.depth(finM, 1) + ')';
+          sst.style.color = critical ? '#ffb23f' : '#66ffaa';
+          sst.style.display = 'block';
+        } else if (s.tideResume) {
+          /* Fallback: sin datos numericos pero hay resumen de marea. */
+          sst.textContent = (typeof T==='function')?T('bb_sonda_ok','OK · sin riesgo de varada'):'OK · sin riesgo de varada';
+          sst.style.color = '#66ffaa';
+          sst.style.display = 'block';
+        } else { sst.style.display = 'none'; }
+      }
     }
+    /* Rev489 (feedback Vicente): widget propio "Diferencia Bajamar". Numero
+       grande = bajada en cm (negativo); sub-label = sonda esperada al final.
+       Tiene su propio scope: lee del helper _gdisp y recalcula fin coherente
+       con el numero de sonda mostrado (depthSounderRawM, no belowSurface). */
+    try {
+      var difEl   = document.getElementById('m-bb-dif-lw');
+      var difEnd  = document.getElementById('m-bb-dif-lw-end');
+      if (difEl) {
+        var _dropM2 = _gdisp ? _gdisp.remainingDropM : null;
+        var _finM2;
+        if (typeof _lastDepthM === 'number' && isFinite(_lastDepthM)
+            && typeof _dropM2 === 'number' && isFinite(_dropM2)) {
+          _finM2 = _lastDepthM - _dropM2;
+        } else if (_gdisp) {
+          _finM2 = _gdisp.expectedMinDepthM;
+        }
+        if (typeof _dropM2 === 'number' && isFinite(_dropM2) && _dropM2 > 0.005) {
+          difEl.textContent = '-' + Math.round(_dropM2*100) + ' cm';
+          difEl.style.color = (typeof _finM2 === 'number' && _finM2 < 1.0) ? '#ffb23f' : '#ffd166';
+        } else if (typeof _dropM2 === 'number' && isFinite(_dropM2)) {
+          difEl.textContent = '0 cm';
+          difEl.style.color = '#9aa';
+        } else {
+          difEl.textContent = '—';
+          difEl.style.color = '';
+        }
+        if (difEnd) {
+          if (typeof _finM2 === 'number' && isFinite(_finM2)) {
+            var enL = (_lang === 'en');
+            difEnd.textContent = (enL ? 'End ' : 'Fin ') + unitFmt.depth(_finM2, 1);
+            difEnd.style.color = (_finM2 < 1.0) ? '#ff7043' : '#cde';
+          } else {
+            difEnd.textContent = '—';
+            difEnd.style.color = '';
+          }
+        }
+      }
+      /* Rev490: widget "Prof. mín." — sonda esperada en proxima bajamar. */
+      var pmEl    = document.getElementById('m-bb-prof-min');
+      var pmWhen  = document.getElementById('m-bb-prof-min-when');
+      if (pmEl) {
+        if (typeof _finM2 === 'number' && isFinite(_finM2)) {
+          pmEl.textContent = unitFmt.depth(_finM2, 1);
+          pmEl.style.color = (_finM2 < 1.0) ? '#ff5252' : (_finM2 < 2.0 ? '#ffb23f' : '');
+        } else {
+          pmEl.textContent = '—';
+          pmEl.style.color = '';
+        }
+        if (pmWhen) {
+          var lwIso = _gdisp ? _gdisp.nextLowTimeIso : null;
+          if (lwIso) {
+            try {
+              var dLW = new Date(lwIso);
+              var pad2 = function(n){ return ('0'+n).slice(-2); };
+              var enL2 = (_lang === 'en');
+              pmWhen.textContent = (enL2 ? 'at LW ' : 'a BM ') + pad2(dLW.getHours()) + ':' + pad2(dLW.getMinutes());
+              pmWhen.style.color = '#cde';
+            } catch(_){ pmWhen.textContent = '—'; }
+          } else {
+            pmWhen.textContent = '—';
+            pmWhen.style.color = '';
+          }
+        }
+      }
+    } catch(_){}
     /* Cadena recomendada (en metros) */
     var cad = s.chainRecommended;
     if (cad == null && s.approach) cad = s.approach.chainRecNow;
@@ -12495,7 +12652,11 @@ function m_updateBBScrollIndicators(){
     L.textContent = '▲'; L.classList.add('show');
     R.textContent = '▲'; R.classList.add('show');
   } else {
-    L.textContent = '◀'; L.classList.toggle('show', canL);
+    /* Rev491 (feedback Vicente QA): replicar comportamiento derecha exacto.
+       La izquierda ahora tambien SIEMPRE visible cuando la bar esta abierta,
+       igual que la derecha. Antes solo se mostraba si canL (scroll disponible),
+       lo que la dejaba oculta cuando el bottom-bar cabia entero en pantalla. */
+    L.textContent = '◀'; L.classList.add('show');
     R.textContent = '▶'; R.classList.add('show');
   }
   _syncToggleGlow();
