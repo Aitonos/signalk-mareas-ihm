@@ -414,6 +414,36 @@ export default function TidesView() {
     } catch { return false; }
   });
   const [showChangelog, setShowChangelog] = useState(false);
+  /* Rev522: changelog dinámico. Antes el contenido del botón "Versiones" estaba
+     hardcoded en este componente y quedaba huérfano entre releases del plugin.
+     Ahora hacemos fetch a /signalk-mareas-ihm/CHANGELOG.md servido por el
+     plugin: cada release del plugin solo necesita actualizar CHANGELOG.md y
+     este modal lo refleja automáticamente. */
+  const [changelogMd, setChangelogMd] = useState<string | null>(null);
+  const [changelogLoading, setChangelogLoading] = useState(false);
+  useEffect(() => {
+    if (!showChangelog || changelogMd !== null) return;
+    setChangelogLoading(true);
+    fetch("/signalk-mareas-ihm/CHANGELOG.md", { cache: "no-store" })
+      .then((r) => (r.ok ? r.text() : null))
+      .then((txt) => { setChangelogMd(txt ?? ""); setChangelogLoading(false); })
+      .catch(() => { setChangelogMd(""); setChangelogLoading(false); });
+  }, [showChangelog, changelogMd]);
+  /* Rev527: manual ES servido como fragmento HTML por el plugin
+     (/instrucciones_es.html, originalmente docs/INSTRUCCIONES_MODAL_v3.html).
+     Cuando el idioma activo es ES, el modal renderiza este HTML en lugar del
+     JSX hardcoded EN, así el castellano vuelve a estar completo sin tener que
+     mantener dos árboles JSX. */
+  const [instrEsHtml, setInstrEsHtml] = useState<string | null>(null);
+  const [instrEsLoading, setInstrEsLoading] = useState(false);
+  useEffect(() => {
+    if (showChangelog || lang !== 'es' || instrEsHtml !== null) return;
+    setInstrEsLoading(true);
+    fetch("/signalk-mareas-ihm/instrucciones_es.html", { cache: "no-store" })
+      .then((r) => (r.ok ? r.text() : null))
+      .then((txt) => { setInstrEsHtml(txt ?? ""); setInstrEsLoading(false); })
+      .catch(() => { setInstrEsHtml(""); setInstrEsLoading(false); });
+  }, [showChangelog, lang, instrEsHtml]);
   const [instrSearch, setInstrSearch] = useState("");
   const instrContentRef = useRef<HTMLDivElement>(null);
   const [instrMatchCount, setInstrMatchCount] = useState(0);
@@ -1484,374 +1514,144 @@ const disableAlarm = async () => {
       {showInstrucciones && (
         <div className="modal-overlay" onClick={() => { setShowInstrucciones(false); setShowChangelog(false); }}>
           <div className="modal-content modal-fullscreen instrucciones-modal" onClick={(e) => e.stopPropagation()}>
-            <h2>{showChangelog ? tr("Registro de cambios – Versiones", "Changelog – Versions") : tr("📖 INSTRUCCIONES", "📖 INSTRUCTIONS")} – v{snapshot?.pluginVersion ?? "—"}</h2>
             <div className="instrucciones-body instrucciones-scroll" ref={instrContentRef}>
+              {/* Rev536 (feedback Carlos): h2 movido DENTRO del scroll para
+                  que se desplace con el contenido en lugar de ocupar altura
+                  fija arriba (antes flex-shrink:0 lo dejaba colgado). */}
+              <h2 style={{ marginTop: 14 }}>{showChangelog ? tr("Registro de cambios – Versiones", "Changelog – Versions") : "AnchorWatch Pro: Smart Anchoring, AIS & Tides"} – v{snapshot?.pluginVersion ?? "—"}</h2>
               {showChangelog ? (
-                <>
-                  <h4>v2.2.0</h4>
-                  <ul>
-                    <li><strong>{tr("Sistema AIS rediseñado", "AIS system redesigned")}:</strong> {tr("base de datos persistente de 72 h con nombre, eslora, manga, tipo, callsign e IMO de cada barco visto — los nombres ya están al abrir el visor sin esperar al próximo paquete estático AIS (que tarda hasta 6 min). Cache fantasma de 5 min para targets que pierden recepción VHF brevemente — siguen visibles con una X discreta.", "72 h persistent database with name, length, beam, type, callsign and IMO of every boat seen — names are ready when opening the viewer without waiting for the next AIS static packet (up to 6 min). 5-minute ghost cache for targets that briefly lose VHF reception — they stay visible with a discrete X mark.")}</li>
-                    <li><strong>{tr("Lista AIS filtrable y ordenable", "Filterable and sortable AIS list")}:</strong> {tr("slider de radio 0.5–50 km, ordena por distancia/nombre/favoritos/MMSI/tipo, caja de filtro de texto con 'Sin resultados', iconos por tipo (⛵/📦/🛢️/🛳️/🎣), favoritos ★ sincronizados entre dispositivos, botón 🔍 vesselfinder por fila.", "0.5–50 km radius slider, sort by distance/name/favourites/MMSI/type, text filter box with 'No results', type-specific icons (⛵/📦/🛢️/🛳️/🎣), ★ favourites synced across devices, 🔍 vesselfinder button per row.")}</li>
-                    <li><strong>{tr("Alarma AIS más fiable", "More reliable AIS alarm")}:</strong> {tr("cuando ACKeas un target y vuelve a moverse hacia ti, la alarma vuelve a sonar; ACK caduca a los 15 min para forzar reevaluación; eliminado el bucle 'alarma se abre y cierra sola'; velocidad de acercamiento se pone a cero cuando ambos barcos están parados.", "when you ACK a target and it resumes moving towards you, the alarm fires again; ACK expires after 15 min to force re-evaluation; eliminated the 'alarm opens and closes by itself' loop; closing rate goes to zero when both boats are stopped.")}</li>
-                    <li><strong>{tr("Click-to-focus en AIS", "AIS click-to-focus")}:</strong> {tr("click en un barco → el mapa lo centra, lo sigue y muestra su distancia junto al aro azul. La X del aro deselecciona. El rastro del seleccionado se ve siempre destacado.", "click a boat → the map centres on it, follows it and shows live distance next to the blue ring. The X on the ring deselects. The selected target's track is always highlighted.")}</li>
-                    <li><strong>{tr("Auto-desarme al salir a motor", "Auto-disarm when leaving under engine")}:</strong> {tr("si tu SOG se mantiene >3 nudos durante 30 segundos, el plugin asume salida intencional y desarma la vigilancia sin disparar la alarma de garreo. Antes saltaba sirena cuando olvidabas 'levar' en la app.", "if your SOG stays above 3 knots for 30 seconds, the plugin assumes intentional departure and disarms the watch without firing the drag alarm. Previously the siren went off when you forgot to lift in the app.")}</li>
-                    <li><strong>{tr("Rosa de abrigo restaurada", "Shelter rose restored")}:</strong> {tr("vuelta al algoritmo de detección de sectores de versiones anteriores que funcionaba bien. Los cambios intermedios daban falsos positivos en costas irregulares.", "back to the sector detection algorithm of earlier versions that worked well. Intermediate changes gave false positives in irregular coastlines.")}</li>
-                    <li><strong>{tr("Historial de olas mejorado", "Improved wave history")}:</strong> {tr("resolución triplicada (una barra cada 5 min en vez de 15), 'Ahora' a la izquierda y pasado a la derecha, escala vertical autoescalable hasta 2 m con líneas guía a ambos lados, scroll horizontal cuando hay muchos datos.", "3× resolution (one bar every 5 min instead of 15), 'Now' on the left and past on the right, autoscaling vertical axis up to 2 m with guide lines on both sides, horizontal scroll when there is plenty of data.")}</li>
-                    <li><strong>{tr("Modales informativos grandes", "Large info modals")}:</strong> {tr("Escala de exposición, Cómo se calcula la protección e Historial de olas con leyenda y tabla ocupan ahora casi toda la pantalla con textos cómodos de leer a la luz del sol.", "Exposure scale, How protection is calculated and Wave history with legend and table now fill almost the whole screen with text comfortable to read in sunlight.")}</li>
-                    <li><strong>{tr("Capturas en el App Store de Signal K", "Screenshots in the Signal K App Store")}:</strong> {tr("se incluyen capturas del plugin para que aparezcan en la página del App Store de Signal K tras la instalación.", "plugin screenshots are now included so they appear in the Signal K App Store page after install.")}</li>
-                    <li><strong>{tr("Versatilidad multi-pantalla", "Multi-screen versatility")}:</strong> {tr("interfaz user-friendly que se adapta del móvil al monitor del puente: controles del tamaño del dedo, textos legibles bajo la luz del sol, modales que respetan el viewport real.", "user-friendly UI that adapts from phone to bridge monitor: finger-sized controls, sunlight-readable text, modals that respect the actual viewport.")}</li>
-                    <li><strong>{tr("Correcciones varias", "Various fixes")}:</strong> {tr("resumen del abrigo ('Sheltered:...') respeta ahora el idioma del visor; nombre AIS ya no se pierde al reaparecer; foco del mapa ya no oscila entre el barco propio y un AIS seleccionado; el panel AIS mantiene fija la cabecera y solo scrollea la lista; tooltip molesto 'Container ship top view' eliminado.", "shelter summary ('Sheltered:...') now respects the viewer language; AIS name no longer lost on reappearance; map focus no longer oscillates between own boat and a selected AIS; AIS panel keeps the header fixed and only the list scrolls; annoying 'Container ship top view' tooltip removed.")}</li>
-                  </ul>
-                  <h4>v2.1.4</h4>
-                  <ul>
-                    <li><strong>{tr("Traducción completa ES ↔ EN", "Full ES ↔ EN translation")}:</strong> {tr("panel meteo (AHORA, filas Aire/Presión/etc., resumen), shelter (badges Veleta/Sensor, racha, aire, agua, ahora en gráfico), labels flotantes del visor (Wind, Waves, Calm sea), tooltips de botones, popups Favoritos/Sonda. Cambio de idioma desde el menú actualiza todo al instante.", "weather panel (NOW, Air/Pressure/etc. rows, summary), shelter (Vane/Sensor badges, gust, air, water, now on chart), visor floating labels (Wind, Waves, Calm sea), button tooltips, Favourites/Depth popups. Language switch from the menu updates everything instantly.")}</li>
-                    <li><strong>{tr("Estilo unificado de cabeceras", "Unified header style")}:</strong> {tr("el botón 'Atrás' y los títulos de TODOS los modales (Meteo, Shelter, Anchor Calculation, Tides, etc.) usan ahora el mismo color, tamaño y peso. Coherencia visual en toda la app.", "the 'Back' button and titles of ALL modals (Weather, Shelter, Anchor Calculation, Tides, etc.) now use the same color, size and weight. Visual consistency across the app.")}</li>
-                    <li><strong>{tr("Tooltips bilingües", "Bilingual tooltips")}:</strong> {tr("los textos title='...' de bottom bar y sidebar derecha respetan ahora el idioma activo. Antes quedaban en español aunque el visor estuviera en inglés.", "title='...' tooltips on the bottom bar and right sidebar now respect the active language. Previously they stayed in Spanish even when the visor was in English.")}</li>
-                  </ul>
-                  <h4>v2.1.1 — 2.1.3</h4>
-                  <ul>
-                    <li><strong>{tr("Alarmas fiables", "Reliable alarms")}:</strong> {tr("state machine reforzada — detección de loops huérfanos tras ACK/snooze, 30s de gracia configurable, corte instantáneo de voz al ACK/snooze/mute, mute con ventana de 60s protegida (incluso garreo crítico), banner 'Audio bloqueado' + vibración fallback cuando el navegador móvil suspende el AudioContext.", "hardened state machine — orphan loop detection after ACK/snooze, configurable 30s grace, instant voice cut on ACK/snooze/mute, 60s protected mute window (even for critical anchor drag), 'Audio blocked' banner + vibration fallback when mobile browser suspends AudioContext.")}</li>
-                    <li><strong>{tr("Shelter fullscreen en portrait", "Shelter fullscreen in portrait")}:</strong> {tr("fix de la interacción zoom × dvw/dvh que dejaba el modal a media pantalla. Ahora ocupa el viewport completo en ambas orientaciones.", "fix for the zoom × dvw/dvh interaction that left the modal at half screen. Now fills the full viewport in both orientations.")}</li>
-                    <li><strong>{tr("Capas: chip de opacidad", "Layers: opacity chip")}:</strong> {tr("número de opacidad flotante encima del thumb de cada slider de capa. Se oculta al arrastrar y al desactivar la capa. Default Batimetría e IHM a 13.", "floating opacity number above each layer slider thumb. Hidden while dragging and when the layer is off. Default Bathymetry and IHM at 13.")}</li>
-                    <li><strong>{tr("Cero referencias comerciales", "Zero commercial references")}:</strong> {tr("'SonarChart' renombrado a 'Batimetría' en toda la UI y comentarios.", "'SonarChart' renamed to 'Bathymetry' across UI and comments.")}</li>
-                    <li><strong>{tr("NPM: descripción y keywords", "NPM: description and keywords")}:</strong> {tr("paquete con descripción completa de TODAS las funciones (anchor watch, AIS, shelter, weather, depth, charts), ~70 keywords en inglés para descubrimiento internacional.", "package with full description of ALL features (anchor watch, AIS, shelter, weather, depth, charts), ~70 English keywords for international discoverability.")}</li>
-                  </ul>
-                  <h4>v2.1.0</h4>
-                  <ul>
-                    <li><strong>{tr("Radio de borneo unificado", "Unified swing radius")}:</strong> {tr("los tres controles (slider del panel Cartas y Capas, slider del modal Información, bolita azul del aro en el mapa) ahora editan el MISMO valor. Todos escriben al backend vía /api/anchor-watch/swing-radius. El visor lee el state SSE y refleja el mismo valor en todos sitios.", "the three controls (Cartas/Capas slider, Info modal slider, blue handle on the map ring) now edit the SAME value. All POST to backend /api/anchor-watch/swing-radius. The visor reads SSE state and reflects the same value everywhere.")}</li>
-                    <li><strong>{tr("Optimistic lock 4 s", "4 s optimistic lock")}:</strong> {tr("tras mover un slider o arrastrar una bolita, el visor ignora cualquier delta SSE durante 4 s — evita que un poll en vuelo con el valor antiguo del backend pise lo recién ajustado. Antes el slider 'saltaba' al soltar.", "after moving a slider or dragging a handle, the visor ignores any SSE delta for 4 s — prevents an in-flight poll with the old backend value from overwriting your latest change. Previously sliders would 'jump' on release.")}</li>
-                    <li><strong>{tr("Bottom bar rediseñada", "Bottom bar redesigned")}:</strong> {tr("texto descriptivo en lugar de emojis, viento real (flecha + kts, apunta TO), donut de calidad de abrigo con %, línea 'AHORA' naranja en la curva de presión, botón Sonda con texto largo de estado (OK / Atención varada). Cada valor lleva al modal de su dato.", "descriptive text instead of emojis, real wind (arrow + kts, points TO), shelter quality donut with %, orange 'NOW' line in the pressure curve, depth button with long status text (OK / Grounding warning). Each value opens its data modal.")}</li>
-                    <li><strong>{tr("Nuevos botones laterales", "New side buttons")}:</strong> {tr("❤ Fondeo favorito (abre modal propio para guardar el fondeo si estás anclado, o lista de favoritos si no), KIP (lleva al dashboard KIP), Freeboard (al instrumento Freeboard-SK). URLs dinámicas al host actual — funciona en localhost, IP local o Tailscale.", "❤ Favourite anchorage (opens a dedicated save modal when anchored, or favourites list otherwise), KIP (KIP dashboard), Freeboard (Freeboard-SK instrument). URLs are dynamic to the current host — works on localhost, LAN IP or Tailscale.")}</li>
-                    <li><strong>{tr("Transparencia inteligente de panel", "Smart panel transparency")}:</strong> {tr("al pulsar un slider del modal Información o de Cartas y Capas, el panel se vuelve invisible automáticamente para que veas el mapa detrás. Al soltar, vuelve. Se mantiene incluso si paras de mover sin soltar.", "when you press a slider in the Info modal or Cartas y Capas, the panel automatically becomes invisible so you can see the map behind. Released → restored. Stays transparent even if you stop moving without releasing.")}</li>
-                    <li><strong>{tr("Drag en tiempo real", "Real-time drag")}:</strong> {tr("al arrastrar las bolitas del aro azul/rojo, los labels del mapa (Radio borneo / Radio alarma) y los valores del panel se actualizan en vivo, no al soltar. Las flechas viento/ola siguen al aro mientras lo arrastras.", "while dragging the blue/red ring handles, map labels (Borneo radius / Alarm radius) and panel values update live, not on release. Wind/wave arrows follow the ring as you drag.")}</li>
-                    <li><strong>{tr("Coherencia visor ↔ Info", "Visor ↔ Info consistency")}:</strong> {tr("Radio borneo y Radio alarma usan el mismo formato (toFixed 1 decimal) en el mapa y en el modal Información. Antes el visor mostraba 30.7 m y el Info redondeaba a 31 m.", "Borneo and Alarm radius use the same format (1 decimal) on the map and in the Info modal. Previously the visor showed 30.7 m and Info rounded to 31 m.")}</li>
-                    <li><strong>{tr("Capas en gris al desactivar", "Greyed-out inactive layers")}:</strong> {tr("el slider de opacidad de cada capa (incluidas MBTiles y Charts SignalK dinámicas) se pone gris y no-interactivo cuando la capa no está activa. Más coherente visualmente.", "each layer's opacity slider (including dynamic MBTiles and SignalK Charts) is greyed-out and non-interactive when the layer is off. More visually consistent.")}</li>
-                    <li><strong>{tr("Hamburger con tipografía mayor", "Hamburger with larger typography")}:</strong> {tr("opciones del menú a 32 px, título 'Menú' a 56 px, header iOS-style a 38 px, aviso legal y bloque de versión más grandes. Sin tocar la altura de fila — más legibles desde la mesa de cartas.", "menu options at 32 px, 'Menu' title at 56 px, iOS header at 38 px, legal notice and version block larger. Row height unchanged — easier to read from the chart table.")}</li>
-                    <li><strong>{tr("Modal Instrucciones desde Hamburger", "Instructions modal from Hamburger")}:</strong> {tr("este propio modal ahora se abre desde el menú Hamburger (en vez del README markdown anterior) con la versión, las funciones y este changelog completos. Tabla de paths SignalK con path y descripción a 22 px.", "this very modal now opens from the Hamburger menu (instead of the previous markdown README) with full version, features and this changelog. SignalK paths table with path and description at 22 px.")}</li>
-                    <li><strong>{tr("Resumen meteo colapsable", "Collapsible weather summary")}:</strong> {tr("el bloque '📰 Resumen' del modal Meteo se puede colapsar con un click para liberar espacio en la tabla de horas. El estado se recuerda entre aperturas.", "the '📰 Summary' block of the Weather modal can be collapsed by clicking to free space for the hourly table. State is remembered across openings.")}</li>
-                  </ul>
-                  <h4>v2.0.3</h4>
-                  <ul>
-                    <li><strong>{tr("Mareas mundiales (Open-Meteo)", "Worldwide tides (Open-Meteo)")}:</strong> {tr("nueva pseudo-estación 🌍 Open-Meteo global que predice mareas para cualquier coordenada del mundo (USA, Canadá, UK, Australia, NZ, Japón, etc.) usando el modelo FES2014/Copernicus. Sin API key, caché 12 h por celda 11 km. Para España IHM sigue siendo preferente.", "new 🌍 Open-Meteo global pseudo-station predicts tides for any coordinate in the world (USA, Canada, UK, Australia, NZ, Japan, etc.) using FES2014/Copernicus model. No API key, 12 h cache per 11 km cell. For Spain IHM remains preferred.")}</li>
-                    <li><strong>{tr("Pseudo-estaciones sintéticas", "Synthetic pseudo-stations")}:</strong> {tr("'Sin marea / Offshore' (Δ 0 m) y 'Mediterráneo' (Δ 0.2 m sinusoidal M2). Para lagos, dársenas cerradas o zonas sin marea apreciable. Permiten arrancar el plugin sin internet ni cobertura IHM.", "'No tide / Offshore' (Δ 0 m) and 'Mediterranean' (Δ 0.2 m sinusoidal M2). For lakes, closed marinas or areas with negligible tide. Allow plugin to start without internet or IHM coverage.")}</li>
-                    <li><strong>{tr("Detección automática de IMU", "IMU auto-detection")}:</strong> {tr("nueva arquitectura ImuManager que detecta automáticamente la fuente de attitude/acceleration (Signal K, pypilot local, pypilot remoto, MacArthur HAT, raw I2C opt-in). Endpoint /api/imu/status para diagnóstico.", "new ImuManager architecture that automatically detects attitude/acceleration source (Signal K, local pypilot, remote pypilot, MacArthur HAT, opt-in raw I2C). /api/imu/status endpoint for diagnostics.")}</li>
-                    <li><strong>{tr("Grade en tiempo real con Veleta", "Real-time grade with anemometer")}:</strong> {tr("el grade A-F del abrigo ahora degrada si la veleta marca viento real más alto que la previsión en un sector expuesto. Sin esto el plugin podía dar 'A 85%' con 10 kt reales en sector abierto.", "the A-F shelter grade now downgrades if the anemometer reads higher real wind than the forecast in an exposed sector. Without this the plugin could report 'A 85%' with real 10 kt in an open sector.")}</li>
-                    <li><strong>{tr("Bug crítico TDZ", "Critical TDZ bug")}:</strong> {tr("variable declarada después de su uso provocaba ReferenceError al arrancar el plugin, abortando el registro de rutas y dejando 404 en /api/shelter y otras. Corregido.", "variable declared after its use caused ReferenceError on plugin start, aborting route registration and leaving 404 on /api/shelter and others. Fixed.")}</li>
-                    <li><strong>{tr("Offshore fallback", "Offshore fallback")}:</strong> {tr("posiciones a más de 300 km de cualquier estación IHM (Mediterráneo, alta mar, Asturias central, etc.) ya no rompen el plugin — caen automáticamente a Vigo como fallback hasta que el usuario seleccione otra opción.", "positions more than 300 km from any IHM station (Mediterranean, open ocean, central Asturias, etc.) no longer break the plugin — they fall back to Vigo automatically until the user selects another option.")}</li>
-                    <li><strong>{tr("Auditoría completa de código", "Full code audit")}:</strong> {tr("limpieza de timers leaked, listeners de proceso acumulados, código muerto, dependencias huérfanas (moment, d3), constantes duplicadas. ~120 líneas eliminadas, ~40 añadidas (logging defensivo).", "cleanup of leaked timers, accumulated process listeners, dead code, orphan deps (moment, d3), duplicated constants. ~120 lines removed, ~40 added (defensive logging).")}</li>
-                    <li><strong>{tr("Fix sin datos al elegir sintética", "Fix no-data when picking synthetic")}:</strong> {tr("endpoint /api/extremes leía sólo de cache mensual de IHM y ignoraba las pseudo-estaciones (Open-Meteo, Sin marea, Mediterráneo). Ahora sirve sus extremos desde el provider y, si la TZ es exótica, los normaliza con offset explícito para que el browser los parsee bien.", "the /api/extremes endpoint only read from IHM monthly cache and ignored synthetic stations (Open-Meteo, No tide, Mediterranean). Now serves their extremes from the provider, normalising to explicit offset so any browser TZ parses them correctly.")}</li>
-                    <li><strong>{tr("Open-Meteo referenciado a cero del puerto", "Open-Meteo rebased to chart datum")}:</strong> {tr("la API devuelve altura respecto a MSL (con valores negativos en bajamar, confuso); ahora se reposiciona automáticamente al rango 0…máx como IHM, conservando el rango pleamar–bajamar.", "API returns height relative to MSL (negative values at low tide, confusing); now rebased automatically to 0…max range like IHM, preserving high–low tide range.")}</li>
-                    <li><strong>{tr("Sintéticas disponibles en AUTO", "Synthetic stations available in AUTO")}:</strong> {tr("antes solo se podían elegir en MANUAL; en AUTO el favorito sintético se purgaba silenciosamente. Ahora se respetan en ambos modos.", "previously only selectable in MANUAL; in AUTO synthetic favourite was silently purged. Now honoured in both modes.")}</li>
-                    <li><strong>{tr("% donut coherente con grade", "Donut % coherent with grade")}:</strong> {tr("el % de abrigo no degradaba con olas reales aunque el grade-letter sí lo hiciera; ahora oleaje moderada→50%, agitada→30%, fuerte→10%.", "the shelter % did not degrade with measured waves even though grade-letter did; now waves moderada→50%, agitada→30%, fuerte→10%.")}</li>
-                  </ul>
-                  <h4>v2.0.2</h4>
-                  <ul>
-                    <li><strong>{tr("Fixes de estabilidad", "Stability fixes")}:</strong> {tr("correcciones menores tras tests Rev140-148: timers leaked en evaluateAnchorWatch, listeners de proceso que se acumulaban al toggle disable/enable, logging defensivo en bridge pypilot.", "minor fixes after Rev140-148 testing: leaked timers in evaluateAnchorWatch, process listeners accumulated on toggle disable/enable, defensive logging in pypilot bridge.")}</li>
-                    <li><strong>{tr("AIS: ACK por target individual", "AIS: per-target ACK")}:</strong> {tr("acknowledge silencia el AIS por MMSI específico en lugar de toda la alarma global.", "acknowledge silences AIS per specific MMSI instead of the whole global alarm.")}</li>
-                    <li><strong>{tr("Sonda: detector de freeze", "Sounder: freeze detector")}:</strong> {tr("si la lectura no cambia en N segundos, en vez de mostrar el último valor (que invita a errores) se muestra 'SONDA CONGELADA'.", "if reading does not change for N seconds, instead of showing the last value (error-prone) it shows 'SOUNDER FROZEN'.")}</li>
-                  </ul>
-                  <h4>v2.0.1</h4>
-                  <ul>
-                    <li><strong>{tr("Hotfix audio en móviles iOS/Android", "Hotfix mobile audio iOS/Android")}:</strong> {tr("la alarma no sonaba en segundo plano cuando el navegador estaba minimizado; añadido Web Audio API + Wake Lock + visibility listener.", "alarm did not sound in background when browser was minimised; added Web Audio API + Wake Lock + visibility listener.")}</li>
-                    <li><strong>{tr("Hotfix cálculo de cadena", "Hotfix chain calculation")}:</strong> {tr("en modo Provisional (3.5:1) el cálculo usaba un margen de seguridad incorrecto que infraestimaba la cadena recomendada en condiciones de viento bajo.", "in Provisional mode (3.5:1) the calculation used a wrong safety margin that underestimated recommended chain in low-wind conditions.")}</li>
-                    <li><strong>{tr("Pequeñas correcciones de UI", "Minor UI fixes")}:</strong> {tr("orden de los botones del modal de calibración IMU, salto a línea correcto en el badge de IMU, color del grade-letter coherente con el porcentaje.", "ordering of IMU calibration modal buttons, correct line break on IMU badge, grade-letter colour coherent with percentage.")}</li>
-                  </ul>
-                  <h4>v2.0.0</h4>
-                  <ul>
-                    <li><strong>{tr("Previsión de Abrigo", "Shelter forecast")}:</strong> {tr("rosa de 16 sectores con detección automática del abrigo según la costa (OpenStreetMap), grado A-F con porcentaje de protección, strip de 12 h con previsión hora a hora, resumen AHORA/PREDICCIÓN con datos en tiempo real.", "16-sector rose with automatic shelter detection from coastline (OpenStreetMap), grade A-F with protection percentage, 12 h strip with hourly forecast, NOW/FORECAST summary with real-time data.")}</li>
-                    <li><strong>{tr("Medición de olas en fondeo", "On-board wave measurement")}:</strong> {tr("dirección, período y altura de ola calculados a bordo desde sensores de actitud y aceleración (pypilot IMU), historial 24 h en barras de 15 min, el grado de abrigo se ajusta cuando la ola medida supera la prevista.", "wave direction, period and height computed on board from attitude/acceleration sensors (pypilot IMU), 24 h history in 15-min bars, shelter grade auto-adjusts when measured wave exceeds forecast.")}</li>
-                    <li><strong>{tr("Sensores en tiempo real", "Real-time sensors")}:</strong> {tr("lectura directa de viento (veleta), temperatura aire/agua y presión atmosférica desde Signal K. Etiquetas \"Veleta\" y \"Sensor\" distinguen datos reales de previsión. Fallback automático a Open-Meteo si un sensor falla.", "direct reading of wind (anemometer), air/water temperature and atmospheric pressure from Signal K. \"Veleta\" and \"Sensor\" badges distinguish real data from forecast. Automatic Open-Meteo fallback if a sensor fails.")}</li>
-                    <li><strong>{tr("Audio mejorado", "Enhanced audio")}:</strong> {tr("voces pregrabadas (OGG) por idioma, detección automática de salida del Raspberry Pi (USB → analog → HDMI), patrones distintos por evento, soporte móvil fiable (audio en segundo plano).", "pre-recorded voices (OGG) per language, automatic Raspberry Pi audio output detection (USB → analog → HDMI), distinct patterns per event, reliable mobile support (background audio).")}</li>
-                    <li><strong>{tr("Sonda inteligente", "Smart sounder")}:</strong> {tr("detecta congelación, spikes y valores absurdos. Cuando la sonda no es fiable deja de mostrar lecturas inventadas y avisa con \"SONDA CONGELADA / SIN SONDA\".", "detects freeze, spikes and absurd values. When the sounder is unreliable it stops showing made-up readings and signals \"FROZEN / NO SOUNDER\".")}</li>
-                    <li><strong>{tr("Compass español NSEO", "Spanish compass NSEO")}:</strong> {tr("toda la rosa y referencias cardinales con \"O\" (no \"W\") en español: N/NE/E/SE/S/SO/O/NO.", "full rose and cardinal references with \"O\" (not \"W\") in Spanish: N/NE/E/SE/S/SO/O/NO.")}</li>
-                    <li><strong>{tr("Estaciones IHM corregidas", "IHM stations fixed")}:</strong> {tr("70 estaciones reales del IHM con IDs verificados (antes la lista offline llevaba IDs inventados que rompían la API). Lisboa, Sevilla, A Guarda, Bermeo y Tánger añadidas; Mediterráneo/Baleares/Melilla eliminadas porque IHM no las cubre.", "70 real IHM stations with verified IDs (previously the offline list had invented IDs that broke the API). Lisbon, Seville, A Guarda, Bermeo and Tangier added; Mediterranean/Balearic/Melilla removed because IHM doesn't cover them.")}</li>
-                    <li><strong>{tr("Robustez en errores de API", "API error resilience")}:</strong> {tr("ya no se cuelga con respuestas inesperadas de la API IHM. Estabilidad mejorada en conexiones débiles (4G/Tailscale).", "no longer hangs on unexpected IHM API responses. Improved stability on weak connections (4G/Tailscale).")}</li>
-                  </ul>
-                  <h4>v1.3.1</h4>
-                  <ul>
-                    <li><strong>{tr("Visor de Fondeo mejorado","Enhanced Anchor Watch")}:</strong> {tr("sincronización en tiempo real entre dispositivos (SSE), cadena largada con slider bidireccional, cálculo automático de cadena recomendada al fondear.","real-time multi-device sync (SSE), bidirectional chain deployed slider, automatic recommended chain calculation on anchoring.")}</li>
-                    <li><strong>{tr("Sistema AIS completo","Complete AIS System")}:</strong> {tr("alarma por target individual con ACK, detección de garreo de barcos cercanos, estimación de ancla y radio de borneo de otros barcos mediante análisis de track, anillos de colisión persistentes en la carta.","per-target alarm with ACK, nearby boat dragging detection, anchor position and swing radius estimation from track analysis, persistent collision rings on chart.")}</li>
-                    <li><strong>{tr("Alarmas inteligentes","Smart Alarms")}:</strong> {tr("alarma de varada solo cuando el barco está parado (SOG), detección de sonda congelada/inestable, alarmas de garreo y AIS independientes con control individual.","grounding alarm only when boat is stopped (SOG), frozen/unstable sounder detection, independent drag and AIS alarms with individual control.")}</li>
-                    <li><strong>{tr("Domótica y KIP","Home Automation & KIP")}:</strong> {tr("botones de fondear/levar en KIP (PUT handlers), endpoints REST para Alexa/Google/MQTT, endpoint toggle para mandos a distancia.","drop/lift buttons in KIP (PUT handlers), REST endpoints for Alexa/Google/MQTT, toggle endpoint for remote controls.")}</li>
-                    <li><strong>{tr("Bilingüe ES/EN completo","Full ES/EN Bilingual")}:</strong> {tr("todo el visor de fondeo, popups de cálculo, previsión meteo, curvas de marea, panel de alarmas y landing bilingües. Banderas de idioma en visor, landing y mareas. Idioma sincronizado entre todas las vistas.","full anchor watch viewer, calculation popups, weather forecast, tide curves, alarm panel and landing bilingual. Language flags in viewer, landing and tides. Language synced across all views.")}</li>
-                    <li><strong>{tr("Curvas de Marea mejoradas","Enhanced Tide Curves")}:</strong> {tr("líneas HAT/LAT (pleamar/bajamar máxima anual), etiquetas de pleamar/bajamar en cada extremo, cursor interactivo, fondo blanco con textos legibles.","HAT/LAT lines (annual max high/low tide), high/low tide labels on each extreme, interactive cursor, white background with readable text.")}</li>
-                    <li><strong>{tr("Navegación unificada","Unified Navigation")}:</strong> {tr("URLs dedicadas /mareas y /visorfondeo, navegación en la misma ventana entre todas las vistas, landing con selector y versión en vivo.","dedicated URLs /mareas and /visorfondeo, same-window navigation between all views, landing with selector and live version.")}</li>
-                  </ul>
-                  <h4>v1.3.0</h4>
-                  <ul>
-                    <li><strong>{tr("Visor de Fondeo","Anchor Viewer")}:</strong> {tr("página /visorfondeo con mapa Leaflet, icono de barco estilo SignalK, alarma de garreo visual y sonora, radio de borneo y alarma con etiquetas de metros, marcador de ancla arrastrable. Se abre desde el botón VISOR DE FONDEO.","page /visorfondeo with Leaflet map, SignalK-style boat icon, visual+sound anchor drag alarm, swing and alarm radius with meter labels, draggable anchor marker. Opens from ANCHOR VIEWER button.")}</li>
-                    <li><strong>{tr("Alarma de Garreo","Anchor Drag Alarm")}:</strong> {tr("evaluación cada 5s. Radio alarma = swingRadiusMax + margen (ajustable con slider dinámico de 1 a 50m). Notificación Signal K (visual + sonido + push). Panel muestra estado marea y profundidad del plugin principal.","5-second evaluation. Alarm radius = swingRadiusMax + margin (adjustable with dynamic slider 1-50m). Signal K notification (visual + sound + push). Panel shows tide state and depth from main plugin.")}</li>
-                    <li><strong>{tr("Cartas MBTiles","MBTiles Charts")}:</strong> {tr("servidor de tiles integrado (better-sqlite3). Selector de carpeta (por defecto /home/pi/charts), checkboxes para cambiar entre cartas sin recargar, detección automática TMS/XYZ.","integrated tile server (better-sqlite3). Folder selector (default /home/pi/charts), checkboxes to switch charts without reloading, automatic TMS/XYZ detection.")}</li>
-                    <li><strong>{tr("Capas","Layers")}:</strong> {tr("OpenSeaMap overlay, track GPS con historial de posición, OpenStreetMap dark fallback.","OpenSeaMap overlay, GPS track with position history, OpenStreetMap dark fallback.")}</li>
-                    <li><strong>{tr("Paths Signal K","Signal K Paths")}:</strong> {tr("nuevos: anchorLat, anchorLon, distanceToAnchor, alarmRadius, dragging, watchEnabled.","new: anchorLat, anchorLon, distanceToAnchor, alarmRadius, dragging, watchEnabled.")}</li>
-                  </ul>
-                  <h4>v1.2.1</h4>
-                  <ul>
-                    <li><strong>{tr("UI Fondeo renovada","Anchor UI revamped")}:</strong> {tr("cajas resultado con títulos uniformes 14px, Cadena y Profundidad ahora en naranja, Estado Marea muestra resumen completo, nuevo Status Profundidad con estado de varada, Publicar SK en barra inferior verde.","result boxes with uniform 14px labels, Chain and Depth now in orange, Tide State shows full resume, new Depth Status with grounding state, Publish SK in green bottom bar.")}</li>
-                    <li><strong>{tr("Config overlay","Config overlay")}:</strong> {tr("el panel de configuración avanzada ahora se superpone sin scroll, con botón Calcular naranja. El popup de ayuda ya no desplaza las cajas.","advanced config panel now overlays without scroll, with orange Calculate button. Help popup no longer pushes boxes down.")}</li>
-                    <li><strong>{tr("Botones 170px","Buttons 170px")}:</strong> {tr("todos los botones de la barra principal ampliados a 170px mínimo para que INSTRUCCIONES quepa correctamente.","all toolbar buttons enlarged to 170px minimum so INSTRUCCIONES fits correctly.")}</li>
-                    <li><strong>{tr("Fix alarma notificaciones","Fix alarm notifications")}:</strong> {tr("corregida la limpieza de notificaciones en OpenPlotter: ahora envía state=normal en vez de null, eliminando notificaciones zombie.","fixed notification clearing in OpenPlotter: now sends state=normal instead of null, eliminating zombie notifications.")}</li>
-                    <li><strong>{tr("Fix hBow persistente","Fix hBow persistent")}:</strong> {tr("solucionado el borrado del dato de altura de roldana al editar.","fixed bow roller height being erased when editing.")}</li>
-                    <li><strong>{tr("Fix Publicar en Signal K","Fix Publish to Signal K")}:</strong> {tr("el estado de publicación ahora se persiste entre reinicios del plugin.","publish state now persists across plugin restarts.")}</li>
-                  </ul>
-                  <h4>v1.2.0</h4>
-                  <ul>
-                    <li><strong>{tr("Calculadora de fondeo","Anchoring calculator")}:</strong> {tr("nueva pestaña FONDEO con modelo de scope náutico. Cadena recomendada, radio de borneo, publicación opcional en Signal K.","new ANCHOR tab with nautical scope model. Recommended chain, swing radius, optional Signal K publication.")}</li>
-                    <li><strong>{tr("Fix notificaciones","Notification fix")}:</strong> {tr("la alarma suena UNA sola vez (antes se repetía cada 60s).","alarm sounds ONCE (previously repeated every 60s).")}</li>
-                    <li><strong>{tr("Arranque sin GPS/Internet","Startup without GPS/Internet")}:</strong> {tr("lista hardcoded de todas las estaciones IHM españolas. Siempre hay estaciones para elegir.","hardcoded list of all Spanish IHM stations. Stations always available to select.")}</li>
-                    <li><strong>{tr("Nuevos paths FONDEO","New ANCHOR paths")}:</strong> {tr("nuevos paths publicados en Signal K relacionados con la función FONDEO.","new Signal K paths published for the ANCHOR function.")}</li>
-                    <li><strong>{tr("Tamaño estable al Zoom","Stable Zoom size")}:</strong> {tr("la interfaz siempre llena la ventana al 100% por defecto, sin encogerse al reducir o ampliar el zoom del navegador.","UI always fills the window at 100% by default, no shrinking or growing when changing browser zoom.")}</li>
-                  </ul>
-                  <h4>v1.1.1</h4>
-                  <ul>
-                    <li><strong>{tr("Coeficientes IHM oficiales","Official IHM coefficients")}:</strong> {tr("auto-descarga del PDF. Elimina el 'dato bailante'.","PDF auto-download. Eliminates 'dancing data'.")}</li>
-                    <li><strong>{tr("Fix zona horaria","Timezone fix")}:</strong> {tr("coeficiente usa hora local española (no UTC).","coefficient uses Spanish local time (not UTC).")}</li>
-                    <li><strong>{tr("Fix ESM __dirname","ESM __dirname fix")}:</strong> {tr("polyfill para módulos ESM.","polyfill for ESM modules.")}</li>
-                  </ul>
-                  <h4>v1.1.0</h4>
-                  <ul>
-                    <li><strong>{tr("Alarma de varada","Grounding alarm")}:</strong> {tr("aviso 24h, anticipada, snooze, silenciar.","24h warning, advance, snooze, mute.")}</li>
-                    <li><strong>{tr("Curvas interactivas","Interactive curves")}:</strong> {tr("gráfica SVG con cursor y extremos.","SVG chart with cursor and extremes.")}</li>
-                    <li><strong>{tr("Bilingüe ES/EN","Bilingual ES/EN")}</strong></li>
-                    <li><strong>{tr("Salida/Puesta sol","Sunrise/Sunset")}:</strong> {tr("integración Derived Data.","Derived Data integration.")}</li>
-                    <li><strong>{tr("Táctica Rías Baixas","Rías Baixas tactics")}:</strong> {tr("experimental.","experimental.")}</li>
-                  </ul>
-                  <h4>v1.0.0</h4>
-                  <ul><li>{tr("Versión inicial: datos IHM, AUTO/MANUAL, paths Signal K.","Initial release: IHM data, AUTO/MANUAL, Signal K paths.")}</li></ul>
-                </>
-              ) : lang === "es" ? (
-                <>
-                  <div style={{ background: 'rgba(220,40,40,0.12)', borderLeft: '4px solid #ff6b6b', padding: '12px 14px', margin: '0 0 16px', borderRadius: 4 }}>
-                    <strong style={{ color: '#ff8a8a' }}>AVISO DE SEGURIDAD</strong><br />
-                    <span style={{ fontSize: 15 }}>Este plugin es una ayuda a la navegación. No sustituye la vigilancia del patrón, una maniobra de fondeo correcta, las cartas y avisos oficiales, ni la observación directa del entorno. Las estimaciones dependen de la calidad y actualidad de los datos recibidos.</span>
-                  </div>
-
-                  <p style={{ fontSize: 18, color: '#cfe6f5', margin: '0 0 14px' }}>
-                    Este plugin tiene dos áreas grandes: el <strong>Gestor Avanzado de Fondeo</strong> (vigilancia de ancla, AIS, abrigo, alarmas) y el módulo <strong>Mareas IHM</strong>, que sirve datos oficiales de marea a Signal K y alimenta los cálculos predictivos del gestor.
+                changelogLoading ? (
+                  <p style={{ color: '#9cc', fontStyle: 'italic' }}>
+                    {tr("Cargando historial de cambios…", "Loading changelog…")}
                   </p>
-
-                  <h2 style={{ borderBottom: '2px solid rgba(255,178,63,0.45)', paddingBottom: 6, marginTop: 4, color: '#ffb23f' }}>⚓ GESTOR AVANZADO DE FONDEO</h2>
-
-                  <h3>1. Qué hace</h3>
-                  <p>Combina los sensores reales del barco (GPS, sonda, viento, IMU si lo hay) con previsión meteorológica y marea oficial para vigilar el fondeo de forma continua. La vigilancia corre en el backend (servidor Signal K del barco), por lo que las alarmas siguen activas aunque cierres el navegador en el móvil o la tableta.</p>
-
-                  <h3>2. Configuración mínima</h3>
-                  <h4 style={{ margin: '12px 0 4px' }}>2.1 Plugins de Signal K</h4>
-                  <ul>
-                    <li><strong>Imprescindible — GPS:</strong> debe existir <code>navigation.position</code> publicado por algún driver NMEA0183/NMEA2000 o equivalente.</li>
-                    <li><strong>Recomendado — Sol y variación magnética:</strong> <a href="https://www.npmjs.com/package/signalk-derived-data" target="_blank" rel="noopener" style={{ color: '#4dd0ff' }}>signalk-derived-data</a> con la opción de Sol activa.</li>
-                    <li><strong>Opcional — AIS:</strong> cualquier conexión con receptor AIS. El servidor Signal K lo procesa automáticamente.</li>
-                    <li><strong>Opcional — sonda y viento:</strong> el driver del transductor que publique los paths estándar <code>environment.depth.*</code> y <code>environment.wind.*</code>.</li>
-                    <li><strong>Opcional — IMU:</strong> <code>navigation.attitude</code> y los paths de aceleración. Permiten estimar el movimiento del barco; no sustituyen una boya oceanográfica.</li>
-                  </ul>
-                  <h4 style={{ margin: '12px 0 4px' }}>2.2 Datos del barco</h4>
-                  <p>En <em>Signal K → Server → Settings → Vessel Base Data</em> define como mínimo: <strong>Draft</strong> (calado, usado por alarma de varada y calado efectivo); <strong>Length / LOA</strong> (eslora, usada por la geometría del círculo de borneo); <strong>Beam</strong> (manga, opcional). Si tienes roldana de proa por encima del agua, el visor te pide su <strong>altura sobre la línea de flotación</strong> en el panel ⚓ Calc. Fondeo.</p>
-                  <h4 style={{ margin: '12px 0 4px' }}>2.3 Hardware recomendado a bordo</h4>
-                  <ul>
-                    <li><strong>Ordenador del barco:</strong> Raspberry Pi 3B+ o superior con OpenPlotter V4 (o instalación equivalente Signal K + Node.js). Es donde corre el backend del plugin, donde suenan las alarmas y donde se sirven los dispositivos cliente (móvil, tableta).</li>
-                    <li><strong>Altavoz USB autoamplificado:</strong> imprescindible para que las alarmas se oigan. El jack analógico del Pi por sí solo es flojo; un altavoz USB con amplificador propio cubre toda la cabina y cubierta. Cualquier modelo compatible con ALSA funciona. El visor lo detecta y selecciona la salida USB primero.</li>
-                    <li><strong>GPS (NMEA0183 o NMEA2000):</strong> imprescindible. Sin posición no hay fondeo, ni AIS, ni nada. Publica <code>navigation.position</code>.</li>
-                    <li><strong>Sonda (NMEA0183/NMEA2000):</strong> muy recomendada. Sin sonda no hay cálculo de scope ni alarma de varada fiable. Cualquier transductor que publique <code>environment.depth.belowSurface</code>, <code>belowKeel</code> o <code>belowTransducer</code>.</li>
-                    <li><strong>Anemómetro (NMEA0183/NMEA2000):</strong> recomendado. Habilita el badge "Veleta" del visor y la degradación en tiempo real del grado de abrigo. Sin él, se trabaja solo con la previsión meteorológica.</li>
-                    <li><strong>Receptor AIS (NMEA0183/NMEA2000):</strong> opcional pero muy útil en bahías con tráfico. Habilita la vigilancia AIS de proximidad y la alarma anti-intrusión en tu círculo rojo.</li>
-                    <li><strong>IMU / sensor de actitud:</strong> opcional. Si tienes pypilot, MacArthur HAT o un IMU I2C directo, habilita la estimación de olas a bordo (dirección, periodo, altura aparente) y el histórico de 24 h. Sin él, el abrigo se basa solo en el viento previsto.</li>
-                    <li><strong>Conexión a Internet (4G/WiFi):</strong> opcional pero recomendada para previsión meteo, mareas Open-Meteo (fuera de cobertura IHM) y datos AIS de internet. El plugin funciona offline con caché local de más de 2 meses.</li>
-                  </ul>
-                  <h4 style={{ margin: '12px 0 4px' }}>2.4 Audio</h4>
-                  <p>La salida primaria de seguridad es el ordenador del barco (típicamente un Raspberry Pi). El backend escoge automáticamente la salida disponible en orden: USB → analógica → HDMI. En móviles, tabletas y otros clientes la alarma se reproduce <strong>si</strong> la pestaña está abierta y el navegador ha autorizado el audio. Una aplicación web no puede garantizar sonido cuando el dispositivo está silenciado, en modo no molestar, la pestaña está suspendida o el navegador bloquea la reproducción automática. Considera el audio cliente <strong>complementario</strong>, no sustitutivo del audio del Pi.</p>
-
-                  <h3>3. Cómo fondear bien (maniobra recomendada)</h3>
-                  <p>El gestor vigila el fondeo. No fondea por ti. Para que las alarmas sean fiables, la maniobra tiene que ser correcta:</p>
-                  <ol style={{ paddingLeft: 22 }}>
-                    <li style={{ marginBottom: 8 }}><strong>Aproximación lenta</strong> contra el viento o la corriente dominante. Acércate al punto elegido al ralentí.</li>
-                    <li style={{ marginBottom: 8 }}><strong>Parada total sobre el punto.</strong> SOG = 0, proa al viento. El barco empezará a derivar lentamente hacia popa.</li>
-                    <li style={{ marginBottom: 8 }}><strong>Echa el ancla</strong> en ese instante y <strong>pulsa FONDEAR AQUÍ inmediatamente.</strong> El sistema guarda la posición GPS del barco como estimación inicial del ancla.</li>
-                    <li style={{ marginBottom: 8 }}><strong>Larga cadena</strong> acompañando la deriva hacia popa (motor en muerto o toque muy suave atrás). La cadena debe quedar extendida en línea sobre el fondo, nunca apilada sobre el ancla.</li>
-                    <li style={{ marginBottom: 8 }}><strong>Lasca la longitud adecuada</strong> según el modo: <em>Provisional</em> (scope 3,5:1), <em>Normal</em> (5:1, recomendado), <em>Seguro</em> (8:1, mal tiempo o noche). El visor te calcula la cadena necesaria.</li>
-                    <li style={{ marginBottom: 8 }}><strong>Tensa con motor atrás</strong> de forma progresiva hasta dejar la línea tensa.</li>
-                    <li style={{ marginBottom: 8 }}><strong>Comprueba el clavado.</strong> Mantén motor atrás unos segundos a régimen moderado-fuerte. Si el barco queda inmóvil → ancla clavada. Si sigue desplazándose hacia popa → garreo: leva todo y repite desde el paso 1.</li>
-                    <li style={{ marginBottom: 8 }}><strong>Activa la Vigilancia del ancla</strong> y ajusta el margen de la zona de seguridad (ver sección 4).</li>
-                    <li><strong>Observa varios minutos</strong> antes de abandonar el barco. Confirma con el track GPS que el patrón de borneo es estable.</li>
-                  </ol>
-                  <h4 style={{ margin: '12px 0 4px' }}>3.1 Métodos de cálculo de cadena</h4>
-                  <ul>
-                    <li><strong>Relación de fondeo (scope):</strong> L = scope × D, donde D es la mayor distancia vertical prevista entre roldana y fondo en el horizonte elegido. Scope 3,5:1 / 5:1 / 8:1 según modo.</li>
-                    <li><strong>Fórmula Vicente:</strong> L = 15 + 2 × D (metros). Útil como segunda opinión.</li>
-                  </ul>
-                  <p style={{ fontSize: 14, opacity: 0.85, fontStyle: 'italic' }}>Aclaración técnica: es un cálculo geométrico de fondeo basado en relación de scope, no un modelo físico completo de catenaria (no usa peso lineal ni tensión, solo profundidad, marea predictiva y altura de roldana).</p>
-
-                  <h3>4. Posición del ancla y círculos de vigilancia</h3>
-                  <h4 style={{ margin: '12px 0 4px' }}>4.1 El icono ⚓ del mapa</h4>
-                  <p>El icono ⚓ representa una <strong>posición estimada</strong>. Al pulsar FONDEAR AQUÍ se guarda la posición GPS del barco en ese instante, no la posición física exacta del ancla en el fondo. La diferencia depende de dónde está la antena GPS, la deriva durante la caída y el desplazamiento al clavarse. El ancla sí ocupa una posición concreta aunque exista incertidumbre sobre ella.</p>
-                  <h4 style={{ margin: '12px 0 4px' }}>4.2 Círculo azul — borneo máximo del barco</h4>
-                  <p>Centrado en el icono ⚓, representa la distancia máxima que la <strong>popa</strong> del barco puede alcanzar desde el ancla en el horizonte (típicamente 12 h):</p>
-                  <div style={{ background: 'rgba(77,208,255,0.10)', borderLeft: '3px solid #4dd0ff', padding: '10px 14px', margin: '8px 0', borderRadius: 4, fontFamily: 'monospace' }}>azul = R_cadena + LOA</div>
-                  <p>Donde <strong>R_cadena</strong> = proyección horizontal de la cadena lascada (profundidad actual + variación de marea máxima prevista + altura de roldana). <strong>LOA</strong> = eslora del barco.</p>
-                  <h4 style={{ margin: '12px 0 4px' }}>4.3 Círculo rojo — zona de seguridad</h4>
-                  <p>Añade al azul un margen configurable (slider). Tiene <strong>dos funciones simultáneas</strong>:</p>
-                  <ol style={{ paddingLeft: 22 }}>
-                    <li style={{ marginBottom: 6 }}><strong>Vigilancia AIS de proximidad:</strong> cualquier AIS que entre dentro del rojo (más su eslora) dispara alarma. Cuanto más extra, más distancia mínima exiges a vecinos. Útil en bahías concurridas.</li>
-                    <li><strong>Alarma de garreo del propio barco:</strong> si el GPS sale del rojo (con 2 m de histéresis para absorber ruido GPS), salta alarma de garreo.</li>
-                  </ol>
-                  <h4 style={{ margin: '12px 0 4px' }}>4.4 Regla operativa</h4>
-                  <p>Lo importante no es que el icono ⚓ esté en el centímetro exacto, sino que el <strong>círculo azul englobe todos los borneos reales del barco</strong>. Si ves que el barco roza el azul habitualmente, lasca más cadena. El extra del rojo lo decides según contexto: solitario bajo (5–10 m), bahías concurridas alto.</p>
-                  <h4 style={{ margin: '12px 0 4px' }}>4.5 Corregir una posición mal marcada</h4>
-                  <ul>
-                    <li><strong>Por el track GPS:</strong> tras fondear y dar atrás, el track describe una curva que se tensa hacia popa. El punto donde se inicia esa tensión está muy cerca del ancla.</li>
-                    <li><strong>Por inferencia con la cadena lascada:</strong> con cadena tensa, el ancla queda aproximadamente a la proyección horizontal de la cadena por delante de la proa.</li>
-                    <li><strong>Arrastra el icono ⚓</strong> sobre el mapa al punto correcto, o introduce coordenadas exactas a mano.</li>
-                  </ul>
-                  <h4 style={{ margin: '12px 0 4px' }}>4.6 Si largas más cadena o re-tensas</h4>
-                  <p>Larga cadena, vuelve a tensar atrás y abre ⚓ Calc. Fondeo para actualizar la longitud. El círculo azul se ajusta al nuevo radio. Si el rojo se queda corto, súbelo con el slider del panel de alarmas.</p>
-
-                  <h3>5. Vigilancia continua</h3>
-                  <ul>
-                    <li><strong>Alarma de garreo:</strong> si el GPS del barco supera el círculo rojo (2 m de histéresis), salta sirena y voz. La sirena tiene prioridad sobre el mute de usuario dentro de los límites del sistema y navegador.</li>
-                    <li><strong>Auto-desarme al salir a motor:</strong> si tu SOG se mantiene por encima de <strong>3 nudos durante 30 segundos seguidos</strong>, el plugin asume que sales intencionalmente y desarma la vigilancia. Garreo real raramente excede 1–2 kn; movimientos sostenidos &gt; 3 kn son casi siempre propulsión propia. Recibes notificación informativa en Signal K. En zonas de corriente muy fuerte (rías, estrechos) tenlo presente.</li>
-                    <li><strong>Track GPS con gradiente temporal:</strong> oscuro = antiguo, claro = reciente.</li>
-                    <li><strong>Fondeos favoritos:</strong> guarda con nombre personalizado o auto-nombre. Sincronizados entre dispositivos.</li>
-                  </ul>
-
-                  <h3>6. Sensores reales (viento, IMU, sonda)</h3>
-                  <h4 style={{ margin: '12px 0 4px' }}>6.1 Viento</h4>
-                  <p>Lee <code>environment.wind.angleApparent</code> + <code>speedApparent</code> de Signal K. La etiqueta "Veleta" diferencia el dato real del meteorológico previsto.</p>
-                  <h4 style={{ margin: '12px 0 4px' }}>6.2 IMU y movimiento del barco</h4>
-                  <p>Si tienes pypilot o IMU, el plugin lee <code>navigation.attitude</code> y aceleración para <strong>estimar</strong> dirección, período y altura aparente de las olas. Histórico 24 h en barras de 5 minutos visible en el popup de abrigo. Son estimaciones derivadas del comportamiento del barco, <strong>no mediciones oceanográficas certificadas</strong>: dependen del algoritmo, calibración, posición del sensor, casco y amarre. Endpoint <code>/api/imu/status</code> para diagnóstico.</p>
-                  <h4 style={{ margin: '12px 0 4px' }}>6.3 Sonda</h4>
-                  <p>La lectura se considera válida sólo si: (1) último valor llegó hace menos de <strong>5 segundos</strong> (timestamp), (2) no está congelada (cambio &gt; ±2 cm en 60 s), (3) no es un pico anómalo ni absurdo. Si falla, el visor muestra <strong>SONDA CONGELADA</strong> o <strong>SONDA STALE</strong> en lugar del último número, evitando que el sistema "invente" profundidad.</p>
-
-                  <h3>7. Vigilancia AIS de proximidad</h3>
-                  <p>Detecta blancos AIS dentro del círculo rojo. <strong>Es alarma de proximidad geométrica, no un sistema anti-colisión basado en CPA/TCPA.</strong> No predice trayectorias relativas; reacciona cuando un AIS entra en la zona.</p>
-                  <ul>
-                    <li><strong>Base de datos persistente (72 h):</strong> guarda nombre, eslora, manga, tipo, callsign e IMO de cada barco visto. Al reiniciar, los nombres ya están sin esperar al próximo paquete estático (puede tardar hasta 6 min).</li>
-                    <li><strong>Cache fantasma (5 min):</strong> si pierde recepción VHF brevemente, sigue visible con una X discreta y aviso "datos estimados" con antigüedad del dato.</li>
-                    <li><strong>Slider de radio (0,5–50 km):</strong> controla cuántos barcos ver en mapa y lista. Persistente.</li>
-                    <li><strong>Lista filtrable y ordenable:</strong> por distancia, nombre, favoritos, MMSI o tipo. Caja de filtro con feedback "Sin resultados".</li>
-                    <li><strong>Favoritos:</strong> marca con ★ amarilla. Persistido en backend y sincronizado entre dispositivos.</li>
-                    <li><strong>Iconos por tipo:</strong> ⛵ velero, 🛥️ recreo, 📦 carga, 🛢️ tanque, 🛳️ pasaje, 🎣 pesca…</li>
-                    <li><strong>Botón 🔍 vesselfinder:</strong> abre vesselfinder.com en nueva pestaña con IMO + MMSI.</li>
-                    <li><strong>Alarma de proximidad:</strong> AIS dentro del rojo (considerando su eslora) → alarma de voz con tiempo de gracia. ACK silencia ese MMSI sin afectar al resto.</li>
-                    <li><strong>Reactivación por acercamiento:</strong> AIS ACKeado que vuelve a moverse hacia ti (&gt; 0,5 kn, acercamiento &gt; 5 m/min) reactiva alarma. ACK caduca a los 15 min.</li>
-                    <li><strong>Click-to-focus:</strong> click en un AIS → mapa lo centra, lo sigue y muestra distancia en directo. La X del aro deselecciona.</li>
-                  </ul>
-                  <div style={{ background: 'rgba(255,178,63,0.10)', borderLeft: '3px solid #ffb23f', padding: '10px 14px', margin: '8px 0', borderRadius: 4 }}>
-                    <strong>Límite del AIS:</strong> no todos los barcos transmiten AIS; los datos pueden llegar con retraso o contener errores. Mantén vigilancia visual y radar cuando corresponda.
-                  </div>
-
-                  <h3>8. Indicador de abrigo (Shelter)</h3>
-                  <p>Análisis automático de cuán expuesto está tu fondeo al viento previsto en las próximas 12 h. Es un <strong>indicador geométrico de exposición</strong>, no una garantía de abrigo: no incorpora altura del terreno, fetch real, refracción, difracción ni efectos batimétricos.</p>
-                  <ul>
-                    <li><strong>Rosa de 16 sectores:</strong> autodetección de sectores con costa/estructura artificial cerca (verde = abrigado) vs. mar abierto (rojo). Usa OpenStreetMap (línea de costa + escolleras/muelles man-made).</li>
-                    <li><strong>Grado A–F y % de protección:</strong> A = totalmente abrigado geométricamente; F = expuesto a temporal. % desde viento previsto en sectores expuestos durante 12 h.</li>
-                    <li><strong>Strip horario 12 h:</strong> grado por hora y viento pico. Pincha una celda para detalle.</li>
-                    <li><strong>Historial de olas estimadas (24 h):</strong> intensidad/período/altura derivados del IMU. Una barra cada 5 minutos, eje vertical autoescalable hasta 2 m.</li>
-                    <li><strong>Degradación en tiempo real:</strong> si la veleta mide más viento que el previsto en un sector expuesto, el grado A–F baja y aparece "▼ Real · Viento". Lo mismo con olas estimadas: "▼ Real · Olas". Bandas calma/rizada NO degradan el grado.</li>
-                  </ul>
-
-                  <h3>9. Calculadora de fondeo y alarma de varada</h3>
-                  <h4 style={{ margin: '12px 0 4px' }}>9.1 Calculadora de fondeo</h4>
-                  <p>Estima cadena recomendable y radio de borneo para el horizonte elegido (típicamente 12 h). Usa la mayor distancia vertical prevista entre roldana y fondo durante ese periodo. Publica opcionalmente en Signal K: ratio de scope, resumen de recomendación, metros de cadena y radios de borneo (actual y máximo). Si la profundidad mínima prevista cae por debajo del calado efectivo, alerta roja parpadeante.</p>
-                  <h4 style={{ margin: '12px 0 4px' }}>9.2 Alarma de varada</h4>
-                  <p>El calado efectivo se define así:</p>
-                  <div style={{ background: 'rgba(255,178,63,0.10)', borderLeft: '3px solid #ffb23f', padding: '10px 14px', margin: '8px 0', borderRadius: 4, fontFamily: 'monospace' }}>calado_efectivo = (calado_base + margen_seguridad) × 1,15</div>
-                  <p>La alarma compara la profundidad futura proyectada con ese calado efectivo. La proyección:</p>
-                  <div style={{ background: 'rgba(77,208,255,0.10)', borderLeft: '3px solid #4dd0ff', padding: '10px 14px', margin: '8px 0', borderRadius: 4, fontFamily: 'monospace' }}>profundidad_futura = profundidad_actual + (marea_actual − marea_futura)</div>
-                  <ul>
-                    <li><strong>Aviso 24 h:</strong> detecta riesgo en las próximas 24 h.</li>
-                    <li><strong>Alarma anticipada:</strong> avisa X minutos antes de quedarse sin calado, con sonido.</li>
-                    <li><strong>Posponer:</strong> retrasa el aviso sin borrar el riesgo.</li>
-                    <li><strong>Silenciar sonido:</strong> desactiva audio pero mantiene alerta visual y estado SK.</li>
-                  </ul>
-                  <div style={{ background: 'rgba(255,178,63,0.10)', borderLeft: '3px solid #ffb23f', padding: '10px 14px', margin: '8px 0', borderRadius: 4 }}>
-                    <strong>Aptitud de la fuente de marea para la alarma de varada:</strong> las fuentes sintéticas (Mediterráneo M2, Sin marea) y Open-Meteo (rebajado a nivel local aproximado, no Cero Hidrográfico real) sirven para visualización. Para la alarma de varada usa una estación oficial IHM dentro de su cobertura. Si seleccionas una estación sintética, considera el aviso solo informativo.
-                  </div>
-
-                  <h3>10. Audio multidispositivo</h3>
-                  <p>Salida primaria del Pi del barco: sirena sintética + voz pregrabada (OGG) en el idioma elegido. Si no hay OGG, fallback automático a TTS (espeak). Selección de salida: USB → analógica → HDMI. Réplica en dispositivos cliente conectados (móvil, tablet) si su pestaña está abierta y han autorizado el audio. La réplica cliente es complementaria, no más fiable que el audio local.</p>
-
-                  <h3>11. Mapa y capas</h3>
-                  <ul>
-                    <li>Satélite Esri (por defecto), Bing Hybrid, Esri Clarity, Google Satélite.</li>
-                    <li>OpenStreetMap, OpenSeaMap.</li>
-                    <li>Cartas oficiales IHM (WMS), Batimetría.</li>
-                    <li>Cartas MBTiles offline con slider de transparencia: copia tus <code>.mbtiles</code> a la carpeta de cartas (típicamente <code>/home/pi/charts/</code> en OpenPlotter) y aparecen como checkboxes.</li>
-                  </ul>
-                  <p style={{ fontSize: 14, opacity: 0.85, fontStyle: 'italic' }}>Ninguna capa no oficial debe presentarse como sustituta de la cartografía náutica oficial vigente.</p>
-
-                  <p style={{ fontSize: 18, color: '#9bb4c8', fontStyle: 'italic', margin: '24px 0 8px', borderTop: '1px dashed rgba(255,255,255,0.18)', paddingTop: 18 }}>
-                    A continuación, el módulo de mareas que alimenta el gestor de fondeo con datos oficiales:
+                ) : changelogMd ? (
+                  <div
+                    className="changelog-md"
+                    style={{ fontSize: 16, lineHeight: 1.5, color: '#cfd8dc' }}
+                    dangerouslySetInnerHTML={{ __html: (function(md: string, uiLang: string): string {
+                      function esc(s: string){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+                      function inl(s: string){
+                        s = esc(s);
+                        s = s.replace(/`([^`]+)`/g, '<code style="background:rgba(255,178,63,.12);color:#ffb23f;padding:1px 6px;border-radius:3px;font-size:.92em">$1</code>');
+                        s = s.replace(/\*\*([^*]+)\*\*/g, '<strong style="color:#fff">$1</strong>');
+                        s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
+                        s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#4dd0ff;text-decoration:none">$1</a>');
+                        return s;
+                      }
+                      /* Rev528: filtrar por idioma. CHANGELOG.md tiene secciones
+                         `### English` y `### Español` por release. Mostramos solo
+                         las del idioma activo. La sección H3 "### English" o
+                         "### Español" actúa como switch: a partir de ahí, salto
+                         líneas hasta el próximo H3 (otro idioma) o H2 (siguiente
+                         release) o H1.
+                         También ocultamos los H3 marcadores (no aportan info
+                         útil si ya filtras un solo idioma). */
+                      const isEs = uiLang === 'es';
+                      const langKeepRe = isEs ? /^###\s*Espa(ñ|n)ol\s*$/i : /^###\s*English\s*$/i;
+                      const langDropRe = isEs ? /^###\s*English\s*$/i : /^###\s*Espa(ñ|n)ol\s*$/i;
+                      const filtered: string[] = [];
+                      let drop = false;
+                      for (const ln of md.split('\n')){
+                        if (langKeepRe.test(ln)){ drop = false; continue; /* skip marker */ }
+                        if (langDropRe.test(ln)){ drop = true; continue; }
+                        /* Cualquier otro H1/H2 reinicia (release boundary). */
+                        if (/^#{1,2}\s/.test(ln)) drop = false;
+                        if (!drop) filtered.push(ln);
+                      }
+                      const lines = filtered;
+                      const out: string[] = [];
+                      let inCode = false;
+                      let listType: 'ul' | 'ol' | null = null;
+                      const closeList = () => { if (listType){ out.push('</' + listType + '>'); listType = null; } };
+                      for (let i = 0; i < lines.length; i++){
+                        const ln = lines[i];
+                        if (/^```/.test(ln)){ inCode = !inCode; out.push(inCode ? '<pre style="background:rgba(255,255,255,.06);padding:10px 14px;border-radius:4px;overflow-x:auto"><code>' : '</code></pre>'); continue; }
+                        if (inCode){ out.push(esc(ln) + '\n'); continue; }
+                        const h = ln.match(/^(#{1,6})\s+(.*)$/);
+                        if (h){
+                          closeList();
+                          const lvl = h[1].length;
+                          const color = lvl <= 2 ? '#ffb23f' : '#fff';
+                          /* Rev533: tamaños = ~60% de los del visor (24/32 lógicos) porque
+                             el modal Instrucciones NO está bajo zoom var(--ui-scale)=0.6
+                             tras el fix Rev531. Para verse visualmente igual que Sonda
+                             (que SÍ tiene zoom 0.6 → 24×0.6=14.4 visual), nuestros
+                             tamaños inline deben estar ya en 14-20px. */
+                          const sz = lvl === 1 ? '20px' : lvl === 2 ? '18px' : lvl === 3 ? '17px' : '16px';
+                          const border = lvl <= 2 ? ';border-bottom:1px solid rgba(255,178,63,.25);padding-bottom:6px' : '';
+                          out.push(`<h${lvl} style="color:${color};font-size:${sz};margin:22px 0 10px${border};font-weight:800">${inl(h[2])}</h${lvl}>`);
+                          continue;
+                        }
+                        const ul = ln.match(/^\s*[-*]\s+(.*)$/);
+                        if (ul){ if (listType !== 'ul'){ closeList(); out.push('<ul style="padding-left:24px;margin:8px 0">'); listType = 'ul'; } out.push('<li style="margin:5px 0;font-size:16px">' + inl(ul[1]) + '</li>'); continue; }
+                        const ol = ln.match(/^\s*\d+\.\s+(.*)$/);
+                        if (ol){ if (listType !== 'ol'){ closeList(); out.push('<ol style="padding-left:24px;margin:8px 0">'); listType = 'ol'; } out.push('<li style="margin:5px 0;font-size:16px">' + inl(ol[1]) + '</li>'); continue; }
+                        if (/^\s*$/.test(ln)){ closeList(); continue; }
+                        out.push('<p style="margin:8px 0;font-size:16px">' + inl(ln) + '</p>');
+                      }
+                      closeList();
+                      return out.join('\n');
+                    })(changelogMd, lang) }}
+                  />
+                ) : (
+                  <p style={{ color: '#f88', fontStyle: 'italic' }}>
+                    {tr("CHANGELOG no disponible. Revisa CHANGELOG.md del repositorio del plugin.", "CHANGELOG not available. Check CHANGELOG.md in the plugin repository.")}
                   </p>
-
-                  <h2 style={{ borderBottom: '2px solid rgba(77,208,255,0.4)', paddingBottom: 6, marginTop: 4, color: '#4dd0ff' }}>📊 MÓDULO MAREAS (IHM)</h2>
-
-                  <h3>12. Fuentes de datos y aptitud para seguridad</h3>
-                  <ul>
-                    <li><strong>IHM oficial (~70 estaciones):</strong> predicción astronómica oficial del Instituto Hidrográfico de la Marina para toda la costa española (península, Baleares y Canarias). Datos mensuales con coeficiente. Referida al <strong>Cero Hidrográfico</strong> de cada estación. Resolución de publicación centimétrica; el nivel real puede desviarse por presión, viento, oleaje o aportes fluviales.</li>
-                    <li><strong>🌍 Open-Meteo global:</strong> predicción mundial para cualquier lat/lon, modelo hidrodinámico. Refresco cada 12 h. Sin API key. El plugin ajusta los datos a un nivel local aproximado (típicamente bajamar semanal ≈ 0). <strong>No es Cero Hidrográfico oficial</strong>; es una aproximación útil para consulta relativa. Para alarma de varada calibra localmente antes de fiarte del aviso.</li>
-                    <li><strong>Mediterráneo:</strong> curva sintética sinusoidal M2 (amplitud ≈ 0,2 m). Solo visualización donde la marea astronómica es despreciable.</li>
-                    <li><strong>Sin marea / Offshore:</strong> curva plana (Δ = 0 m). Permite arrancar el visor sin internet ni cobertura. No representa nivel real.</li>
-                  </ul>
-                  <p>En el dropdown, las sintéticas aparecen <strong>primeras</strong> en MANUAL (acceso rápido) y <strong>al final</strong> en AUTO (la "más cercana" debe ser una IHM real).</p>
-
-                  <h3>13. Selección automática y manual</h3>
-                  <ul>
-                    <li><strong>AUTOMÁTICO:</strong> detecta la estación más cercana por GPS (radio 300 km). Puedes marcar una "favorita": AUTO seguirá las próximas pero la recordará si vuelves.</li>
-                    <li><strong>MANUAL:</strong> selecciona cualquier estación, incluidas las sintéticas. Útil fuera de rango GPS o para consulta de otra zona.</li>
-                  </ul>
-                  <p>Si no hay GPS al arrancar, el plugin actualmente recurre a Vigo como respaldo. Cuando llega señal GPS, cambia automáticamente a la estación válida más cercana. Mientras estés en el respaldo, la marea mostrada puede no corresponder a tu posición real.</p>
-
-                  <h3>14. Curvas, hora y referencia vertical</h3>
-                  <p>Pulsa <strong>CURVAS</strong> para abrir la gráfica interactiva SVG. Muestra extremos (pleamares y bajamares), hora actual marcada e interpolación sinusoidal. <strong>Eje horizontal:</strong> hora local de la estación (Europe/Madrid o Atlantic/Canary). <strong>Eje vertical:</strong> altura en metros sobre la referencia de la fuente — Cero Hidrográfico para IHM, nivel local aproximado para Open-Meteo, altura relativa para sintéticas.</p>
-
-                  <h3>15. Coeficiente, solares y corriente</h3>
-                  <ul>
-                    <li><strong>Coeficiente de mareas:</strong> oficial del IHM, descargado del PDF anual. Valores &gt; 90 implican grandes carreras de marea; &lt; 40 mareas muertas.</li>
-                    <li><strong>Datos solares:</strong> amanecer y puesta. Requiere GPS + <a href="https://www.npmjs.com/package/signalk-derived-data" target="_blank" rel="noopener" style={{ color: '#4dd0ff' }}>signalk-derived-data</a> con Sol activo.</li>
-                    <li><strong>🧭 Navegación táctica Rías Baixas:</strong> función experimental e informativa. Consejo táctico basado en fase de marea (llenante/vaciante) y porcentaje. La corriente local real depende también del canal y desfases entre nivel y corriente — complemento, no verdad absoluta.</li>
-                  </ul>
-
-                  <h3>16. Caché y funcionamiento sin Internet</h3>
-                  <p>Caché local de más de 2 meses de datos IHM. Auto-actualización cada 48 h cuando hay conexión. Primer arranque sin Internet: estaciones hardcoded como respaldo.</p>
-
-                  <h3>❓ Preguntas frecuentes</h3>
-                  <h4 style={{ margin: '10px 0 4px' }}>Sobre el fondeo</h4>
-                  <ul>
-                    <li><strong>¿El icono ⚓ marca la posición exacta del ancla?</strong> → No. Es la posición GPS del barco al pulsar FONDEAR AQUÍ. La posición real del ancla puede estar a unos metros. Lo importante es que el círculo azul englobe todos los borneos reales.</li>
-                    <li><strong>¿Qué diferencia hay entre el círculo azul y el rojo?</strong> → El azul = alcance máximo de la popa (cadena + LOA). El rojo = azul + margen configurable. Funciona a la vez como zona de vigilancia AIS de proximidad y como umbral de alarma de garreo (2 m de histéresis).</li>
-                    <li><strong>¿Puedo mover el ancla si la marqué mal?</strong> → Sí: arrastra el icono ⚓ o introduce coordenadas a mano. Los círculos se recentran al instante.</li>
-                    <li><strong>¿Cómo cambio el scope o la cadena en mitad del fondeo?</strong> → Abre ⚓ Calc. Fondeo, cambia modo o longitud. El azul se actualiza. Ajusta el rojo con el slider si necesitas más margen.</li>
-                    <li><strong>¿Funciona la alarma si cierro el navegador?</strong> → Sí. La vigilancia corre en el backend del Pi. Audio del Pi y notificaciones SK siguen activos. Los clientes web suenan en paralelo si su pestaña está abierta.</li>
-                    <li><strong>¿Por qué se desarma sola a veces?</strong> → Si tu SOG supera 3 nudos durante 30 s seguidos, asumimos salida intencional. Garreo real raramente excede 1–2 kn. Si esperas corrientes muy fuertes, tenlo en cuenta.</li>
-                    <li><strong>¿Qué significa "SONDA CONGELADA"?</strong> → Sin updates en &gt; 5 s, o valor fijo (±2 cm en 60 s), o pico anómalo. En lugar de mostrar un número que invita a error, el visor lo declara explícitamente.</li>
-                  </ul>
-                  <h4 style={{ margin: '10px 0 4px' }}>Sobre Signal K y configuración</h4>
-                  <ul>
-                    <li><strong>¿No aparece la posición GPS?</strong> → Comprueba que <code>navigation.position</code> está publicado. Necesitas receptor GPS conectado y driver activo.</li>
-                    <li><strong>¿Qué plugins SK necesito para amaneceres y puestas?</strong> → <a href="https://www.npmjs.com/package/signalk-derived-data" target="_blank" rel="noopener" style={{ color: '#4dd0ff' }}>signalk-derived-data</a> con Sun activa.</li>
-                    <li><strong>¿Dónde configuro el calado?</strong> → Signal K → Server → Settings → Vessel Base Data → Draft. Se usa para la alarma de varada y el calado efectivo +15%.</li>
-                  </ul>
-                  <h4 style={{ margin: '10px 0 4px' }}>Sobre mareas</h4>
-                  <ul>
-                    <li><strong>¿La hora es UTC?</strong> → No, hora local de la estación.</li>
-                    <li><strong>¿Funciona sin Internet?</strong> → Sí, caché local de más de 2 meses.</li>
-                    <li><strong>¿Puedo usar una marea sintética para la alarma de varada?</strong> → No recomendable. Mediterráneo M2 y "Sin marea" son aproximadas; Open-Meteo está rebajado a nivel local aproximado pero no es Cero Hidrográfico real. Usa estación IHM oficial.</li>
-                    <li><strong>¿Qué es el Cero Hidrográfico?</strong> → Datum vertical del IHM, aproximadamente la bajamar astronómica más baja del año.</li>
-                    <li><strong>¿Por qué Open-Meteo difiere de IHM en la misma posición?</strong> → IHM usa Cero Hidrográfico; Open-Meteo usa MSL ajustado localmente. Pueden diferir decenas de cm.</li>
-                    <li><strong>¿Qué navegadores soporta?</strong> → Firefox y Chromium (OpenPlotter default). Optimizado 1920×1080, responsive a móvil/tableta.</li>
-                  </ul>
-                </>
+                )
+              ) : lang === 'es' ? (
+                /* Rev527: si el visor está en español, renderizamos el fragmento
+                   HTML servido por el plugin (originalmente docs/INSTRUCCIONES_MODAL_v3.html).
+                   El JSX hardcoded EN de debajo solo se usa cuando lang==='en'. */
+                instrEsLoading ? (
+                  <p style={{ color: '#9cc', fontStyle: 'italic' }}>Cargando manual…</p>
+                ) : instrEsHtml ? (
+                  <div className="instr-es-content" dangerouslySetInnerHTML={{ __html: instrEsHtml }} />
+                ) : (
+                  <p style={{ color: '#f88', fontStyle: 'italic' }}>Manual no disponible. Revisa public/instrucciones_es.html.</p>
+                )
               ) : (
                 <>
-                  <div style={{ background: 'rgba(220,40,40,0.12)', borderLeft: '4px solid #ff6b6b', padding: '12px 14px', margin: '0 0 16px', borderRadius: 4 }}>
-                    <strong style={{ color: '#ff8a8a' }}>SAFETY NOTICE</strong><br />
-                    <span style={{ fontSize: 15 }}>This plugin is a navigation aid. It does not replace the skipper's watch, a correct anchoring manoeuvre, official charts and notices, or direct observation of the surroundings. Estimates depend on the quality and currency of the incoming sensor data.</span>
+                  <div style={{ background: 'rgba(220,40,40,0.12)', borderLeft: '5px solid #ff6b6b', padding: '16px 18px', margin: '0 0 18px', borderRadius: 4 }}>
+                    <strong style={{ color: '#ff8a8a', fontSize: 20, display: 'block', marginBottom: 8 }}>
+                      ⚠ {tr("AVISO DE SEGURIDAD", "SAFETY NOTICE")}
+                    </strong>
+                    <span style={{ fontSize: 18, lineHeight: 1.5 }}>
+                      {tr(
+                        "Este plugin es una ayuda a la navegación. NO sustituye la vigilancia del patrón, una maniobra de fondeo correcta, las cartas y avisos oficiales, ni la observación directa del entorno. Las estimaciones dependen de la calidad y actualidad de los datos de sensores entrantes.",
+                        "This plugin is a navigation aid. It does NOT replace the skipper's watch, a correct anchoring manoeuvre, official charts and notices, or direct observation of the surroundings. Estimates depend on the quality and currency of the incoming sensor data."
+                      )}
+                    </span>
                   </div>
 
                   <p style={{ fontSize: 18, color: '#cfe6f5', margin: '0 0 14px' }}>
-                    This plugin has two large areas: the <strong>Advanced Anchor Watch Manager</strong> (anchor watch, AIS, shelter, alarms) and the <strong>IHM Tides</strong> module, which serves official Spanish tide data to Signal K and feeds the manager's predictive calculations.
+                    {tr(
+                      "Este plugin tiene dos grandes áreas: el ",
+                      "This plugin has two large areas: the "
+                    )}
+                    <strong>AnchorWatch Pro: Smart Anchoring, AIS &amp; Tides</strong>
+                    {tr(
+                      " (vigilancia del ancla, AIS, abrigo, alarmas) y el módulo ",
+                      " (anchor watch, AIS, shelter, alarms) and the "
+                    )}
+                    <strong>{tr("Mareas IHM", "IHM Tides")}</strong>
+                    {tr(
+                      ", que sirve datos oficiales de marea española a Signal K y alimenta los cálculos predictivos del gestor.",
+                      " module, which serves official Spanish tide data to Signal K and feeds the manager's predictive calculations."
+                    )}
                   </p>
 
-                  <h2 style={{ borderBottom: '2px solid rgba(255,178,63,0.45)', paddingBottom: 6, marginTop: 4, color: '#ffb23f' }}>⚓ ADVANCED ANCHOR WATCH MANAGER</h2>
+                  <p style={{ fontSize: 16, color: '#9ad', fontStyle: 'italic', margin: '0 0 18px' }}>
+                    💡 {tr(
+                      "Para ver el detalle de qué novedades trae cada versión, pulsa el botón ",
+                      "For details on what each version brings, press the "
+                    )}
+                    <strong style={{ color: '#ffb23f' }}>{tr("VERSIONES", "CHANGELOG")}</strong>
+                    {tr(
+                      " arriba. Siempre refleja exactamente la versión del plugin instalado.",
+                      " button at the top. It always reflects the exact version of the plugin you have installed."
+                    )}
+                  </p>
+
 
                   <h3>1. What it does</h3>
                   <p>Combines the boat's real sensors (GPS, depth, wind, IMU if any) with weather forecast and official tide data to monitor the anchorage continuously. The watch runs in the backend (Signal K server on the boat), so alarms remain active even if you close the browser on phone or tablet.</p>
@@ -2129,8 +1929,10 @@ const disableAlarm = async () => {
                   el ‹ Atrás del header iOS del popup-overlay del Hamburger,
                   que reabre el menú (back-stack). */}
               <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <input type="text" value={instrSearch} onChange={(e) => setInstrSearch(e.target.value)} placeholder={tr("🔍 Buscar...", "🔍 Search...")} style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '8px', color: 'white', padding: '8px 12px', fontSize: '14px', width: '160px' }} />
-                {instrSearch.length >= 2 && <span style={{ fontSize: '12px', opacity: 0.7 }}>{instrMatchCount > 0 ? instrMatchCount : "0"}</span>}
+                {/* Rev543: input igualado a los botones VERSIONES/AVISO LEGAL
+                    (height auto via padding 6/12, font 13, min-height 30). */}
+                <input type="text" value={instrSearch} onChange={(e) => setInstrSearch(e.target.value)} placeholder={tr("🔍 Buscar...", "🔍 Search...")} style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '8px', color: 'white', padding: '6px 12px', fontSize: '13px', width: '170px', fontWeight: 600, minHeight: '30px', boxSizing: 'border-box' }} />
+                {instrSearch.length >= 2 && <span style={{ fontSize: '13px', opacity: 0.85, fontWeight: 700, color: '#66ffaa' }}>{instrMatchCount > 0 ? instrMatchCount : "0"}</span>}
               </div>
             </div>
           </div>

@@ -11,6 +11,35 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>Mareas (IHM)</title>
+  <script>
+  /* Rev523 (feedback Carlos): la entrada raíz del webapp `/signalk-mareas-ihm/`
+     servía index.html (TidesView/mareas) por defecto. El usuario quería que
+     siempre fuera directo al visor mobile (anchor watch). Redirigimos a
+     /visorfondeo EXCEPTO si:
+       - estamos embebidos (iframe del modal Instrucciones del visor: ?embed=1
+         o ?showInstructions=1).
+       - la ruta es /mareas (botón "Mareas" del visor que abre TidesView
+         standalone para consultar tablas/curvas).
+     Este script va inline ANTES del module de TidesView para abortar la
+     carga del bundle React si vamos a redirigir. */
+  (function(){
+    try {
+      var qs = window.location.search || '';
+      var path = window.location.pathname || '';
+      var embedded = qs.indexOf('embed=1') >= 0 || qs.indexOf('showInstructions=1') >= 0;
+      var isMareasRoute = path.indexOf('/mareas') >= 0;
+      if (!embedded && !isMareasRoute) {
+        /* Rev539: ocultar el HTML inmediatamente para que el flicker visual
+           de TidesView no se vea durante el milisegundo antes del replace.
+           Si por algún motivo el replace falla, restauramos en 1s. */
+        document.documentElement.style.visibility = 'hidden';
+        document.documentElement.style.background = '#0a1929';
+        window.location.replace('/signalk-mareas-ihm/visorfondeo' + qs);
+        setTimeout(function(){ document.documentElement.style.visibility = ''; }, 1000);
+      }
+    } catch(_){}
+  })();
+  </script>
 </head>
 
 <body>

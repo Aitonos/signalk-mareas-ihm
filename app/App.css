@@ -1,6 +1,10 @@
 :root { color-scheme: dark; --viewport-scale: 1; }
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #04384a; overflow: hidden; min-height: 100vh; min-height: 100dvh; }
+/* Rev546 (feedback Carlos): unificado color de fondo con el visor móvil
+   (`#0a1929`). Antes TidesView usaba `#04384a` (teal verdoso) que desentonaba
+   cuando se cargaba dentro del visor (mareas standalone) o cuando los modales
+   asomaban por los bordes. Ahora todo el plugin usa el mismo dark azul. */
+body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #0a1929; overflow: hidden; min-height: 100vh; min-height: 100dvh; }
 
 /* Escenario fijo: escalado uniforme. */
 .tide-page { position: absolute; width: 825px; height: 890px; background: #04384a; color: white; transform-origin: top left; transform: scale(var(--viewport-scale)); display: flex; flex-direction: column; padding: 8px 18px; }
@@ -143,7 +147,9 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background:
 
 /* MODALES */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); padding: 16px; zoom: var(--zoom-fix, 1); }
-.modal-content { background: #0a4a5a; border-radius: 16px; padding: 24px 32px; max-width: 600px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.15); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+/* Rev546: background unificado con visor móvil (#0a1929) en lugar del teal
+   verdoso anterior (#0a4a5a). */
+.modal-content { background: #0a1929; border-radius: 16px; padding: 24px 32px; max-width: 600px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.15); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .modal-content h2 { margin: 0 0 16px 0; font-size: 24px; color: #ffb23f; text-align: center; flex-shrink: 0; }
 .modal-content h3 { margin: 16px 0 8px 0; font-size: 16px; color: #49f6a4; }
 .modal-content p { margin: 8px 0; line-height: 1.6; font-size: 15px; }
@@ -155,7 +161,39 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background:
 .modal-buttons { display: flex; gap: 12px; justify-content: center; margin-top: 20px; flex-shrink: 0; }
 .modal-buttons-center { display: flex; gap: 12px; justify-content: center; margin-top: 20px; flex-shrink: 0; }
 .modal-buttons-fixed { display: flex; gap: 12px; justify-content: center; padding-top: 16px; margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.15); flex-shrink: 0; }
-.modal-fullscreen { max-width: none; width: 100%; height: 100%; }
+/* Rev536: fullscreen sin marco negro — anula padding/border/border-radius
+   de .modal-content para que el contenido ocupe edge-to-edge. Padding lateral
+   lo da el cuerpo scrolleable (.instrucciones-body). */
+.modal-fullscreen { max-width: none; width: 100%; height: 100%; padding: 0; border-radius: 0; border: none; box-shadow: none; }
+
+/* Rev543: ELIMINADO el embed-mode transparente. La transparencia del body/
+   html/#root dejaba ver el background dark del visor padre por las franjas
+   donde la app no llenaba todo el ancho ("bordes negros laterales"). Los
+   defaults del iframe (background dark de la app) tapan correctamente.
+   El "cuadro negro" original lo causaba el .popup-box del visor padre y se
+   arregla SOLO con la regla #m-instructions-overlay .popup-box de mobile.html
+   (no hace falta tocar el documento del iframe). */
+
+/* Rev541: scrollbar coherente con el visor dark (Firefox + WebKit). Aplicado
+   al contenedor scrolleable real (.instrucciones-scroll). */
+.instrucciones-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.32) transparent;
+  scrollbar-gutter: stable;
+}
+.instrucciones-scroll::-webkit-scrollbar { width: 10px; }
+.instrucciones-scroll::-webkit-scrollbar-track { background: transparent; }
+.instrucciones-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.32);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.instrucciones-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,178,63,0.55);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
 
 .modal-save { padding: 10px 30px; border: none; border-radius: 8px; background: #49f6a4; color: #04384a; font-weight: 700; font-size: 14px; cursor: pointer; }
 .modal-close { padding: 10px 30px; border: none; border-radius: 8px; background: #ffb23f; color: #04384a; font-weight: 700; font-size: 14px; cursor: pointer; }
@@ -169,21 +207,25 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background:
 .disclaimer-warning { margin-top: 16px; padding: 16px; background: rgba(255,75,75,0.15); border: 1px solid rgba(255,75,75,0.4); border-radius: 8px; }
 .disclaimer-warning p, .disclaimer-warning li { font-size: 22px !important; }
 .instrucciones-modal { max-width: none; width: 100%; height: 100%; }
-.instrucciones-body { text-align: left; overflow-y: auto; flex: 1; min-height: 0; }
+/* Rev536: padding lateral propio del scroll, ahora que .modal-fullscreen
+   no aporta padding. Sin esto el contenido pegaba a los bordes del visor. */
+.instrucciones-body { text-align: left; overflow-y: auto; flex: 1; min-height: 0; padding: 0 22px; }
 .instrucciones-scroll { overflow-y: auto; flex: 1; min-height: 0; }
 /* Rev246+247: textos del modal Instrucciones agrandados. La tabla de
    paths SignalK debe tener path y descripción al mismo tamaño que el
    texto del modal — antes el <code> con el path se veía más pequeño y
    monoespaciado, ahora ambas columnas a 22px. */
-.instrucciones-modal h2 { font-size: 34px; }
-.instrucciones-modal h3 { font-size: 28px; }
-.instrucciones-modal h4 { font-size: 24px; }
-.instrucciones-modal p, .instrucciones-modal li { font-size: 24px; line-height: 1.5; }
+/* Rev533: bajados ~40% porque el modal ya no está bajo zoom 0.6 (fix Rev531).
+   Antes 34/28/24 × 0.6 = 20.4/16.8/14.4 visuales; ahora directamente 20/17/16. */
+.instrucciones-modal h2 { font-size: 20px; }
+.instrucciones-modal h3 { font-size: 18px; }
+.instrucciones-modal h4 { font-size: 16px; }
+.instrucciones-modal p, .instrucciones-modal li { font-size: 16px; line-height: 1.5; }
 .instrucciones-modal strong { font-size: inherit; }
-.instrucciones-modal table { font-size: 24px; line-height: 1.4; }
-.instrucciones-modal th { font-size: 24px; }
-.instrucciones-modal td { font-size: 24px; }
-.instrucciones-modal code { font-size: 24px; }
+.instrucciones-modal table { font-size: 16px; line-height: 1.4; }
+.instrucciones-modal th { font-size: 16px; }
+.instrucciones-modal td { font-size: 16px; }
+.instrucciones-modal code { font-size: 16px; }
 .disclaimer-modal h2 { font-size: 32px; }
 .disclaimer-modal h3 { font-size: 22px; }
 .disclaimer-modal p, .disclaimer-modal li { font-size: 22px; line-height: 1.5; }
@@ -308,7 +350,11 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background:
 .tide-controls-row2 { font-size: 14px !important; zoom: 1 !important; }
 .tide-controls-row2 .ctrl-btn { font-size: 14px !important; padding: 12px 10px !important; }
 .tide-controls-row2 .alarm-btn { font-size: 14px !important; }
-.modal-buttons-fixed button { font-size: 16px !important; }
+/* Rev534+Rev538: bajados porque el modal Instrucciones ya NO está bajo
+   zoom 0.6 (Rev531). 13px ≈ 22×0.6 visual del visor móvil. Rev538: anula
+   también height:50px y min-width:145px de .ctrl-btn que dejaban los
+   botones gigantes pese a font-size 13. */
+.modal-buttons-fixed button { font-size: 13px !important; padding: 6px 12px !important; height: auto !important; min-height: 30px !important; min-width: 0 !important; }
 
 /* v1.2.0: Anchoring / Catenaria modal — flexbox layout with sticky header/results/footer */
 .anchor-modal { max-width: 700px; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
@@ -334,7 +380,7 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background:
 .anchor-config-arrow { display: inline-block; transition: transform 0.2s; font-size: 12px; }
 .anchor-config-arrow.open { transform: rotate(90deg); }
 /* Config body: FIXED overlay above everything — not clipped by scroll parent */
-.anchor-config-body { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 200; background: #0a4a5a; border: 2px solid rgba(0,200,100,0.45); border-radius: 12px; padding: 18px 20px 14px; box-shadow: 0 12px 48px rgba(0,0,0,0.6); width: 90%; max-width: 520px; }
+.anchor-config-body { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 200; background: #0a1929; border: 2px solid rgba(0,200,100,0.45); border-radius: 12px; padding: 18px 20px 14px; box-shadow: 0 12px 48px rgba(0,0,0,0.6); width: 90%; max-width: 520px; }
 .anchor-config-calc-btn { padding: 9px 22px; border-radius: 10px; border: none; background: #ff9800; color: white; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 10px; }
 .anchor-config-calc-btn:hover { background: #ffab30; }
 .anchor-config-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 199; }
@@ -385,12 +431,42 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background:
 /* Search highlight */
 mark.search-hl { background: #ffb23f; color: #000; padding: 1px 2px; border-radius: 3px; }
 
-/* Search results panel */
-.search-results-panel { flex-shrink: 0; max-height: 200px; overflow-y: auto; background: rgba(0,20,40,0.95); border: 1px solid rgba(0,200,100,0.3); border-radius: 10px; margin: 4px 0; padding: 8px; }
-.search-results-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #66ffaa; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 6px; }
-.search-results-list { display: flex; flex-direction: column; gap: 2px; }
-.search-group { margin-bottom: 6px; }
-.search-group-title { font-size: 12px; font-weight: 700; color: #ffb23f; padding: 2px 6px; background: rgba(255,178,63,0.1); border-radius: 4px; margin-bottom: 3px; }
-.search-result-item { font-size: 12px; color: #ccc; padding: 4px 8px; cursor: pointer; border-radius: 4px; line-height: 1.4; }
-.search-result-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
-.search-result-more { font-size: 11px; color: #888; padding: 2px 8px; font-style: italic; }
+/* Search results panel — Rev534: bajados porque el modal Instrucciones ya
+   NO está bajo zoom 0.6 (Rev531). Antes 17/18 × 0.6 = 10/11 visual; ahora
+   13/14 directos en pantalla. */
+.search-results-panel { flex-shrink: 0; max-height: 240px; overflow-y: auto; background: rgba(0,20,40,0.95); border: 1px solid rgba(0,200,100,0.3); border-radius: 10px; margin: 4px 0; padding: 10px 12px; }
+.search-results-header { display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 700; color: #66ffaa; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.12); margin-bottom: 6px; }
+.search-results-list { display: flex; flex-direction: column; gap: 4px; }
+.search-group { margin-bottom: 8px; }
+.search-group-title { font-size: 13px; font-weight: 800; color: #ffb23f; padding: 3px 8px; background: rgba(255,178,63,0.12); border-radius: 4px; margin-bottom: 4px; }
+.search-result-item { font-size: 13px; color: #cfd8dc; padding: 6px 10px; cursor: pointer; border-radius: 4px; line-height: 1.5; }
+.search-result-item:hover { background: rgba(255,255,255,0.10); color: #fff; }
+.search-result-more { font-size: 12px; color: #88a; padding: 3px 10px; font-style: italic; }
+
+/* Rev533: estilos para el manual ES inyectado vía HTML (instrucciones_es.html).
+   El modal Instrucciones ya NO está bajo el zoom 0.6 del visor (Rev531),
+   así que los tamaños inline deben ser ya los visuales finales — ~60% de
+   los del visor con zoom — para que el modal se vea igual de compacto que
+   Sonda o Fondeo. */
+.instr-es-content { color: #cfd8dc; line-height: 1.5; font-size: 16px; }
+.instr-es-content h2 { color: #ffb23f; border-bottom: 2px solid rgba(255,178,63,.4); padding-bottom: 4px; margin-top: 22px; font-size: 18px; font-weight: 800; }
+.instr-es-content h3 { color: #fff; margin-top: 18px; font-size: 17px; font-weight: 800; }
+.instr-es-content h4 { color: #cfd8dc; margin-bottom: 6px; margin-top: 12px; font-size: 16px; font-weight: 700; }
+.instr-es-content p, .instr-es-content li { color: #cfd8dc; font-size: 16px; }
+.instr-es-content a { color: #4dd0ff; text-decoration: none; }
+.instr-es-content a:hover { text-decoration: underline; }
+.instr-es-content strong, .instr-es-content b { color: #fff; }
+.instr-es-content em { color: #ffe0b0; }
+.instr-es-content code { background: rgba(255,178,63,.12); color: #ffb23f; padding: 1px 6px; border-radius: 3px; font-size: 0.92em; }
+.instr-es-content ul, .instr-es-content ol { padding-left: 26px; margin: 8px 0; }
+.instr-es-content li { margin: 4px 0; }
+.instr-es-content hr { border: 0; border-top: 1px solid rgba(255,255,255,.12); margin: 28px 0; }
+.instr-es-content .safety { background: rgba(231,76,60,.12); border-left: 4px solid #e74c3c; padding: 12px 14px; margin: 14px 0 20px; border-radius: 4px; color: #ffd8d2; font-size: 16px; }
+.instr-es-content .safety strong { color: #ff8a7a; font-size: 17px; display: block; margin-bottom: 4px; }
+.instr-es-content .callout { background: rgba(255,178,63,.10); border-left: 4px solid #ffb23f; padding: 12px 16px; margin: 14px 0; border-radius: 4px; }
+.instr-es-content .callout.blue { background: rgba(77,208,255,.10); border-left-color: #4dd0ff; }
+.instr-es-content .callout.green { background: rgba(58,168,86,.12); border-left-color: #3aa856; }
+.instr-es-content table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 16px; }
+.instr-es-content th, .instr-es-content td { border: 1px solid rgba(255,255,255,.15); padding: 8px 12px; text-align: left; vertical-align: top; color: #cfd8dc; }
+.instr-es-content th { background: rgba(255,255,255,.06); color: #fff; font-weight: 800; }
+.instr-es-content .meta { color: #88a; font-style: italic; font-size: 15px; }

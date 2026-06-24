@@ -1,0 +1,298 @@
+
+
+<div class="safety">
+<strong>AVISO DE SEGURIDAD</strong><br>
+Este plugin es una ayuda a la navegación. No sustituye la vigilancia del patrón, una maniobra de fondeo correcta, las cartas y avisos oficiales, ni la observación directa del entorno. Las estimaciones dependen de la calidad y actualidad de los datos recibidos de los sensores y de las previsiones meteorológicas.
+</div>
+
+<p>Este plugin tiene dos áreas grandes que conviven en la misma WebApp:</p>
+<ul>
+  <li><strong>Gestor Avanzado de Fondeo</strong> — el corazón del plugin: vigilancia del ancla, vigilancia AIS de proximidad, previsión de abrigo, calculadora de fondeo, alarma de varada y audio multidispositivo.</li>
+  <li><strong>Mareas IHM</strong> — datos oficiales de marea para toda la costa española y, fuera de cobertura IHM, modelo global de Open-Meteo o curvas sintéticas. Sirve los datos a Signal K y alimenta los cálculos predictivos del gestor de fondeo.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2>⚓ GESTOR AVANZADO DE FONDEO</h2>
+
+<h3>1. Qué hace</h3>
+<p>El gestor combina los sensores reales del barco (GPS, sonda, viento, IMU si lo hay) con la previsión meteorológica y la marea oficial para vigilar el fondeo de forma continua. La vigilancia principal corre en el backend (servidor Signal K del barco), de modo que las alarmas siguen activas aunque cierres el navegador en el móvil o la tableta.</p>
+<p>Según los sensores instalados, ofrece:</p>
+<ul>
+  <li>Alarma de salida del fondeo (garreo).</li>
+  <li>Track GPS y ajuste manual de la posición estimada del ancla.</li>
+  <li>Cálculo de cadena recomendada y radio de borneo predictivo.</li>
+  <li>Alarma de varada por pérdida de profundidad útil.</li>
+  <li>Vigilancia AIS de proximidad dentro de la zona configurada.</li>
+  <li>Indicador geométrico de exposición al viento (abrigo direccional A–F).</li>
+  <li>Visualización de viento real, sonda validada y movimiento estimado por IMU.</li>
+  <li>Curvas de marea y datos solares.</li>
+  <li>Alarmas locales en el ordenador del barco y, cuando el navegador lo permite, en los dispositivos cliente conectados.</li>
+</ul>
+
+<!-- ---------------------------------------------------------------- -->
+<h3>2. Configuración mínima</h3>
+
+<h4>2.1 Plugins de Signal K</h4>
+<ul>
+  <li><strong>Imprescindible — GPS:</strong> debe existir el path <code>navigation.position</code> publicado por algún driver NMEA0183/NMEA2000 o equivalente.</li>
+  <li><strong>Recomendado — Sol y variación magnética:</strong> <a href="https://www.npmjs.com/package/signalk-derived-data" target="_blank">signalk-derived-data</a> con la opción de Sol activa.</li>
+  <li><strong>Opcional — AIS:</strong> cualquier conexión con receptor AIS. El servidor Signal K lo procesa automáticamente.</li>
+  <li><strong>Opcional — sonda y viento:</strong> el driver del transductor que tengas, que publique los paths estándar <code>environment.depth.*</code> y <code>environment.wind.*</code>.</li>
+  <li><strong>Opcional — IMU:</strong> <code>navigation.attitude</code> y los paths de aceleración. Permiten estimar el movimiento del barco; no sustituyen una boya oceanográfica.</li>
+</ul>
+
+<h4>2.2 Datos del barco</h4>
+<p>En <em>Signal K → Server → Settings → Vessel Base Data</em>, define como mínimo:</p>
+<ul>
+  <li><strong>Draft (calado):</strong> calado real en condición habitual de carga. Usado por la alarma de varada y el cálculo de calado efectivo.</li>
+  <li><strong>Length / LOA (eslora):</strong> usado por la geometría del círculo de borneo.</li>
+  <li><strong>Beam (manga):</strong> opcional; mejora el dibujo del barco a escala en el mapa.</li>
+</ul>
+<p>Si tienes roldana de proa por encima del agua, el visor te pide su <strong>altura sobre la línea de flotación</strong> en el panel ⚓ Calc. Fondeo. Se guarda y se reutiliza en todos los cálculos.</p>
+
+<div class="callout">
+<strong>Antes de activar la alarma de varada:</strong> comprueba que calado, margen de seguridad, posición del transductor de sonda y referencia de la marea utilizan unidades y referencias compatibles.
+</div>
+
+<h4>2.3 Audio</h4>
+<p>El audio primario de seguridad sale por el ordenador del barco (típicamente un Raspberry Pi). El backend escoge automáticamente la salida disponible en orden: USB → analógica → HDMI. Si usas altavoces USB autoamplificados, asegúrate de que reciben alimentación y no se apagan por inactividad.</p>
+<p>En móviles, tabletas y otros ordenadores cliente, la alarma se reproduce si la pestaña está abierta y el navegador ha autorizado el audio. Una aplicación web <strong>no</strong> puede garantizar sonido cuando el dispositivo está silenciado, en modo no molestar, la pestaña está suspendida o el navegador bloquea la reproducción automática. Considera el audio cliente complementario, no sustitutivo del audio del Pi.</p>
+
+<!-- ---------------------------------------------------------------- -->
+<h3>3. Cómo fondear bien (maniobra recomendada)</h3>
+<p>El gestor vigila el fondeo. No fondea por ti. Para que las alarmas sean fiables, la maniobra tiene que ser correcta:</p>
+<ol class="step-list">
+  <li><strong>Aproximación lenta</strong> contra el viento o la corriente dominante (la que más afecte al barco). Acércate al punto elegido al ralentí.</li>
+  <li><strong>Parada total sobre el punto.</strong> SOG = 0, proa al viento. El barco empezará a derivar lentamente hacia popa.</li>
+  <li><strong>Echa el ancla</strong> en ese instante y <strong>pulsa FONDEAR AQUÍ inmediatamente.</strong> El sistema guarda la posición GPS del barco como estimación inicial del ancla.</li>
+  <li><strong>Larga cadena</strong> acompañando la deriva del barco hacia popa (motor en muerto o toque muy suave atrás). La cadena debe quedar extendida en línea sobre el fondo, nunca apilada sobre el ancla.</li>
+  <li><strong>Lasca la longitud adecuada.</strong> Tres modos predefinidos: <em>Provisional</em> (relación 3,5:1, espera corta), <em>Normal</em> (5:1, recomendado) y <em>Seguro</em> (8:1, mal tiempo o noche). El visor te calcula la cadena necesaria a partir de la profundidad actual, la marea prevista en el horizonte y la altura de la roldana.</li>
+  <li><strong>Tensa con motor atrás de forma progresiva</strong> hasta dejar la línea de fondeo tensa.</li>
+  <li><strong>Comprueba el clavado.</strong> Mantén el motor atrás unos segundos a régimen moderado o fuerte. Si el barco queda inmóvil → ancla clavada. Si sigue desplazándose hacia popa → garreo: leva todo y repite la maniobra desde el paso 1.</li>
+  <li><strong>Activa la Vigilancia del ancla</strong> y ajusta el margen de la zona de seguridad (ver sección 4).</li>
+  <li><strong>Observa varios minutos</strong> antes de abandonar el barco. Confirma con el track GPS que el patrón de borneo es estable.</li>
+</ol>
+
+<h4>3.1 Métodos de cálculo de cadena</h4>
+<ul>
+  <li><strong>Relación de fondeo (scope):</strong> L = scope × D, donde D es la distancia vertical máxima prevista entre la roldana y el fondo durante el horizonte elegido. Scope 3,5:1 / 5:1 / 8:1 según modo.</li>
+  <li><strong>Fórmula Vicente:</strong> L = 15 + 2 × D (metros). Método tradicional en flotas mediterráneas y atlánticas, útil como segunda opinión.</li>
+</ul>
+<p>Estas cifras son orientativas. El patrón debe considerar tipo de ancla, naturaleza y pendiente del fondo, diámetro y peso de la cadena, espacio disponible, corriente, oleaje, viento previsto y proximidad de otros barcos.</p>
+
+
+<!-- ---------------------------------------------------------------- -->
+<h3>4. Posición del ancla y círculos de vigilancia</h3>
+
+<h4>4.1 El icono ⚓ del mapa</h4>
+<p>El icono ⚓ representa una <strong>posición estimada</strong> del ancla. Al pulsar FONDEAR AQUÍ se guarda la posición GPS del barco en ese instante, no la posición física exacta del ancla en el fondo. La diferencia depende de dónde está la antena GPS en el barco, de la deriva durante la caída de la cadena y del desplazamiento del ancla al clavarse.</p>
+<p>El ancla sí ocupa una posición concreta en el fondo aunque exista incertidumbre sobre ella. El círculo de borneo describe el movimiento del barco alrededor del ancla; no convierte la posición del ancla en un círculo.</p>
+
+<h4>4.2 Círculo azul — borneo máximo del barco</h4>
+<p>El <strong>círculo azul</strong>, centrado en el icono ⚓, representa la distancia máxima que la <strong>popa</strong> del barco puede alcanzar desde el ancla en el horizonte de tiempo elegido (típicamente 12 h). Se calcula como:</p>
+<div class="callout blue">
+azul = R_cadena + LOA
+<br><br>
+Donde <strong>R_cadena</strong> es la proyección horizontal de la cadena lascada teniendo en cuenta la profundidad actual + la mayor variación de marea prevista en el horizonte + la altura de la roldana. <strong>LOA</strong> es la eslora del barco.
+</div>
+
+<h4>4.3 Círculo rojo — zona de seguridad</h4>
+<p>El <strong>círculo rojo</strong> añade al azul un margen configurable (slider de la zona de seguridad). Tiene dos funciones simultáneas:</p>
+<ol>
+  <li><strong>Vigilancia AIS de proximidad:</strong> cualquier barco AIS que entre dentro del círculo rojo (considerando además su propia eslora) dispara una alarma de proximidad. Cuanto más amplio sea el extra, más distancia mínima exiges a los vecinos. Útil en bahías concurridas.</li>
+  <li><strong>Alarma de garreo del propio barco:</strong> si el GPS del barco sale del círculo rojo (con 2 m de histéresis para absorber ruido GPS), salta la alarma de garreo.</li>
+</ol>
+
+<h4>4.4 Regla operativa</h4>
+<p>Lo importante no es que el icono ⚓ esté en el centímetro exacto, sino que el círculo azul englobe todos los borneos reales del barco durante la estancia. Si ves que el barco roza la frontera azul de forma habitual, lasca más cadena: más scope = más R_cadena = más azul.</p>
+<p>El extra del rojo lo decides según el contexto: en fondeo solitario puedes dejarlo bajo (5–10 m); en bahías concurridas conviene subirlo para que la alarma AIS suene antes de que un vecino se te acerque demasiado.</p>
+
+<h4>4.5 Si olvidaste pulsar FONDEAR AQUÍ en el momento exacto</h4>
+<p>Puedes corregir la estimación a posteriori:</p>
+<ul>
+  <li><strong>Por el track GPS:</strong> revisa el recorrido del barco. Justo después de fondear y dar atrás, el track describe una curva que se tensa hacia popa. El punto donde se inicia esa tensión está muy cerca de donde tocó fondo el ancla.</li>
+  <li><strong>Por inferencia con la cadena lascada:</strong> con la línea de fondeo tensa, el ancla queda aproximadamente a la proyección horizontal de la cadena por delante de la proa, en el rumbo del cabo de fondeo.</li>
+  <li><strong>Arrastra el icono ⚓</strong> sobre el mapa al punto que estimes correcto.</li>
+  <li>O introduce coordenadas exactas a mano desde el panel de fondeo.</li>
+</ul>
+<p>Al mover el ancla, los círculos azul y rojo se recentran al instante. No des por exacta una posición deducida únicamente del track.</p>
+
+<h4>4.6 Si largas más cadena o re-tensas durante la estancia</h4>
+<p>Si entra mal tiempo o marea más viva, larga más cadena, vuelve a tensar con motor atrás y abre el panel <strong>⚓ Calc. Fondeo</strong> para actualizar la longitud. El círculo azul se ajustará al nuevo radio de borneo. Si el rojo te queda corto para tu zona de seguridad, súbelo con el slider del panel de alarmas.</p>
+
+<!-- ---------------------------------------------------------------- -->
+<h3>5. Vigilancia continua</h3>
+<ul>
+  <li><strong>Alarma de garreo:</strong> si la posición GPS del barco supera el círculo rojo (con 2 m de histéresis), salta sirena audible y aviso de voz. La sirena tiene prioridad sobre el mute de usuario por seguridad — siempre dentro de los límites que permita el sistema operativo y el navegador.</li>
+  <li><strong>Auto-desarme al salir a motor:</strong> si tu velocidad sobre fondo (SOG) se mantiene por encima de <strong>3 nudos durante 30 segundos seguidos</strong>, el plugin asume que sales intencionalmente y desarma la vigilancia sin disparar alarma de garreo. Recibes una notificación informativa en Signal K. La justificación técnica es que el garreo real raramente excede 1–2 nudos; movimientos sostenidos a más de 3 nudos son casi siempre propulsión propia (motor o vela). Si esperas corrientes intensas en tu zona (rías, estrechos), tenlo presente.</li>
+  <li><strong>Track GPS con gradiente temporal:</strong> oscuro = antiguo, claro = reciente. Útil para validar visualmente el patrón de borneo después de un rato fondeado.</li>
+  <li><strong>Fondeos favoritos:</strong> guarda un fondeo con nombre personalizado o auto-nombre por geolocalización. Sincronizados entre dispositivos a través del backend.</li>
+</ul>
+
+<!-- ---------------------------------------------------------------- -->
+<h3>6. Sensores reales (viento, IMU, sonda)</h3>
+
+<h4>6.1 Viento</h4>
+<p>El visor lee <code>environment.wind.angleApparent</code> y <code>environment.wind.speedApparent</code> de Signal K, y los muestra con la etiqueta "Veleta" para diferenciarlos claramente del dato meteorológico previsto. Si el barco está fondeado y sin abatimiento significativo, el viento aparente es una buena aproximación al viento verdadero.</p>
+
+<h4>6.2 IMU y movimiento del barco</h4>
+<p>Si tienes pypilot o un IMU conectado, el plugin lee <code>navigation.attitude</code> y los paths de aceleración para <strong>estimar</strong> el movimiento del barco (dirección, período y altura aparente de las olas). El histórico de 24 h aparece en barras de 5 minutos al abrir el popup de abrigo.</p>
+<p>Estos valores son una <strong>estimación derivada del comportamiento del barco</strong>, no una medición oceanográfica certificada. La precisión depende del algoritmo, la calibración, la posición del sensor, el casco y el patrón de amarre. El endpoint <code>/api/imu/status</code> sirve para diagnosticar la fuente activa (Signal K, pypilot local, pypilot remoto, MacArthur HAT, I2C directo) y la frecuencia de actualización.</p>
+
+<h4>6.3 Sonda</h4>
+<p>La lectura de sonda se considera válida solo si se cumplen estos tres criterios:</p>
+<ul>
+  <li>El último valor llegó hace menos de <strong>5 segundos</strong> (control de <em>staleness</em> por timestamp).</li>
+  <li>No está congelada: el valor cambia más de ±2 cm en una ventana de 60 s.</li>
+  <li>No es un pico anómalo (>3× la tendencia) ni absurdo (>300 m).</li>
+</ul>
+<p>Si la sonda falla alguno de estos chequeos, el visor muestra <strong>SONDA CONGELADA</strong> o <strong>SONDA STALE</strong> en lugar del último valor numérico, evitando que el sistema "invente" profundidad. El plugin lee en orden: <code>environment.depth.belowKeel</code>, <code>environment.depth.belowSurface</code>, <code>environment.depth.belowTransducer</code> (sumando calado cuando corresponda).</p>
+
+<!-- ---------------------------------------------------------------- -->
+<h3>7. Vigilancia AIS de proximidad</h3>
+<p>Este módulo detecta blancos AIS dentro del círculo rojo de tu zona de seguridad. <strong>Es una alarma de proximidad o intrusión geométrica, no un sistema anti-colisión basado en CPA/TCPA.</strong> No predice trayectorias relativas; reacciona cuando un AIS entra en la zona.</p>
+<ul>
+  <li><strong>Base de datos persistente (72 h):</strong> el plugin guarda en disco los datos estáticos de cada barco AIS visto (nombre, eslora, manga, tipo, callsign, IMO). Al reiniciar o abrir el visor desde cero, los nombres ya están disponibles sin esperar al próximo paquete estático AIS (que puede tardar hasta 6 minutos).</li>
+  <li><strong>Cache fantasma (5 min):</strong> si un barco pierde recepción VHF brevemente, sigue visible en el mapa con una X discreta y un aviso "datos estimados" en su popup, junto con la antigüedad del dato.</li>
+  <li><strong>Slider de radio (0,5 a 50 km):</strong> controla cuántos barcos quieres ver en el mapa y en la lista. Se recuerda al recargar.</li>
+  <li><strong>Lista filtrable y ordenable:</strong> por distancia, nombre, favoritos primero, MMSI o tipo de barco. Caja de filtro de texto con feedback "Sin resultados".</li>
+  <li><strong>Favoritos:</strong> marca cualquier AIS con la ★ amarilla. Persistido en el backend y sincronizado entre dispositivos.</li>
+  <li><strong>Iconos por tipo:</strong> ⛵ velero, 🛥️ recreo, 📦 carga, 🛢️ tanque, 🛳️ pasaje, 🎣 pesca…</li>
+  <li><strong>Botón 🔍 vesselfinder:</strong> abre vesselfinder.com en pestaña nueva con IMO + MMSI del barco para foto, ruta histórica, etc.</li>
+  <li><strong>Alarma de proximidad:</strong> cuando un AIS cruza el límite del círculo rojo (considerando además su eslora), salta alarma de voz tras un breve tiempo de gracia. Pulsa ACK para silenciar ese MMSI sin afectar al resto.</li>
+  <li><strong>Reactivación por acercamiento:</strong> si un AIS ya ACKeado vuelve a moverse hacia ti (más de 0,5 nudos y acercamiento &gt; 5 m/min), la alarma se reactiva. El ACK caduca a los 15 min para forzar reevaluación.</li>
+  <li><strong>Click-to-focus:</strong> click en un AIS → el mapa lo centra, lo sigue automáticamente y muestra distancia en directo. La X del aro deselecciona.</li>
+</ul>
+<div class="callout">
+<strong>Límite del AIS:</strong> no todos los barcos transmiten AIS, los datos pueden llegar con retraso o contener errores. Mantén vigilancia visual y radar cuando corresponda.
+</div>
+
+<!-- ---------------------------------------------------------------- -->
+<h3>8. Indicador de abrigo (Shelter)</h3>
+<p>Análisis automático de cuán expuesto está tu fondeo al viento previsto en las próximas 12 horas. Es un <strong>indicador geométrico de exposición</strong>, no una garantía de abrigo: no incorpora altura del terreno, fetch real, refracción, difracción ni efectos batimétricos.</p>
+<ul>
+  <li><strong>Rosa de 16 sectores:</strong> autodetección de qué sectores tienen costa o estructura artificial cerca (verde = abrigado) y cuáles miran al mar abierto (rojo). Usa OpenStreetMap (línea de costa natural + escolleras / muelles).</li>
+  <li><strong>Grado A–F y % de protección:</strong> A = totalmente abrigado en términos geométricos; F = expuesto a temporal. % calculado desde el viento previsto en sectores expuestos durante 12 h.</li>
+  <li><strong>Strip horario 12 h:</strong> grado por hora y viento pico. Pincha una celda para ver el detalle de esa hora.</li>
+  <li><strong>Historial de olas estimadas (24 h):</strong> intensidad / período / altura derivados del IMU. Una barra cada 5 minutos, eje vertical autoescalable hasta 2 m con líneas guía.</li>
+  <li><strong>Degradación en tiempo real:</strong> si la veleta mide viento mayor que el previsto en un sector expuesto, el grado A–F baja automáticamente y aparece el badge "▼ Real · Viento". Lo mismo con olas estimadas: "▼ Real · Olas". Bandas calma / rizada NO degradan el grado (movimiento normal en fondeo).</li>
+</ul>
+
+<!-- ---------------------------------------------------------------- -->
+<h3>9. Calculadora de fondeo y alarma de varada</h3>
+
+<h4>9.1 Calculadora de fondeo</h4>
+<p>Estima la cadena recomendable y el radio de borneo para el horizonte de fondeo elegido (típicamente 12 h). Utiliza la mayor distancia vertical prevista entre la roldana y el fondo durante ese periodo, no solo la profundidad instantánea.</p>
+<p>Publica opcionalmente en Signal K: ratio de scope, resumen de recomendación, metros de cadena a echar y radios de borneo (actual y máximo). Si la profundidad mínima prevista cae por debajo del calado efectivo del barco, aparece una alerta roja parpadeante.</p>
+
+<h4>9.2 Alarma de varada</h4>
+<p>El calado efectivo se define como:</p>
+<div class="callout">
+calado_efectivo = (calado_base + margen_seguridad) × 1,15
+</div>
+<p>La alarma compara la profundidad futura proyectada con ese calado efectivo. La proyección se calcula así:</p>
+<div class="callout blue">
+profundidad_futura = profundidad_actual + (marea_actual − marea_futura)
+</div>
+<p>Es decir: cuando la marea baja, la profundidad útil baja en la misma proporción. La fórmula solo es válida si la sonda actual está validada (ver sección 6.3), el barco no se desplaza significativamente y las alturas de marea usan una referencia coherente.</p>
+
+<ul>
+  <li><strong>Aviso 24 h:</strong> detecta riesgo dentro del horizonte configurado.</li>
+  <li><strong>Alarma anticipada:</strong> avisa X minutos antes del momento estimado de pérdida de calado, con sonido audible.</li>
+  <li><strong>Posponer:</strong> retrasa el aviso sin borrar el riesgo.</li>
+  <li><strong>Silenciar sonido:</strong> desactiva el audio pero mantiene la alerta visual y el estado en Signal K.</li>
+</ul>
+
+<div class="callout">
+<strong>Aptitud de la fuente de marea para alarma de varada:</strong> las fuentes sintéticas — Mediterráneo M2, Sin marea / Offshore — y el modelo global Open-Meteo (que está rebajado a un nivel local aproximado, no es Cero Hidrográfico real) son adecuadas para visualización y consulta. Para la alarma de varada conviene usar una estación oficial IHM dentro de su cobertura, o calibrar manualmente el datum local antes de fiarse del aviso. Si seleccionas una estación sintética, considera el aviso de varada solo informativo.
+</div>
+
+<!-- ---------------------------------------------------------------- -->
+<h3>10. Audio multidispositivo</h3>
+<p>El ordenador del barco es la salida primaria de seguridad. Reproduce sirena sintética y voz pregrabada (archivos OGG) en el idioma elegido. Si no hay OGG instalado, fallback automático a TTS (espeak). La salida se selecciona automáticamente en orden: USB → analógica → HDMI.</p>
+<p>Las alarmas se replican también en los dispositivos cliente conectados (móvil, tableta) si su pestaña está abierta y han autorizado el audio. Esta réplica es complementaria; no debe considerarse más fiable que el audio local del barco.</p>
+
+<!-- ---------------------------------------------------------------- -->
+<h3>11. Mapa y capas</h3>
+<p>El visor combina varias capas con control de transparencia. La disponibilidad depende de la conexión y de las condiciones de uso de cada proveedor.</p>
+<ul>
+  <li>Imágenes satelitales: Esri (por defecto), Bing Hybrid, Esri Clarity, Google Satélite.</li>
+  <li>OpenStreetMap, OpenSeaMap.</li>
+  <li>Cartas oficiales IHM (WMS) y batimetría.</li>
+  <li>Cartas MBTiles offline con slider de transparencia: copia tus archivos <code>.mbtiles</code> a la carpeta de cartas de la instalación (típicamente <code>/home/pi/charts/</code> en OpenPlotter) y aparecen como checkboxes en el menú de capas.</li>
+</ul>
+<p>Ninguna capa no oficial debe presentarse como sustituta de la cartografía náutica oficial vigente.</p>
+
+<!-- ================================================================ -->
+<h2 class="mareas">📊 MÓDULO MAREAS (IHM)</h2>
+
+<h3>12. Fuentes de datos y aptitud para seguridad</h3>
+<ul>
+  <li><strong>IHM oficial (~70 estaciones):</strong> predicción astronómica oficial del Instituto Hidrográfico de la Marina para toda la costa española (península, Baleares y Canarias). Datos mensuales con coeficiente. Referida al <strong>Cero Hidrográfico</strong> de cada estación. La resolución de publicación es centimétrica, pero el nivel real puede desviarse por presión atmosférica, viento, oleaje o aportes fluviales.</li>
+  <li><strong>🌍 Open-Meteo global:</strong> predicción mundial para cualquier latitud / longitud usando un modelo hidrodinámico. Refresco cada 12 h. Sin API key. Los datos llegan en una referencia (MSL u otra del modelo) que el plugin ajusta a un nivel local aproximado (típicamente la bajamar de la semana ≈ 0). Es una <strong>aproximación útil para consulta relativa</strong>, no es el Cero Hidrográfico oficial. Para alarma de varada conviene calibrar localmente antes de fiarse del aviso.</li>
+  <li><strong>Mediterráneo:</strong> curva sintética sinusoidal M2 con amplitud ≈ 0,2 m. Solo visualización en zonas donde la marea astronómica es despreciable.</li>
+  <li><strong>Sin marea / Offshore:</strong> curva plana (Δ = 0 m). Permite arrancar el visor de fondeo sin internet ni cobertura. No representa el nivel real.</li>
+</ul>
+<p>En el dropdown, las sintéticas aparecen <strong>primeras</strong> en MANUAL (acceso rápido) y <strong>al final</strong> en AUTO (la "más cercana" debe ser una IHM real).</p>
+
+<h3>13. Selección automática y manual</h3>
+<ul>
+  <li><strong>AUTOMÁTICO:</strong> detecta la estación de mareas más cercana por GPS (radio 300 km). Puedes marcar una "favorita": AUTO seguirá las próximas, pero la recordará si vuelves.</li>
+  <li><strong>MANUAL:</strong> selecciona cualquier estación del listado completo, incluidas las sintéticas. Útil si navegas fuera de rango GPS o quieres consultar otra zona.</li>
+</ul>
+<p>Si no hay GPS al arrancar, el plugin actualmente recurre a la estación de Vigo como respaldo. Cuando llega señal GPS, cambia automáticamente a la estación válida más cercana. Mientras estés en el respaldo, ten presente que la marea mostrada puede no corresponder a tu posición real.</p>
+
+<h3>14. Curvas, hora y referencia vertical</h3>
+<p>Pulsa <strong>CURVAS</strong> o la barra central del panel para abrir la gráfica interactiva SVG. Muestra extremos (pleamares y bajamares) con hora actual marcada e interpolación sinusoidal entre extremos.</p>
+<ul>
+  <li><strong>Eje horizontal:</strong> hora local de la estación (Europe/Madrid para península y Baleares, Atlantic/Canary para Canarias).</li>
+  <li><strong>Eje vertical:</strong> altura en metros sobre la referencia de la fuente — Cero Hidrográfico para IHM; nivel local aproximado para Open-Meteo; altura relativa para fuentes sintéticas.</li>
+</ul>
+
+<h3>15. Coeficiente, solares y corriente</h3>
+<ul>
+  <li><strong>Coeficiente de mareas:</strong> coeficiente oficial del IHM descargado del PDF anual. Valores altos (&gt; 90) implican grandes carreras de marea; bajos (&lt; 40) mareas muertas.</li>
+  <li><strong>Datos solares:</strong> horas de amanecer y puesta de sol. Requiere posición GPS + el plugin <a href="https://www.npmjs.com/package/signalk-derived-data" target="_blank">signalk-derived-data</a> con la opción Sol activa.</li>
+  <li><strong>🧭 Navegación táctica Rías Baixas:</strong> función experimental e informativa. Da consejo táctico básico basado en fase de marea (llenante / vaciante) y porcentaje. La corriente local real depende también del canal, la batimetría y desfases entre nivel y corriente — usa esta información como complemento, no como verdad absoluta.</li>
+</ul>
+
+<h3>16. Caché y funcionamiento sin Internet</h3>
+<p>El plugin mantiene una caché local de más de 2 meses de datos IHM. Auto-actualización cada 48 h cuando hay conexión. Primer arranque sin Internet: usa estaciones hardcoded como respaldo.</p>
+
+<!-- ================================================================ -->
+<h2>❓ Preguntas frecuentes</h2>
+
+<h3>Sobre el fondeo</h3>
+<ul>
+  <li><strong>¿El icono ⚓ marca la posición exacta del ancla?</strong> No. Es la posición GPS del barco en el instante de pulsar FONDEAR AQUÍ. La posición real del ancla puede estar a unos metros, dependiendo de dónde estaba la antena GPS y de cuánto se ha desplazado el ancla al clavarse. Lo importante operativamente es que el círculo azul englobe todos los borneos reales del barco.</li>
+  <li><strong>¿Qué diferencia hay entre el círculo azul y el rojo?</strong> El azul representa el alcance máximo de la popa según cadena + LOA. El rojo añade tu margen configurable y sirve a la vez como zona de vigilancia AIS de proximidad y como umbral de alarma de garreo del propio barco (con 2 m de histéresis).</li>
+  <li><strong>¿Puedo mover la posición del ancla si la marqué mal?</strong> Sí. Arrastra el icono ⚓ en el mapa o introduce coordenadas a mano desde el panel de fondeo. Los círculos azul y rojo se recentran al instante.</li>
+  <li><strong>¿Cómo cambio el scope o la cadena en mitad del fondeo?</strong> Abre ⚓ Calc. Fondeo. Cambia modo o longitud de cadena. El círculo azul se actualiza. Ajusta el rojo con el slider si necesitas más margen.</li>
+  <li><strong>¿Funciona la alarma de garreo si cierro el navegador o apago el móvil?</strong> Sí. La vigilancia corre en el backend del plugin. El sonido suena en el Pi del barco aunque el visor esté cerrado y las notificaciones Signal K siguen activas. Los dispositivos cliente conectados también suenan en paralelo si su pestaña está abierta y el navegador no ha suspendido la reproducción.</li>
+  <li><strong>¿Por qué a veces se desarma sola la vigilancia?</strong> Si tu velocidad sobre fondo supera los 3 nudos durante 30 segundos seguidos, el plugin asume que sales intencionalmente y desarma. Garreo real raramente supera 1–2 nudos; movimientos sostenidos por encima de 3 nudos son casi siempre propulsión propia. Recibes notificación informativa en Signal K. En zonas de corriente muy fuerte (rías, estrechos) ten esto en cuenta.</li>
+  <li><strong>¿Qué significa "SONDA CONGELADA"?</strong> Significa que la sonda no recibe actualizaciones recientes (más de 5 segundos sin datos nuevos), o que el valor se ha quedado fijo (±2 cm en 60 s), o es un pico anómalo. En lugar de mostrar un número que invita a error, el visor lo declara explícitamente.</li>
+</ul>
+
+<h3>Sobre Signal K y configuración</h3>
+<ul>
+  <li><strong>¿No aparece la posición GPS?</strong> Comprueba que <code>navigation.position</code> está publicado en Signal K. Necesitas receptor GPS conectado y su driver activo.</li>
+  <li><strong>¿Qué plugins SK necesito para amaneceres y puestas?</strong> <a href="https://www.npmjs.com/package/signalk-derived-data" target="_blank">signalk-derived-data</a> con la opción Sun activada.</li>
+  <li><strong>¿Dónde configuro el calado del barco?</strong> Signal K → Server → Settings → Vessel Base Data → Draft. Ese valor se usa para la alarma de varada y el calado efectivo +15%.</li>
+</ul>
+
+<h3>Sobre mareas</h3>
+<ul>
+  <li><strong>¿La hora que muestra es UTC?</strong> No. Hora local de la estación (Europe/Madrid para península y Baleares, Atlantic/Canary para Canarias).</li>
+  <li><strong>¿Funciona sin Internet?</strong> Sí. Caché local de más de 2 meses, auto-actualización cada 48 h cuando hay conexión.</li>
+  <li><strong>¿Puedo usar una marea sintética para la alarma de varada?</strong> No es recomendable. Mediterráneo M2 y "Sin marea" son curvas aproximadas; Open-Meteo está rebajado a un nivel local aproximado pero no es Cero Hidrográfico real. Para alarma de varada usa una estación oficial IHM dentro de su cobertura.</li>
+  <li><strong>¿Qué es el Cero Hidrográfico?</strong> Es el datum de referencia vertical del IHM. Las alturas IHM se miden sobre este nivel, que corresponde aproximadamente a la bajamar astronómica más baja del año.</li>
+  <li><strong>¿Por qué la altura Open-Meteo es distinta a IHM en la misma posición?</strong> IHM usa el Cero Hidrográfico oficial; Open-Meteo usa el nivel medio del mar (MSL) ajustado localmente. El plugin aplica un offset para que la bajamar semanal Open-Meteo quede cerca de 0 m, pero pueden diferir de IHM en decenas de cm.</li>
+  <li><strong>¿Qué navegadores soporta?</strong> Firefox y Chromium (navegador por defecto de OpenPlotter). Optimizado para 1920×1080, responsive a móvil y tableta.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 class="tech">📡 Paths Signal K publicados</h2>
+<p>Referencia técnica completa de los paths que el plugin publica al servidor Signal K. En el modal del producto, esta sección incluye una tabla dinámica generada en tiempo real con todos los paths activos y sus descripciones.</p>
+
+<hr>
+

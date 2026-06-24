@@ -73,7 +73,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev502";
+const PLUGIN_REVISION = "Rev546";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -349,7 +349,12 @@ const MAX_SIDE_BUTTONS_PER_SIDE = 5;
    no se pudieran reactivar tras desactivarlas en config. */
 const BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","sunrise","wx_6h","wave"] as const;
 type BBCellKey = typeof BB_CELL_KEYS[number];
-const DEFAULT_BB_ORDER: BBCellKey[] = ["sog","heading","wind","sonda","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo"];
+/* Rev535 (B-25, feedback Carlos 2026-06-24): nuevo default snapshot del orden
+   que Carlos tiene activo en Tunatunes. Sustituye al antiguo default que
+   añadía heading y pres (no relevantes en su uso) y omitía sunrise (sí útil).
+   Este orden es lo que ve un usuario nuevo en primera instalación y lo que
+   restaura el botón "Restablecer defaults" del config UI. */
+const DEFAULT_BB_ORDER: BBCellKey[] = ["sog","wind","sonda","tide","sunrise","cad_rec","dist_ancla","h_fondeo","calidad","abrigo"];
 function sanitizeBBOrder(arr: any): BBCellKey[] {
   if (!Array.isArray(arr)) return DEFAULT_BB_ORDER.slice();
   const seen: Record<string, boolean> = {};
@@ -4422,25 +4427,49 @@ function _setHtmlNoCacheHeaders(res: any) {
   res.set("Expires", "0");
 }
 
-expressApp.get("/signalk-mareas-ihm/visorfondeo", (req: any, res: any) => {
-  const forceLegacy = String(req?.query?.desktop || "") === "1";
-  const target = forceLegacy ? "mapafondeo.html" : "mobile.html";
-  const file = _resolveFile(target);
-  if (file) { _setHtmlNoCacheHeaders(res); return res.sendFile(file); }
-  res.status(404).send(`${target} not found`);
-});
-
-expressApp.get("/signalk-mareas-ihm/mapafondeo", (_req: any, res: any) => {
-  const file = _resolveFile("mapafondeo.html");
-  if (file) { _setHtmlNoCacheHeaders(res); return res.sendFile(file); }
-  res.status(404).send("mapafondeo.html not found");
-});
-
-expressApp.get("/signalk-mareas-ihm/mobile", (_req: any, res: any) => {
+/* Rev541+Rev543 (diagnóstico GPT+Gemini): /visorfondeo SIEMPRE sirve
+   mobile.html. Eliminada la bifurcación `?desktop=1` que mantenía vivo el
+   visor desktop legacy. Rev543: además FORZAMOS que la URL incluya ?v=<build>
+   redirigiendo 302 si no coincide con el build actual. Esto garantiza que
+   el navegador descargue mobile.html fresco tras cualquier deploy, sin
+   depender de headers de cache que algunos navegadores móviles ignoran.
+   Resultado: NO hay destello "versión antigua → actual" porque la primera
+   respuesta visible siempre tiene la URL canonical de la versión actual. */
+function _currentBuildId(): string {
+  if (!_buildInfo) return "0";
+  return `${_buildInfo.timestamp || ""}+${_buildInfo.gitHash || ""}`;
+}
+function _sendMobile(req: any, res: any) {
+  const cur = _currentBuildId();
+  if (req.query?.v !== cur) {
+    _setHtmlNoCacheHeaders(res);
+    /* Rev544: Vary:* + Clear-Site-Data le dice al navegador que borre TODO
+       su cache asociado a este origen (cache HTTP, storage, bfcache cuando
+       esté soportado). Ataca el bfcache que mantenía snapshot DOM de la
+       versión vieja entre restarts. */
+    res.setHeader("Vary", "*");
+    res.setHeader("Clear-Site-Data", '"cache"');
+    return res.redirect(302, `/signalk-mareas-ihm/visorfondeo?v=${encodeURIComponent(cur)}`);
+  }
   const file = _resolveFile("mobile.html");
-  if (file) { _setHtmlNoCacheHeaders(res); return res.sendFile(file); }
-  res.status(404).send("mobile.html not found");
-});
+  if (!file) return res.status(404).send("mobile.html not found");
+  _setHtmlNoCacheHeaders(res);
+  res.setHeader("Vary", "*");
+  res.setHeader("X-Mareas-UI", "mobile");
+  res.setHeader("X-Mareas-Build", cur);
+  return res.sendFile(file);
+}
+expressApp.get("/signalk-mareas-ihm/visorfondeo", _sendMobile);
+
+/* Rev541: URLs legacy redirigen 308 a /visorfondeo. Mantiene bookmarks
+   antiguos sin renderizar el documento viejo (308 vs <meta refresh>). */
+function _redirectToVisor(_req: any, res: any) {
+  _setHtmlNoCacheHeaders(res);
+  return res.redirect(308, "/signalk-mareas-ihm/visorfondeo");
+}
+expressApp.get("/signalk-mareas-ihm/mapafondeo",      _redirectToVisor);
+expressApp.get("/signalk-mareas-ihm/mapafondeo.html", _redirectToVisor);
+expressApp.get("/signalk-mareas-ihm/mobile",          _redirectToVisor);
 
 // Rev460: pagina inspector IMU (Sprint H V0). Auto-refresh 1s, sin cache.
 expressApp.get("/signalk-mareas-ihm/imu-debug", (_req: any, res: any) => {
@@ -4476,6 +4505,50 @@ expressApp.get("/signalk-mareas-ihm/readme", (_req: any, res: any) => {
   }
   res.status(404).send("README.md not found");
 });
+
+// Rev522: CHANGELOG.md servido para el botón "Versiones" del modal Instrucciones
+// (TidesView). Antes el contenido del botón vivía hardcoded en TidesView y
+// quedaba huérfano entre releases. Ahora fetcheamos este endpoint y el modal
+// siempre refleja el plugin instalado.
+expressApp.get("/signalk-mareas-ihm/CHANGELOG.md", (_req: any, res: any) => {
+  const candidates = [
+    path.join(__dirname, "CHANGELOG.md"),                     // dist/CHANGELOG.md (npm-pack)
+    path.join(__dirname, "..", "CHANGELOG.md"),               // root del package (dev)
+    path.resolve(__dirname, "..", "..", "CHANGELOG.md"),
+  ];
+  for (const f of candidates) {
+    try {
+      if (fs.existsSync(f)) {
+        res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        return res.sendFile(path.resolve(f));
+      }
+    } catch { /* next */ }
+  }
+  res.status(404).send("CHANGELOG.md not found");
+});
+
+// Rev527: fragmento ES del manual (texto que vivía en docs/INSTRUCCIONES_MODAL_v3.html).
+// TidesView lo fetchea cuando _lang==='es' y lo renderiza inline en lugar del
+// JSX hardcoded EN. Resultado: castellano completo cuando el visor está en ES.
+expressApp.get("/signalk-mareas-ihm/instrucciones_es.html", (_req: any, res: any) => {
+  const candidates = [
+    path.join(__dirname, "instrucciones_es.html"),
+    path.join(__dirname, "..", "public", "instrucciones_es.html"),
+  ];
+  for (const f of candidates) {
+    try {
+      if (fs.existsSync(f)) {
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        return res.sendFile(path.resolve(f));
+      }
+    } catch { /* next */ }
+  }
+  res.status(404).send("instrucciones_es.html not found");
+});
+
+
 
 // Rev166: Telegram diagnose + test endpoint. Permite que el frontend
 // (móvil) muestre "Telegram OK" o "no configurado" y mande un mensaje

@@ -1,5 +1,43 @@
 # Changelog
 
+## [2.3.2] - 2026-06-24
+
+### English
+
+**UI polish — modal headers consistent across the whole viewer**
+
+- **Modal headers unified** — Sonda, Fondeo, Abrigo, AIS panel, Cartas y Capas and all sub-modals now render the same BACK button + title (24px back, 32px title, 88px header height). Previously each context had drift from local CSS overrides.
+- **Shelter sub-modals fixed** — "Exposure scale A-F", "% protection detail" and "Wave history info" were physically nested inside `#shelter-pop` in the DOM. Both elements had `zoom: var(--ui-scale)` so the zoom composed (0.6 × 0.6 = 0.36) and the child header rendered at 36% of the intended size. Sub-modals are now siblings at root level, single zoom layer, headers match Sonda.
+- **Panel headers (`#panel`, `#ais-alarm-panel`)** — universal `*` / `button` rules inside the panels were overriding the injected `.m-back` and `.m-title`. Now explicit rules with higher specificity restore the default size.
+- **AIS panel header** — was the only `.m-modal-hdr` rendering at 100% (the panel is not a `.popup-overlay`, so it didn't inherit the global UI zoom). Now scaled with `var(--ui-scale)` to match Sonda visually.
+- **Title span inheritance** — when a modal's `<h4>` contains a `<span>` (e.g. `#shelter-pop` "⚓ Previsión de Abrigo"), the span did not inherit the 32px font of its parent `.m-title` because external rules with higher specificity hit it directly. Now `.m-title *` is forced to inherit font-size/weight/color.
+- **Orphaned dropdown arrow** removed from the AIS panel header (leftover from an older collapse pattern).
+- **Instructions modal header** — the manual modal now shows a standard injected header with title "📖 Instructions · v<version>" so the user knows which version they are reading.
+- **Cache-bust automatic** — visor reloads itself when the backend `serverInstanceId` changes, so any plugin restart picks up the fresh build immediately.
+- **Bottom-bar widgets — defaults updated and user config respected on restart** — the default order on fresh install is now `sog, wind, sonda, tide, sunrise, cad_rec, dist_ancla, h_fondeo, calidad, abrigo` (snapshot of real on-boat use). Auto-migration that re-inserted `dif_lw` / `prof_min` on every visor load (Rev491) has been removed: it was silently overriding the user's deliberate cell removals after each deploy. The "↺ Reset to default order" button in the bottom-bar config returns to this default.
+- **Instructions modal — single source of truth, no longer orphaned** — the manual content was hardcoded in TidesView and got out of sync between releases. Now the Spanish manual is served from `instrucciones_es.html` by the plugin (cut from `docs/INSTRUCCIONES_MODAL_v3.html`), and the "CHANGELOG" button reads `CHANGELOG.md` directly from the installed plugin. Each release just needs to update those two files and the modal reflects the change automatically.
+- **Modal Instructions — header consistent with viewer (zoom fix)** — diagnosed by GPT-5 + Gemini Pro: `.popup-overlay { zoom: var(--ui-scale) }` was scaling visually everything the iframe rendered, so `font-size: 28px !important` inside React was painted at 16.8px. Excluded `#m-instructions-overlay` from the global zoom and re-applied `var(--ui-scale)` only to its injected `.m-modal-hdr` so back/title still match Sonda/Fondeo.
+- **Web entry root redirects to anchor viewer** — `/signalk-mareas-ihm/` now goes straight to `/visorfondeo` (mobile.html) instead of loading TidesView (Tides app). TidesView still accessible via the in-app `Tides` button.
+- **README + npm description + Signal K display name aligned** — title corrected to `AnchorWatch Pro: Smart Anchoring, AIS & Tides` everywhere (was `Advanced Anchor Watch Manager` in README root).
+
+### Español
+
+**Pulido UI — headers de modales consistentes en todo el visor**
+
+- **Headers de modales unificados** — Sonda, Fondeo, Abrigo, panel AIS, Cartas y Capas y todos los sub-modales renderizan ahora el mismo botón ATRÁS + título (back 24px, título 32px, altura header 88px). Antes cada contexto tenía deriva por overrides CSS locales.
+- **Sub-modales de Abrigo arreglados** — "Escala A-F", "Detalle Score %" e "Info histórico olas" estaban físicamente anidados dentro de `#shelter-pop` en el DOM. Ambos elementos tienen `zoom: var(--ui-scale)` y los zooms se componían (0.6 × 0.6 = 0.36), renderizando el header hijo al 36% del tamaño esperado. Ahora los sub-modales son hermanos al nivel raíz, una sola capa de zoom, headers idénticos a Sonda.
+- **Headers de paneles (`#panel`, `#ais-alarm-panel`)** — las reglas universales `*` / `button` dentro de los paneles pisaban el `.m-back` y `.m-title` inyectados. Ahora reglas explícitas con más especificidad restauran el tamaño por defecto.
+- **Header del panel AIS** — era el único `.m-modal-hdr` renderizándose al 100% (el panel no es `.popup-overlay`, así que no heredaba el zoom global). Ahora escala con `var(--ui-scale)` para igualar a Sonda visualmente.
+- **Herencia del span en .m-title** — cuando el `<h4>` de un modal contiene un `<span>` (ej. `#shelter-pop` "⚓ Previsión de Abrigo"), el span no heredaba los 32px del `.m-title` padre porque reglas externas con más especificidad lo atacaban directamente. Ahora `.m-title *` se fuerza a heredar font-size/weight/color.
+- **Flecha desplegable huérfana** eliminada del header del panel AIS (residuo de un patrón collapse anterior).
+- **Modal Instrucciones con header** — ahora el modal del manual muestra un header inyectado estándar con título "📖 Instrucciones · v<versión>" para que el usuario sepa qué versión está leyendo.
+- **Cache-bust automático** — el visor se recarga solo cuando cambia `serverInstanceId` del backend, así cualquier reinicio del plugin coge el build fresco sin intervención.
+- **Widgets bottom-bar — defaults actualizados y config del usuario respetada en reinicios** — el orden por defecto en instalación nueva es `sog, viento, sonda, marea, salida, cadena rec., dist. ancla, h. fondeo, calidad, abrigo` (snapshot de uso real en barco). Eliminada la auto-migración Rev491 que re-insertaba `dif_lw` / `prof_min` en cada carga del visor: pisaba en silencio las celdas que el usuario había desactivado a propósito. El botón "↺ Restablecer orden por defecto" del config de la bottom-bar vuelve a este default.
+- **Modal Instrucciones — fuente única, ya no huérfano** — el contenido del manual estaba hardcoded dentro de TidesView y se desfasaba entre releases. Ahora el manual en español se sirve desde `instrucciones_es.html` por el plugin (extraído de `docs/INSTRUCCIONES_MODAL_v3.html`), y el botón "VERSIONES" lee `CHANGELOG.md` directamente del plugin instalado. Cada release solo necesita actualizar esos dos archivos y el modal lo refleja automáticamente.
+- **Modal Instrucciones — header coherente con el visor (fix zoom)** — diagnosticado por GPT-5 + Gemini Pro: `.popup-overlay { zoom: var(--ui-scale) }` escalaba visualmente todo lo que pintaba el iframe, así que `font-size: 28px !important` dentro de React se pintaba a 16.8px. Excluido `#m-instructions-overlay` del zoom global y re-aplicado `var(--ui-scale)` solo a su `.m-modal-hdr` inyectado para que back/título sigan iguales que Sonda/Fondeo.
+- **Entrada raíz del webapp redirige al visor de fondeo** — `/signalk-mareas-ihm/` ahora va directo a `/visorfondeo` (mobile.html) en lugar de cargar TidesView (app de mareas). TidesView sigue accesible mediante el botón `Mareas` interno del visor.
+- **README + descripción NPM + displayName de Signal K alineados** — título corregido a `AnchorWatch Pro: Smart Anchoring, AIS & Tides` en todos los sitios (estaba como `Advanced Anchor Watch Manager` en el README root).
+
 ## [2.3.1] - 2026-06-23
 
 ### English

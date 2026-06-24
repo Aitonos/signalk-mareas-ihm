@@ -37,13 +37,9 @@ try {
   // ignore
 }
 
-// v1.3.0: Copy mapafondeo.html to dist/
-const mapaSrc = path.join(projectRoot, 'public', 'mapafondeo.html');
-const mapaDst = path.join(outDir, '..', 'mapafondeo.html'); // dist/mapafondeo.html
-if (fs.existsSync(mapaSrc)) {
-  fs.copyFileSync(mapaSrc, mapaDst);
-  console.log(`[copy-static] Copied mapafondeo.html -> dist/mapafondeo.html`);
-}
+// Rev541: mapafondeo.html ELIMINADO (visor desktop legacy). Ya no se copia
+// a dist/, ya no existe en public/. El handler de /mapafondeo redirige 308
+// a /visorfondeo. Solo mobile.html como visor.
 
 // Rev166: Copy mobile.html to dist/ (touch-first frontend for phone/tablet)
 const mobileSrc = path.join(projectRoot, 'public', 'mobile.html');
@@ -60,6 +56,28 @@ if (fs.existsSync(readmeSrc)) {
   fs.copyFileSync(readmeSrc, readmeDst);
   console.log(`[copy-static] Copied README.md -> dist/README.md`);
 }
+
+// Rev522: copy CHANGELOG.md to dist/ so el botón "Versiones" del modal
+// Instrucciones (TidesView) lo lea en runtime y siempre coincida con el plugin
+// instalado. Antes el changelog vivía hardcoded dentro de TidesView y quedaba
+// huerfano entre releases.
+const changelogSrc2 = path.join(projectRoot, 'CHANGELOG.md');
+const changelogDst2 = path.join(outDir, '..', 'CHANGELOG.md');
+if (fs.existsSync(changelogSrc2)) {
+  fs.copyFileSync(changelogSrc2, changelogDst2);
+  console.log(`[copy-static] Copied CHANGELOG.md -> dist/CHANGELOG.md`);
+}
+
+// Rev527: copy public/instrucciones_es.html (fragmento ES del manual) a dist/.
+// Cuando el idioma del visor es ES, TidesView lo fetchea y lo renderiza inline
+// en lugar del JSX hardcoded EN. Así el manual español deja de estar huérfano.
+const instrEsSrc = path.join(projectRoot, 'public', 'instrucciones_es.html');
+const instrEsDst = path.join(outDir, '..', 'instrucciones_es.html');
+if (fs.existsSync(instrEsSrc)) {
+  fs.copyFileSync(instrEsSrc, instrEsDst);
+  console.log(`[copy-static] Copied instrucciones_es.html -> dist/instrucciones_es.html`);
+}
+
 
 // Rev146 (audit fix): limpia bundles JS/CSS antiguos de public/assets/. Vite
 // se configura con emptyOutDir:false para no borrar mapafondeo.html y compañía,

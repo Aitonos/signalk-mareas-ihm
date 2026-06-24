@@ -1,10 +1,17 @@
 # CLAUDE.md — instrucciones para asistente AI
 
-> 🚫 **PUBLICACIÓN NPM BLOQUEADA hasta acumular más sesiones de QA real en barco**.
-> Rev486 (2026-06-22) cerró la regresión grave del refactor Rev475-483 vía hotfixes
-> validados en agua. Estado actual: ESTABLE — ver `docs/STATE_Rev486_STABLE.md`.
-> Bloqueantes pendientes: validar banner desconexión real, lift/drop concurrente,
-> alarma off preserva physics, safety latch release tras recuperar sonda.
+> 🟢 **BLOQUEANTES NPM 2.3.x SUPERADOS** (Carlos confirmó 2026-06-24): banner
+> desconexión real OK, lift/drop concurrente OK, alarma OFF preserva physics OK,
+> safety latch release tras recuperar sonda OK.
+>
+> QA pendiente (validar en puerto/agua antes de publish):
+>  - Alarma ancla no debe saltar al motorizar saliendo (>3 kn auto-desarmar).
+>  - Bottom-bar widget viento: corregir lag respecto a las flechas.
+>  - Smoothing filter sonda (~30cm de oscilación).
+>  - Configurator wizard mandatorio primer install.
+>  - Sprint H wave estimation (cuando arranque).
+>  - Cualquier "retal" de QA listado en `docs/QA_PENDIENTE.md`.
+>
 > No proponer `npm publish` por iniciativa propia, y NO heredar autorización de
 > sesiones anteriores: cada publish requiere OK explícito tras el cambio.
 

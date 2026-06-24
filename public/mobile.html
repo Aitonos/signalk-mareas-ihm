@@ -6,12 +6,36 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <title>Mareas IHM — Móvil</title>
+<!-- Rev540→Rev543: pre-flight client-side ELIMINADO. El server ahora redirige
+     302 a /visorfondeo?v=<buildId> si la URL no trae el build actual (ver
+     src/index.ts _sendMobile). El navegador siempre carga la URL canonical
+     con el build vigente, sin posibilidad de servir un HTML cacheado viejo. -->
+<script>
+/* Rev544: detectar bfcache (back-forward cache) y forzar reload. Cuando el
+   usuario vuelve a la pestaña tras restart del SK, el navegador puede
+   mostrar el snapshot DOM en memoria de la versión vieja (NO pasa por la
+   red, NO ejecuta nuestro JS de cache-bust). Este listener se dispara con
+   e.persisted=true cuando el evento pageshow viene del bfcache → reload
+   con cache-bust ANTES de que se vea nada. */
+window.addEventListener('pageshow', function(e){
+  if (e.persisted) {
+    try { window.location.reload(); } catch(_){}
+  }
+});
+</script>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJNQVJFQVMgKElITSkiPgogIDxyZWN0IHg9IjAiIHk9IjAiIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMDQzODRhIi8+CiAgPCEtLSBzdW4gLS0+CiAgPGNpcmNsZSBjeD0iNDgiIGN5PSIxOCIgcj0iNiIgZmlsbD0iI2ZmZDE2NiIvPgogIDwhLS0gaXNsYW5kIC0tPgogIDxwYXRoIGQ9Ik0xOCA0MGM2LTYgMTYtNiAyMiAwIiBmaWxsPSIjMGU2YjRmIi8+CiAgPHBhdGggZD0iTTEyIDQyYzEwLTggMzAtOCA0MCAwdjZIMTJ6IiBmaWxsPSIjMGU2YjRmIi8+CiAgPCEtLSBsaWdodGhvdXNlIC0tPgogIDxyZWN0IHg9IjI4IiB5PSIyNCIgd2lkdGg9IjgiIGhlaWdodD0iMTgiIHJ4PSIyIiBmaWxsPSIjZmZmZmZmIi8+CiAgPHJlY3QgeD0iMjciIHk9IjIyIiB3aWR0aD0iMTAiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IiNmZjRiNGIiLz4KICA8cGF0aCBkPSJNMzIgMThsNiA0SDI2eiIgZmlsbD0iI2ZmZmZmZiIvPgogIDwhLS0gd2F2ZXMgLS0+CiAgPHBhdGggZD0iTTEwIDUwYzQgMCA0LTIgOC0yczQgMiA4IDIgNC0yIDgtMiA0IDIgOCAyIDQtMiA4LTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzFhYTZiNyIgc3Ryb2tlLXdpZHRoPSI0IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNMTAgNTZjNCAwIDQtMiA4LTJzNCAyIDggMiA0LTIgOC0yIDQgMiA4IDIgNC0yIDgtMiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMWFhNmI3IiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iMC45Ii8+Cjwvc3ZnPgo=">
 <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22VISOR%20DE%20FONDEO%20%E2%80%93%20Mareas%20IHM%22%2C%22short_name%22%3A%22Visor%20Fondeo%22%2C%22start_url%22%3A%22%2Fsignalk-mareas-ihm%2Fvisorfondeo%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230a1929%22%2C%22theme_color%22%3A%22%230a1929%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22%2Fsignalk-mareas-ihm%2Ficon.svg%22%2C%22sizes%22%3A%22any%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root{--bg:rgba(10,30,50,0.94);--brd:rgba(0,200,100,0.3);--grn:#66ffaa;--org:#ffb23f;--red:#f44336;--blue:#2196F3}
+/* Rev505 (consolidacion LLM GPT+Gemini): single source of truth para todos
+   los headers de modales. Cambiar aqui = cambiar en TODOS los modales. */
+:root{
+  --modal-hdr-h: 88px;       /* Altura del faldon naranja superior */
+  --modal-title-sz: 32px;    /* Tamano texto titulo (.m-title) */
+  --modal-back-sz: 24px;     /* Tamano boton BACK (.m-back) */
+}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a1929;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden}
 /* Rev166: auto-escala del chrome flotante. La verdad absoluta del diseño
@@ -31,6 +55,30 @@ body{background:#0a1929;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-seri
 .btn-float,.btn-tc,.lang-flags,.popup-overlay,#btn-top-row,
 #panel,#shelter-tooltip,#nivel-zoom-display,#bottom-info,
 .bottom-info,.audio-unlock-tap{zoom:var(--ui-scale)}
+/* Rev531 (diagnóstico GPT+Gemini): excluir el overlay del modal de Instrucciones
+   del escalado global. Contiene un iframe (TidesView/React) cuyo documento
+   maneja sus propios tamaños tipográficos responsivos; aplicarle zoom 0.6
+   encoge VISUALMENTE todo lo que el iframe pinta (incl. textos con font-size
+   28/38 px que se ven como 16.8/22.8). Sin esta exención, ningún !important
+   dentro de TidesView puede crecer porque el rasterizado final lo divide. */
+#m-instructions-overlay{zoom:1}
+/* Rev534: el header inyectado del modal (BACK + título "📖 Instrucciones") y
+   el botón ATRÁS del visor móvil SÍ deben seguir escalando con --ui-scale
+   para verse igual de compactos que en el resto del visor (Sonda, Fondeo).
+   Solo el iframe queda sin zoom. */
+#m-instructions-overlay .m-modal-hdr{zoom:var(--ui-scale)}
+/* Rev537+Rev541+Rev543 (audit GPT+Gemini convergente): el popup-box default
+   trae padding 104/24/32 + background rgba(10,30,50,.6). Aquí queremos
+   reservar arriba el espacio del header naranja (53px = 88×0.6) y eliminar
+   el background del padre — el iframe (con su propio background opaco de la
+   app) ocupa todo el espacio restante. NO transparentamos el iframe en sí
+   (Rev542 dejaba ver el visor padre detrás cuando la app no llenaba todo
+   el ancho). */
+#m-instructions-overlay .popup-box{
+  padding:calc(88px * var(--ui-scale)) 0 0 0!important;
+  background:transparent!important;
+  overflow:hidden!important;
+}
 body{background:#0a1929;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden}
 #map{position:fixed;inset:0;z-index:1;zoom:1}
 /* Prevent black grid lines — dark bg + tiles slightly oversized to overlap gaps */
@@ -362,9 +410,9 @@ body.wx-bar-active #approach-bar{bottom:60px;left:50%;transform:translateX(-50%)
 /* Rev500: Tracks queda visualmente gris/disabled si AIS (maestro) esta OFF. */
 #ais-alarm-panel h5 .ais-hdr-toggles label.locked{opacity:.3;cursor:not-allowed;filter:grayscale(1)}
 #ais-alarm-panel h5 .ais-hdr-toggles label.locked input{cursor:not-allowed}
-/* Rev497: titulo del header inyectado (faldon naranja) ajustado a 34px
-   (Vicente lo encontro demasiado grande a 36, +2 sobre 32). */
-body.mobile-ui #ais-alarm-panel .m-modal-hdr .m-title{font-size:34px!important}
+/* Rev504: override eliminado — hereda default T0=32 (regla "TODOS los headers
+   identicos" salvo Meteo). Mantengo flex en h5 sub-header del panel para los
+   toggles AIS+Tracks+Alarma, eso sigue OK. */
 #ais-alarm-panel.borneo-alert h5{color:var(--red)}
 .ais-alert-item{font-size:14px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-between;cursor:pointer}
 .ais-collapsed{max-height:0!important;overflow:hidden!important;padding:0!important;margin:0!important}
@@ -432,9 +480,10 @@ body.mobile-ui #m-confirm-pop .popup-box{
   .btn-anchor-center{top:118px!important;width:44px!important;height:44px!important}
   .btn-ais-alarm{top:118px!important;left:56px!important}
   .leaflet-control-zoom a{width:44px!important;height:44px!important;line-height:44px!important;font-size:22px!important}
-  /* Rev407+Rev410: top:96→88px (pegado al faldon naranja sin margen). */
-  #ais-alarm-panel{top:88px!important;width:calc(100vw - 20px)!important;max-height:calc(100dvh - 98px)!important}
-  body.mobile-ui #ais-alarm-panel.m-open{--ais-panel-top:88px!important;top:88px!important}
+  /* Rev407+Rev410: top:96→88px (pegado al faldon naranja sin margen).
+     Rev514: top escala con --ui-scale (header visual reducido al 60% en mobile). */
+  #ais-alarm-panel{top:calc(88px * var(--ui-scale))!important;width:calc(100vw - 20px)!important;max-height:calc(100dvh - 98px)!important}
+  body.mobile-ui #ais-alarm-panel.m-open{--ais-panel-top:calc(88px * var(--ui-scale))!important;top:var(--ais-panel-top)!important}
   .zoom-indicator{bottom:30px;left:10px;font-size:10px;padding:1px 4px}
   .popup-box{max-width:96vw!important;max-height:80vh!important;overflow-y:auto!important}
 }
@@ -495,8 +544,9 @@ body.m-pi-browser .popup-overlay .popup-box label,
 body.m-pi-browser .popup-overlay .popup-box li,
 body.m-pi-browser .popup-overlay .popup-box td,
 body.m-pi-browser .popup-overlay .popup-box th{font-size:24px!important}
-body.m-pi-browser .m-modal-hdr .m-title{font-size:30px!important}
-body.m-pi-browser .m-modal-hdr .m-back{font-size:22px!important}
+/* Rev503: Pi-browser unificado al sistema movil (T0=32, BACK=24). */
+body.m-pi-browser .m-modal-hdr .m-title{font-size:32px!important}
+body.m-pi-browser .m-modal-hdr .m-back{font-size:24px!important}
 /* Rev188: Pi va a 2 FPS — desactivar animaciones SVG y transitions costosas.
    Los peces/cangrejos animados consumían CPU significativa en el navegador Pi. */
 body.m-pi-browser svg *,
@@ -556,6 +606,34 @@ body.mobile-ui #panel.m-open button{font-size:22px!important;padding:12px 16px!i
 body.mobile-ui #panel.m-open input[type=range]{height:18px!important}
 body.mobile-ui #panel.m-open input[type=range]::-webkit-slider-thumb{width:32px!important;height:32px!important;border-radius:50%!important}
 body.mobile-ui #panel.m-open label,body.mobile-ui #panel.m-open .sec-title{font-size:22px!important;font-weight:600!important}
+/* Rev510: restaurar tamaño default del .m-modal-hdr inyectado dentro de #panel
+   y de #ais-alarm-panel. Las reglas universales L553/L563/L766 pisan al .m-back
+   y .m-title (specificity 0,2,0 - 0,2,1). Estas reglas tienen specificity
+   (0,3,1) → ganan. Reaplican los valores default del header L1169/L1177. */
+body.mobile-ui #panel.m-open .m-modal-hdr .m-back,
+body.mobile-ui #ais-alarm-panel.m-open .m-modal-hdr .m-back{
+  font-size:var(--modal-back-sz)!important;
+  font-weight:800!important;
+  padding:14px 22px!important;
+  min-height:54px!important;
+  line-height:normal!important;
+}
+body.mobile-ui #panel.m-open .m-modal-hdr .m-title,
+body.mobile-ui #ais-alarm-panel.m-open .m-modal-hdr .m-title{
+  font-size:var(--modal-title-sz)!important;
+  font-weight:900!important;
+  line-height:normal!important;
+}
+/* Rev514 (re-aplica Rev512 — la DB AIS rota era falsa alarma por restart): el
+   header del #ais-alarm-panel se renderizaba al 100% mientras Sonda y demás
+   .popup-overlay se renderizan al 60% por el `zoom:var(--ui-scale)` heredado
+   del ancestro .popup-overlay (L38). Header AIS visual DOBLE de grande que
+   Sonda. Fix: aplicar el mismo zoom solo al .m-modal-hdr del AIS panel para
+   igualar visualmente. El contenido del panel (lista barcos, toggles, slider)
+   NO se ve afectado. */
+body.mobile-ui #ais-alarm-panel.m-open .m-modal-hdr{
+  zoom:var(--ui-scale);
+}
 /* Pi browser: un escalón más grande */
 body.m-pi-browser #panel.m-open,
 body.m-pi-browser #panel.m-open *{font-size:22px!important}
@@ -621,14 +699,16 @@ body.mobile-ui #panel.m-open{
    lista) en conflicto -> rueda raton solo funcionaba en barra lateral.
    Ahora: SOLO el panel padre scrollea, la lista interna sin scroll propio.
    Header con position:sticky se queda arriba. Mas simple y robusto. */
+/* Rev505 (consolidacion LLM GPT): refactor a flexbox bulletproof. Sticky
+   anterior se rompia en WebKit movil cuando layout no estaba acotado en
+   altura. Solucion: padre flex-column rigido + lista flex:1 con overflow,
+   header con flex:0 0 auto. */
 body.mobile-ui #ais-alarm-panel.m-open{
-  /* Rev408+Rev410: layout COMPLETO del panel en modo modal m-open.
-     Rev410: top:96→88px → PEGADO al faldón naranja (.m-modal-hdr alto 88px,
-     sin margen). Antes 8 px de gap dejaban ver el mapa por detras. bottom:0
-     para llegar hasta el fondo sin gap inferior. */
-  --ais-panel-top:88px;
+  /* Rev514: --ais-panel-top escala con --ui-scale para alinear con el header
+     visual (que ahora tiene zoom:var(--ui-scale) — ver bloque Rev514 arriba). */
+  --ais-panel-top:calc(88px * var(--ui-scale));
   position:fixed!important;
-  top:88px!important;
+  top:var(--ais-panel-top)!important;
   left:0!important;
   right:0!important;
   bottom:0!important;
@@ -640,33 +720,31 @@ body.mobile-ui #ais-alarm-panel.m-open{
   border:none!important;
   border-radius:0!important;
   background:#0a1e32!important;
-  display:block!important;
-  overflow-x:hidden!important;
-  overflow-y:auto!important;
-  overscroll-behavior-y:contain;
-  -webkit-overflow-scrolling:touch;
+  display:flex!important;                  /* FIX: flex column */
+  flex-direction:column!important;          /* FIX */
+  overflow:hidden!important;                /* FIX: padre NO scrolea */
   box-sizing:border-box!important;
   padding:0!important;
   color:#fff!important;
 }
 body.mobile-ui #ais-alarm-panel.m-open > .ais-panel-header{
-  /* Rev406: padding interno + fondo solido #0a1e32 (no rgba .94 que dejaba
-     transparencia). Sticky a top:0 (panel sin padding -> sin gap). */
+  flex:0 0 auto!important;                  /* FIX: tamano fijo segun contenido */
+  position:static!important;                /* FIX: ya no necesita sticky */
   padding:8px 10px 10px 10px!important;
   margin:0!important;
   background:#0a1e32!important;
   border-bottom:1px solid rgba(255,255,255,.18)!important;
-  position:sticky!important;
-  top:0!important;
   z-index:10!important;
   box-sizing:border-box!important;
 }
 body.mobile-ui #ais-alarm-panel.m-open > #ais-alarm-list{
-  /* Sin overflow propio: el scroll lo maneja el panel padre.
-     Padding lateral igual al header para alineado visual. */
-  overflow:visible!important;
+  flex:1 1 auto!important;                  /* FIX: toma espacio restante */
+  overflow-y:auto!important;                /* FIX: scroll SOLO aqui */
+  min-height:0!important;                   /* FIX: crucial para que flex permita scroll interior */
   padding:6px 10px 8px 10px!important;
   box-sizing:border-box!important;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-y:contain;
 }
 /* Slider Radio + select Ordenar: TAMAÑOS TOUCH legibles. */
 body.mobile-ui #ais-alarm-panel.m-open .ais-panel-header span,
@@ -1149,7 +1227,9 @@ body.mobile-ui .popup-overlay .popup-box{
 /* Rev326: header sticky GRANDE 88px (antes 80). Con BACK 24px+padding 14
    y title 32px necesitamos más aire. */
 body.mobile-ui .m-modal-hdr{
-  position:fixed;top:0;left:0;right:0;height:88px;z-index:10;
+  position:fixed;top:0;left:0;right:0;
+  height:var(--modal-hdr-h)!important;
+  z-index:10;
   background:rgba(10,30,50,.98);
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
   border-bottom:2px solid rgba(255,178,63,.3);
@@ -1160,39 +1240,57 @@ body.mobile-ui .m-modal-hdr{
    pequeños". m-back 18→24px, padding 12 18 → 14 22. m-title 28→32px. */
 body.mobile-ui .m-modal-hdr .m-back{
   background:rgba(255,178,63,.15);border:1px solid var(--org);color:var(--org);
-  font-size:24px;font-weight:800;cursor:pointer;padding:14px 22px;
+  font-size:var(--modal-back-sz)!important;
+  font-weight:800;cursor:pointer;padding:14px 22px;
   display:flex;align-items:center;gap:4px;min-height:54px;
   border-radius:12px;letter-spacing:-.2px;
 }
 body.mobile-ui .m-modal-hdr .m-back:active{opacity:.6;transform:scale(.95)}
 body.mobile-ui .m-modal-hdr .m-title{
-  flex:1;text-align:center;font-size:32px;font-weight:900;color:#fff;
+  flex:1;text-align:center;
+  font-size:var(--modal-title-sz)!important;
+  font-weight:900;color:#fff;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   padding:0 8px;letter-spacing:-.3px;
+}
+/* Rev511: forzar herencia en descendientes del .m-title. Cuando el h4 original
+   del modal tiene un <span> dentro (como #shelter-pop L2239), el innerHTML se
+   copia al .m-title como <span>...</span>. Si el modal padre tiene reglas
+   sobre span (ej. #shelter-pop .popup-box span {font-size:22px} L1666),
+   el span hijo NO hereda el 32px del .m-title — usa los 22px de su propia
+   regla. inherit!important neutraliza esto. */
+body.mobile-ui .m-modal-hdr .m-title *{
+  font-size:inherit!important;
+  font-weight:inherit!important;
+  color:inherit!important;
+  line-height:inherit!important;
 }
 body.mobile-ui .m-modal-hdr .m-close-spacer{min-width:80px}
 
 /* === Tipografía GIGANTE dentro de modales (legibilidad marítima de sol) ===
    Rev326: +20% interior. Headers h1=44 h2=36 h3=32 h4=30 h5=26.
    Texto base 24px, small 20px. Botones y inputs 24px. */
+/* Rev503: jerarquia UI unificada (feedback Vicente, basada en modal Calc Sonda).
+   T0 modal title=32 (header inyectado), T1 sub-modal=42 (override solo),
+   T2 secciones=36, T3 sub-seccion=30, body=26, small=24. */
 body.mobile-ui .popup-overlay .popup-box h1{font-size:44px!important;line-height:1.2;font-weight:900}
 body.mobile-ui .popup-overlay .popup-box h2{font-size:36px!important;line-height:1.2;font-weight:800}
-body.mobile-ui .popup-overlay .popup-box h3{font-size:32px!important;line-height:1.25;font-weight:800}
+body.mobile-ui .popup-overlay .popup-box h3{font-size:36px!important;line-height:1.25;font-weight:800}
 body.mobile-ui .popup-overlay .popup-box h4{font-size:30px!important;line-height:1.3;font-weight:800;margin:8px 0}
 body.mobile-ui .popup-overlay .popup-box h5{font-size:26px!important;line-height:1.3;font-weight:700}
 body.mobile-ui .popup-overlay .popup-box p,
 body.mobile-ui .popup-overlay .popup-box label,
 body.mobile-ui .popup-overlay .popup-box li,
 body.mobile-ui .popup-overlay .popup-box td,
-body.mobile-ui .popup-overlay .popup-box th{font-size:24px!important;line-height:1.5}
-body.mobile-ui .popup-overlay .popup-box small{font-size:20px!important}
+body.mobile-ui .popup-overlay .popup-box th{font-size:26px!important;line-height:1.5}
+body.mobile-ui .popup-overlay .popup-box small{font-size:24px!important}
 /* Rev326: row labels meteo (Viento/Racha/Aire/...) tienen inline 42px pero
    mi global th{24px!important} los aplastaba. Specificity-override aquí. */
 body.mobile-ui .popup-overlay .popup-box th.m-met-rowlbl{font-size:42px!important;line-height:1.1!important}
-/* Botones interiores: gigantes y legibles */
+/* Botones interiores: gigantes y legibles. Rev504: 24->26 (feedback Vicente). */
 body.mobile-ui .popup-overlay .popup-box .btn,
 body.mobile-ui .popup-overlay .popup-box button:not(.m-back){
-  min-height:64px;font-size:24px!important;padding:18px 24px!important;
+  min-height:64px;font-size:26px!important;padding:18px 24px!important;
   font-weight:800;border-radius:14px;letter-spacing:-.2px;
 }
 /* Inputs / selects / textareas grandes */
@@ -1205,8 +1303,10 @@ body.mobile-ui .popup-overlay .popup-box textarea{
   border-radius:10px;
 }
 /* Rev185: selector método Cálc Fondeo (Tradicional / Vicente Vela) no
-   cortar texto — botones flex que crecen, texto no se trunca. */
-body.mobile-ui #fondeo-pop button{
+   cortar texto — botones flex que crecen, texto no se trunca.
+   Rev506 (audit forense DevTools): EXCLUIR .m-back para no pisar el header
+   inyectado unificado (era el culprit del back pequeno en fondeo). */
+body.mobile-ui #fondeo-pop button:not(.m-back){
   white-space:normal!important;word-wrap:break-word;
   font-size:18px!important;padding:14px 8px!important;
   min-height:64px;line-height:1.2;
@@ -1300,34 +1400,22 @@ body.mobile-ui #ais-confirm .popup-box{
    en todos los browsers — el modal salia chico. Con inset:1vh 1vw el modal
    queda fijado a 1vh del top/bottom y 1vw de left/right -> ocupa 98vw × 98vh
    automaticamente, sin negociaciones con height/transform. */
-body.mobile-ui #shelter-score-pop .popup-box,
-body.mobile-ui #shelter-legend-pop .popup-box,
-body.mobile-ui #wave-hist-info-pop .popup-box{
-  position:fixed!important;
-  inset:1vh 1vw!important;
-  top:1vh!important;right:1vw!important;bottom:1vh!important;left:1vw!important;
-  transform:none!important;
-  width:auto!important;max-width:none!important;
-  height:auto!important;max-height:none!important;min-height:0!important;min-width:0!important;
-  border-radius:26px!important;
-  padding:160px 96px 72px!important;
-  box-shadow:0 16px 56px rgba(0,0,0,.8);
-  border:1px solid rgba(255,255,255,.18);
-  overflow-y:auto!important;
-}
+/* Rev507 (feedback Vicente): override ELIMINADO. Estos sub-modales tenian
+   inset:1vh 1vw + width:auto que rompian el comportamiento del .m-modal-hdr
+   inyectado (position:fixed dentro de un padre con transform de animacion
+   m-slide-up = posicion absoluta relativa, no al viewport).
+   Ahora los 3 sub-modales heredan el default .popup-overlay .popup-box
+   (line 1135) IGUAL que Sonda, Fondeo, Shelter, etc. Header naranja 88px
+   en top:0 viewport funcionando correctamente. */
 /* Todos los popups info: header naranja gigante. */
-body.mobile-ui #shelter-score-pop .m-modal-hdr,
-body.mobile-ui #shelter-legend-pop .m-modal-hdr,
-body.mobile-ui #wave-hist-info-pop .m-modal-hdr{height:128px!important}
-body.mobile-ui #shelter-score-pop .m-modal-hdr .m-title,
-body.mobile-ui #shelter-legend-pop .m-modal-hdr .m-title,
-body.mobile-ui #wave-hist-info-pop .m-modal-hdr .m-title{font-size:54px!important;letter-spacing:-.3px!important}
-body.mobile-ui #shelter-score-pop .m-modal-hdr .m-back,
-body.mobile-ui #shelter-legend-pop .m-modal-hdr .m-back,
-body.mobile-ui #wave-hist-info-pop .m-modal-hdr .m-back{font-size:32px!important;padding:20px 30px!important;min-height:72px!important}
+/* Rev504: TODOS los overrides de header eliminados — los sub-modales heredan
+   el default (height 88px, .m-title 32px, .m-back 24px). Regla Vicente:
+   "TODOS los headers identicos" salvo Meteo. */
 /* Rev381: textos +4-6pt (subir todo lo que el usuario reporto enano). */
+/* Rev506 (audit forense): EXCLUIR .m-modal-hdr (header inyectado naranja).
+   Antes el div del header heredaba font-size:40px y rompia el tamano unificado. */
 body.mobile-ui #shelter-score-pop p,
-body.mobile-ui #shelter-score-pop > .popup-box > div{font-size:40px!important;line-height:1.55!important}
+body.mobile-ui #shelter-score-pop > .popup-box > div:not(.m-modal-hdr){font-size:40px!important;line-height:1.55!important}
 body.mobile-ui #shelter-score-pop div[data-i18n="sh_score_hint"]{font-size:36px!important}
 body.mobile-ui #shelter-score-pop b{font-size:inherit!important}
 /* Rev385: Refactor con classes (.wh-row, .wh-head, .wh-time, .wh-num,
@@ -1392,9 +1480,11 @@ body.mobile-ui #shelter-legend-pop .shelter-legend-row{font-size:40px!important;
 body.mobile-ui #shelter-legend-pop .shelter-legend-grade{font-size:84px!important}
 body.mobile-ui #shelter-legend-pop .shelter-legend-swatch{width:100px!important;height:60px!important;border-radius:10px!important}
 body.mobile-ui #shelter-legend-pop .shelter-legend-desc{font-size:38px!important}
-body.mobile-ui #shelter-score-pop button,
-body.mobile-ui #shelter-legend-pop button,
-body.mobile-ui #wave-hist-info-pop button{font-size:36px!important;top:14px!important;right:20px!important}
+/* Rev506 (audit forense DevTools): EXCLUIR .m-back para no pisar el header
+   inyectado unificado en los sub-modales shelter/wave. */
+body.mobile-ui #shelter-score-pop button:not(.m-back),
+body.mobile-ui #shelter-legend-pop button:not(.m-back),
+body.mobile-ui #wave-hist-info-pop button:not(.m-back){font-size:36px!important;top:14px!important;right:20px!important}
 /* Rev321: wave-hist-info popup FULLSCREEN en móvil (100% del viewport).
    Sin border-radius y padding generoso. Antes a 96vw quedaba pequeño con
    tabla overflowing — necesitamos toda la pantalla disponible. */
@@ -1463,7 +1553,31 @@ body.mobile-ui #ais-pop .popup-box > button[onclick*="closePopup"]{
    zoom:0.6 se interpreta a la mitad → cuanto más lejos del 0,0 toques, más
    se desplaza la caja arriba-izquierda. Bug clásico zoom × pointer events. */
 body.mobile-ui #ais-pop{background:transparent!important;pointer-events:none!important;zoom:1!important}
-body.mobile-ui #ais-pop .popup-box{pointer-events:auto!important}
+/* Rev506 (audit forense): popup-box reestructurado a flex-column. Sin esto
+   TODO el contenido (titulo + 3 botones + datos) scrolleaba junto. Ahora
+   header (h4 + ais-pop-actions) queda fijo arriba, solo ais-pop-body scrolea. */
+body.mobile-ui #ais-pop .popup-box{
+  pointer-events:auto!important;
+  display:flex!important;
+  flex-direction:column!important;
+  overflow:hidden!important;
+}
+body.mobile-ui #ais-pop #ais-pop-title{flex:0 0 auto!important}
+body.mobile-ui #ais-pop #ais-pop-actions{flex:0 0 auto!important}
+body.mobile-ui #ais-pop #ais-pop-body{flex:1 1 auto!important;overflow-y:auto!important;min-height:0!important;-webkit-overflow-scrolling:touch}
+/* Rev506: los 3 botones (Localizar / vesselfinder / Quitar) no caben. Bajar
+   font + padding y permitir wrap si necesario. */
+body.mobile-ui #ais-pop #ais-pop-actions button{
+  font-size:14px!important;
+  padding:8px 10px!important;
+  min-height:36px!important;
+  flex:1 1 0!important;
+  min-width:0!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+body.mobile-ui #ais-pop #ais-pop-actions{gap:4px!important}
 /* Rev325 v2: SOLO neutralizar la inflación global button:not(.m-back) DENTRO
    de las filas de _histRow / showFav (heart, 📍, ✕, input). NO tocar padding
    del popup-box — el auto-inject crea su m-modal-hdr sticky y el padding:96px
@@ -1489,9 +1603,14 @@ body.mobile-ui #fav-pop #fav-list input[type=text]{
   body.mobile-ui #ais-pop .popup-box{
     width:98vw!important;max-width:98vw!important;
   }
-  body.mobile-ui #ais-pop .m-modal-hdr .m-title{
-    white-space:normal!important;line-height:1.1!important;
-    font-size:24px!important;
+  /* Rev505 (selector fantasma fix consolidado GPT+Gemini): ais-pop esta en
+     noHeaderIds y NO inyecta .m-modal-hdr. Mi selector anterior apuntaba a un
+     DOM que nunca existe. El elemento real con el nombre del barco es el h4
+     directo #ais-pop-title. Truncate con elipsis para nombres largos. */
+  body.mobile-ui #ais-pop #ais-pop-title{
+    white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+    font-size:18px!important;line-height:1.2!important;
+    display:block!important;
   }
 }
 /* Rev209: el botón ACK vive ahora en #ais-pop-actions (franja propia bajo el
@@ -1595,7 +1714,7 @@ body.mobile-ui .shelter-grade-col div[data-i18n="sh_proteccion"]{font-size:24px!
 /* Rev377: titulo "⚓ Shelter forecast" del modal padre shelter-pop. El h4
    esta display:none por _mInjectModalHeader; el visible es .m-modal-hdr
    .m-title (default 32px) -> 48px. */
-body.mobile-ui #shelter-pop .m-modal-hdr .m-title{font-size:48px!important}
+/* Rev504: shelter-pop override eliminado — hereda default T0=32. */
 body.mobile-ui .shelter-grade-col{
   grid-area:grade!important;
   flex:none!important;height:auto!important;
@@ -1775,7 +1894,13 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 }
 </style>
 </head>
-<body>
+<body class="mobile-ui">
+<!-- Rev545 (audit Carlos): class="mobile-ui" directamente en el tag <body>.
+     Antes la añadía JS en línea ~11661 tras parsear 11k líneas, por lo que
+     el primer render mostraba el layout DESKTOP (sin .mobile-ui aplicada)
+     durante 100-500ms. Eso era el "flash de versión antigua" que veías.
+     Ahora desde el primer parse el body ya tiene la clase y el CSS mobile
+     aplica desde el inicio. -->
 <!-- Rev103: modal de desbloqueo de audio (móvil). Los navegadores móviles
      bloquean Web Audio + SpeechSynthesis hasta el primer gesto del usuario.
      Sin este tap explícito, las alarmas garreo/AIS/varada no suenan en el
@@ -2265,51 +2390,13 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
         <div id="shelter-wave-hist-yaxis" style="position:relative;flex:0 0 80px;height:94px;pointer-events:none;font-size:13px;font-weight:700;color:rgba(255,255,255,.9);text-shadow:0 1px 1px rgba(0,0,0,.6);line-height:1"></div>
       </div>
     </div>
-    <!-- Popup info histórico ola: leyenda colores + tabla detallada. -->
-    <div class="popup-overlay" id="wave-hist-info-pop" onclick="closePopup('wave-hist-info-pop')">
-      <!-- Rev326 v3: patrón estándar idéntico a Info modal — solo h4 + contenido.
-           El _mInjectModalHeader crea el header naranja unificado (BACK + título)
-           porque ahora wave-hist-info-pop YA NO está en noHeaderIds. -->
-      <div class="popup-box" onclick="event.stopPropagation()">
-        <h4 data-i18n="sh_wh_title">Historial de olas — leyenda y detalle</h4>
-        <div style="font-size:24px;color:#9ad;margin-bottom:28px;line-height:1.4" data-i18n="sh_wh_subtitle">Cada barra resume 5 minutos. Color = intensidad media medida por el IMU del barco. Altura = oscilación del bin.</div>
-        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:32px">
-          <div style="text-align:center"><div style="width:100%;height:30px;background:#3aa856;border-radius:4px"></div><div style="font-size:24px;color:#fff;margin-top:8px;font-weight:800" data-i18n="m_calma">Calma</div><div style="font-size:20px;color:#aaa">&lt;0.5°</div></div>
-          <div style="text-align:center"><div style="width:100%;height:30px;background:#a3c813;border-radius:4px"></div><div style="font-size:24px;color:#fff;margin-top:8px;font-weight:800" data-i18n="sh_wh_rizada">Rizada</div><div style="font-size:20px;color:#aaa">0.5–1.5°</div></div>
-          <div style="text-align:center"><div style="width:100%;height:30px;background:#f3c812;border-radius:4px"></div><div style="font-size:24px;color:#fff;margin-top:8px;font-weight:800" data-i18n="sh_wh_moderada">Moderada</div><div style="font-size:20px;color:#aaa">1.5–3°</div></div>
-          <div style="text-align:center"><div style="width:100%;height:30px;background:#f37812;border-radius:4px"></div><div style="font-size:24px;color:#fff;margin-top:8px;font-weight:800" data-i18n="sh_wh_agitada">Agitada</div><div style="font-size:20px;color:#aaa">3–6°</div></div>
-          <div style="text-align:center"><div style="width:100%;height:30px;background:#e74c3c;border-radius:4px"></div><div style="font-size:24px;color:#fff;margin-top:8px;font-weight:800" data-i18n="sh_wh_fuerte">Fuerte</div><div style="font-size:20px;color:#aaa">&gt;6°</div></div>
-        </div>
-        <div id="wave-hist-info-table" class="waveHistInfoTable"></div>
-      </div>
-    </div>
-    <!-- Rev79: popup explicacion del % de proteccion -->
-    <div class="popup-overlay" id="shelter-score-pop" onclick="closePopup('shelter-score-pop')">
-      <div class="popup-box" onclick="event.stopPropagation()" style="width:480px;max-width:94vw;padding:22px 26px">
-        <button onclick="closePopup('shelter-score-pop')" style="position:absolute;top:10px;right:14px;background:none;border:none;color:#aaa;font-size:26px;cursor:pointer;line-height:1">✕</button>
-        <h4 style="margin:0 0 14px 0;font-size:22px" data-i18n="sh_score_title">¿Cómo se calcula el % de protección?</h4>
-        <div style="font-size:19px;color:#cfd8dc;line-height:1.4">
-          <p style="margin:10px 0" data-i18n-html="sh_score_p1">El porcentaje representa <b>cuánta protección efectiva</b> ofrece tu fondeadero ante el viento previsto.</p>
-          <p style="margin:10px 0" data-i18n-html="sh_score_p2">Se calcula como: <b style="color:#fff">% = 100 × (1 − viento expuesto / 30 kt)</b></p>
-          <p style="margin:10px 0;font-size:18px;color:#aaa" data-i18n="sh_score_p3">Tomamos el pico de viento sostenido en sector abierto durante las próximas 12 h, lo dividimos por 30 kt (umbral de temporal) y el complemento es tu protección. Si tienes el viento entero en sector abrigado el % es 100. A más viento expuesto, menos protección.</p>
-          <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1);font-size:17px;color:#888" data-i18n="sh_score_hint">
-            Pulsa una celda del strip para ver el % de esa hora concreta.
-          </div>
-        </div>
-      </div>
-    </div>
-    <!-- Popup escala A-F al pulsar la letra del grade -->
-    <div class="popup-overlay" id="shelter-legend-pop" onclick="closePopup('shelter-legend-pop')">
-      <div class="popup-box" onclick="event.stopPropagation()" style="width:420px;max-width:94vw;padding:18px 22px">
-        <button onclick="closePopup('shelter-legend-pop')" style="position:absolute;top:8px;right:12px;background:none;border:none;color:#aaa;font-size:24px;cursor:pointer;line-height:1">✕</button>
-        <h4 style="margin:0 0 12px 0;font-size:19px"><span data-i18n="shelter_legend_title">Escala de exposición</span></h4>
-        <div class="shelter-legend-row"><span class="shelter-legend-grade" style="color:#3aa856">A</span><span class="shelter-legend-swatch" style="background:#3aa856"></span><span class="shelter-legend-desc" data-i18n="shelter_lvl_A">Abrigado · &lt;5 kt</span></div>
-        <div class="shelter-legend-row"><span class="shelter-legend-grade" style="color:#78c850">B</span><span class="shelter-legend-swatch" style="background:#78c850"></span><span class="shelter-legend-desc" data-i18n="shelter_lvl_B">Bueno · 5–12 kt</span></div>
-        <div class="shelter-legend-row"><span class="shelter-legend-grade" style="color:#f3c812">C</span><span class="shelter-legend-swatch" style="background:#f3c812"></span><span class="shelter-legend-desc" data-i18n="shelter_lvl_C">Aceptable · 12–18 kt</span></div>
-        <div class="shelter-legend-row"><span class="shelter-legend-grade" style="color:#f37812">D</span><span class="shelter-legend-swatch" style="background:#f37812"></span><span class="shelter-legend-desc" data-i18n="shelter_lvl_D">Precaución · 18–25 kt</span></div>
-        <div class="shelter-legend-row"><span class="shelter-legend-grade" style="color:#e74c3c">F</span><span class="shelter-legend-swatch" style="background:#e74c3c"></span><span class="shelter-legend-desc" data-i18n="shelter_lvl_F">Expuesto · &gt;25 kt</span></div>
-      </div>
-    </div>
+    <!-- Rev509 (Gemini/GPT): sub-modales shelter EXTRAÍDOS de aquí y movidos
+         abajo, fuera de #shelter-pop. Causa raíz era zoom anidado: .popup-overlay
+         tiene zoom:var(--ui-scale) (L38), y al estar el sub-modal DENTRO del
+         padre con el mismo zoom, los zooms se componen (0.6 × 0.6 = 0.36),
+         renderizando el header al 36% en mobile vertical. Mover los sub-modales
+         como hermanos de shelter-pop hace que solo apliquen UNA capa de zoom,
+         igualando visualmente a Sonda. -->
     <!-- Rev80: strip con botón AHORA a la izquierda (doble ancho) que vuelve
          a la vista actual. El detail panel separado YA NO EXISTE — la info
          de la hora seleccionada se muestra en el shelter-status arriba. -->
@@ -2319,6 +2406,46 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       <div id="shelter-hours" style="display:flex;gap:7px;justify-content:space-evenly;flex:1 1 auto;flex-wrap:nowrap;overflow:visible;min-width:0"></div>
     </div>
     <!-- Rev94: botón Cerrar inferior eliminado. Cerrar mediante ✕ arriba dcha. -->
+  </div>
+</div>
+<!-- Rev509: sub-modales shelter MOVIDOS aquí (eran víctimas de zoom anidado
+     0.6 × 0.6 = 0.36 cuando estaban dentro de #shelter-pop). Ahora hermanos
+     al mismo nivel raíz como sonda-pop, meteo-pop, etc. → UNA capa de zoom. -->
+<div class="popup-overlay" id="wave-hist-info-pop" onclick="closePopup('wave-hist-info-pop')">
+  <div class="popup-box" onclick="event.stopPropagation()">
+    <h4 data-i18n="sh_wh_title">Historial de olas — leyenda y detalle</h4>
+    <div style="font-size:24px;color:#9ad;margin-bottom:28px;line-height:1.4" data-i18n="sh_wh_subtitle">Cada barra resume 5 minutos. Color = intensidad media medida por el IMU del barco. Altura = oscilación del bin.</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:32px">
+      <div style="text-align:center"><div style="width:100%;height:30px;background:#3aa856;border-radius:4px"></div><div style="font-size:24px;color:#fff;margin-top:8px;font-weight:800" data-i18n="m_calma">Calma</div><div style="font-size:20px;color:#aaa">&lt;0.5°</div></div>
+      <div style="text-align:center"><div style="width:100%;height:30px;background:#a3c813;border-radius:4px"></div><div style="font-size:24px;color:#fff;margin-top:8px;font-weight:800" data-i18n="sh_wh_rizada">Rizada</div><div style="font-size:20px;color:#aaa">0.5–1.5°</div></div>
+      <div style="text-align:center"><div style="width:100%;height:30px;background:#f3c812;border-radius:4px"></div><div style="font-size:24px;color:#fff;margin-top:8px;font-weight:800" data-i18n="sh_wh_moderada">Moderada</div><div style="font-size:20px;color:#aaa">1.5–3°</div></div>
+      <div style="text-align:center"><div style="width:100%;height:30px;background:#f37812;border-radius:4px"></div><div style="font-size:24px;color:#fff;margin-top:8px;font-weight:800" data-i18n="sh_wh_agitada">Agitada</div><div style="font-size:20px;color:#aaa">3–6°</div></div>
+      <div style="text-align:center"><div style="width:100%;height:30px;background:#e74c3c;border-radius:4px"></div><div style="font-size:24px;color:#fff;margin-top:8px;font-weight:800" data-i18n="sh_wh_fuerte">Fuerte</div><div style="font-size:20px;color:#aaa">&gt;6°</div></div>
+    </div>
+    <div id="wave-hist-info-table" class="waveHistInfoTable"></div>
+  </div>
+</div>
+<div class="popup-overlay" id="shelter-score-pop" onclick="closePopup('shelter-score-pop')">
+  <div class="popup-box" onclick="event.stopPropagation()">
+    <h4 data-i18n="sh_score_title">¿Cómo se calcula el % de protección?</h4>
+    <div style="font-size:19px;color:#cfd8dc;line-height:1.4">
+      <p style="margin:10px 0" data-i18n-html="sh_score_p1">El porcentaje representa <b>cuánta protección efectiva</b> ofrece tu fondeadero ante el viento previsto.</p>
+      <p style="margin:10px 0" data-i18n-html="sh_score_p2">Se calcula como: <b style="color:#fff">% = 100 × (1 − viento expuesto / 30 kt)</b></p>
+      <p style="margin:10px 0;font-size:18px;color:#aaa" data-i18n="sh_score_p3">Tomamos el pico de viento sostenido en sector abierto durante las próximas 12 h, lo dividimos por 30 kt (umbral de temporal) y el complemento es tu protección. Si tienes el viento entero en sector abrigado el % es 100. A más viento expuesto, menos protección.</p>
+      <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1);font-size:17px;color:#888" data-i18n="sh_score_hint">
+        Pulsa una celda del strip para ver el % de esa hora concreta.
+      </div>
+    </div>
+  </div>
+</div>
+<div class="popup-overlay" id="shelter-legend-pop" onclick="closePopup('shelter-legend-pop')">
+  <div class="popup-box" onclick="event.stopPropagation()">
+    <h4><span data-i18n="shelter_legend_title">Escala de exposición</span></h4>
+    <div class="shelter-legend-row"><span class="shelter-legend-grade" style="color:#3aa856">A</span><span class="shelter-legend-swatch" style="background:#3aa856"></span><span class="shelter-legend-desc" data-i18n="shelter_lvl_A">Abrigado · &lt;5 kt</span></div>
+    <div class="shelter-legend-row"><span class="shelter-legend-grade" style="color:#78c850">B</span><span class="shelter-legend-swatch" style="background:#78c850"></span><span class="shelter-legend-desc" data-i18n="shelter_lvl_B">Bueno · 5–12 kt</span></div>
+    <div class="shelter-legend-row"><span class="shelter-legend-grade" style="color:#f3c812">C</span><span class="shelter-legend-swatch" style="background:#f3c812"></span><span class="shelter-legend-desc" data-i18n="shelter_lvl_C">Aceptable · 12–18 kt</span></div>
+    <div class="shelter-legend-row"><span class="shelter-legend-grade" style="color:#f37812">D</span><span class="shelter-legend-swatch" style="background:#f37812"></span><span class="shelter-legend-desc" data-i18n="shelter_lvl_D">Precaución · 18–25 kt</span></div>
+    <div class="shelter-legend-row"><span class="shelter-legend-grade" style="color:#e74c3c">F</span><span class="shelter-legend-swatch" style="background:#e74c3c"></span><span class="shelter-legend-desc" data-i18n="shelter_lvl_F">Expuesto · &gt;25 kt</span></div>
   </div>
 </div>
 <button class="btn-float btn-ais-alarm" id="btn-ais-alarm" onclick="toggleAlarmPanel()"data-i18n="btn_alarmas">🔔 Alarmas</button>
@@ -2423,7 +2550,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
      AIS    = solo iconos de targets en mapa (no afecta a alarmas ni ACKs).
      Tracks = tracks de otros AIS (NO afecta al track del barco propio).
      Alarma = alarmas AIS (delega en setAlarm legacy: cierra popups, ACKs, etc).
-     Click stopPropagation para no colapsar el panel. --><span class="ais-hdr-toggles" onclick="event.stopPropagation()"><label id="ais-hdr-icons-lbl" title="Mostrar/ocultar iconos AIS en el mapa"><input type="checkbox" id="ais-hdr-icons-chk" onchange="m_aisHdrToggleIcons(this.checked)"><span data-i18n="ais_hdr_icons">AIS</span></label><label id="ais-hdr-tracks-lbl" title="Mostrar/ocultar tracks de otros AIS (no afecta al propio)"><input type="checkbox" id="ais-hdr-tracks-chk" onchange="m_aisHdrToggleTracks(this.checked)"><span data-i18n="ais_hdr_tracks">Tracks</span></label><label id="ais-hdr-alarm-lbl" title="Activar/desactivar alarmas de proximidad AIS"><input type="checkbox" id="ais-hdr-alarm-chk" onchange="m_aisHdrToggleAlarm(this.checked)"><span data-i18n="ais_hdr_alarm">Alarma</span></label></span><span style="font-size:11px;color:#888;margin-left:4px">▼</span></h5><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_radio_lbl">Radio:</span><input type="range" id="ais-radius-slider" min="0.5" max="50" step="0.5" value="5" style="flex:1" oninput="_setAisRadius(this.value)"><span id="ais-radius-val" style="min-width:60px;text-align:right;font-weight:700;color:#fff">5 km</span></div><!-- Rev400: linea de ordenar+filtro mitad/mitad del ancho. --><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_sort_lbl" style="flex:0 0 auto">Ordenar:</span><select id="ais-sort-by" onchange="_setAisSort(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"><option value="dist" data-i18n="ais_sort_dist">Distancia</option><option value="name" data-i18n="ais_sort_name">Nombre</option><option value="fav" data-i18n="ais_sort_fav">Favoritos</option><option value="mmsi" data-i18n="ais_sort_mmsi">MMSI</option><option value="type" data-i18n="ais_sort_type">Tipo</option></select><input type="text" id="ais-filter-txt" placeholder="🔎" data-i18n-placeholder="ais_filter_ph" oninput="_setAisFilter(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"></div></div><div id="ais-alarm-list"></div></div>
+     Click stopPropagation para no colapsar el panel. --><span class="ais-hdr-toggles" onclick="event.stopPropagation()"><label id="ais-hdr-icons-lbl" title="Mostrar/ocultar iconos AIS en el mapa"><input type="checkbox" id="ais-hdr-icons-chk" onchange="m_aisHdrToggleIcons(this.checked)"><span data-i18n="ais_hdr_icons">AIS</span></label><label id="ais-hdr-tracks-lbl" title="Mostrar/ocultar tracks de otros AIS (no afecta al propio)"><input type="checkbox" id="ais-hdr-tracks-chk" onchange="m_aisHdrToggleTracks(this.checked)"><span data-i18n="ais_hdr_tracks">Tracks</span></label><label id="ais-hdr-alarm-lbl" title="Activar/desactivar alarmas de proximidad AIS"><input type="checkbox" id="ais-hdr-alarm-chk" onchange="m_aisHdrToggleAlarm(this.checked)"><span data-i18n="ais_hdr_alarm">Alarma</span></label></span></h5><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_radio_lbl">Radio:</span><input type="range" id="ais-radius-slider" min="0.5" max="50" step="0.5" value="5" style="flex:1" oninput="_setAisRadius(this.value)"><span id="ais-radius-val" style="min-width:60px;text-align:right;font-weight:700;color:#fff">5 km</span></div><!-- Rev400: linea de ordenar+filtro mitad/mitad del ancho. --><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_sort_lbl" style="flex:0 0 auto">Ordenar:</span><select id="ais-sort-by" onchange="_setAisSort(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"><option value="dist" data-i18n="ais_sort_dist">Distancia</option><option value="name" data-i18n="ais_sort_name">Nombre</option><option value="fav" data-i18n="ais_sort_fav">Favoritos</option><option value="mmsi" data-i18n="ais_sort_mmsi">MMSI</option><option value="type" data-i18n="ais_sort_type">Tipo</option></select><input type="text" id="ais-filter-txt" placeholder="🔎" data-i18n-placeholder="ais_filter_ph" oninput="_setAisFilter(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"></div></div><div id="ais-alarm-list"></div></div>
 <div class="popup-overlay" id="levar-confirm-pop" onclick="closePopup('levar-confirm-pop')">
   <div class="popup-box" onclick="event.stopPropagation()" style="min-width:300px;text-align:center">
     <h4 style="font-size:18px"data-i18n="levar_titulo">⚓ Levar ancla</h4>
@@ -2748,35 +2875,15 @@ var _unitsSystem = localStorage.getItem('ihm-visor-units') || 'metric_nautical';
       try{ if(typeof m_renderSideButtons === 'function') m_renderSideButtons(window._sideButtons); }catch(_){}
     }
     /* Sprint F (Rev454): cargar y aplicar orden/visibilidad del bottom-bar.
-       Rev491: AUTO-MIGRACIoN — si el bbOrder guardado no contiene celdas
-       nuevas (dif_lw, prof_min, etc.) las insertamos automaticamente tras
-       'sonda' para que el usuario las vea sin tener que entrar a config. */
+       Rev535 (B-25, feedback Carlos): ELIMINADA la auto-migración Rev491 que
+       re-insertaba dif_lw / prof_min en cada arranque del visor — pisaba la
+       config personalizada del usuario. Si un usuario quita esas celdas y
+       luego deployamos, las celdas reaparecían contra su voluntad. Ahora
+       respetamos al 100% lo que tiene guardado. Los usuarios nuevos verán
+       directamente DEFAULT_BB_ORDER (Rev535 default snapshot). */
     if (j && Array.isArray(j.bbOrder)) {
-      var loaded = j.bbOrder.slice();
-      var MIGRATE_TARGETS = ['dif_lw','prof_min'];
-      var anchorKey = 'sonda';
-      var anchorIdx = loaded.indexOf(anchorKey);
-      var didMigrate = false;
-      MIGRATE_TARGETS.forEach(function(k){
-        if (loaded.indexOf(k) < 0) {
-          if (anchorIdx >= 0) {
-            loaded.splice(anchorIdx + 1, 0, k);
-            anchorIdx++;  // siguiente nueva celda va tras esta
-          } else {
-            loaded.push(k);
-          }
-          didMigrate = true;
-        }
-      });
-      window._bbOrder = loaded;
+      window._bbOrder = j.bbOrder.slice();
       try{ if(typeof m_applyBBOrder === 'function') m_applyBBOrder(window._bbOrder); }catch(_){}
-      /* Si migramos, persistir para que el siguiente boot no vuelva a hacerlo. */
-      if (didMigrate) {
-        try {
-          fetch(A+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bbOrder:loaded})}).catch(function(){});
-          console.log('[IHM-BB] migrated bbOrder, added missing cells:', MIGRATE_TARGETS.filter(function(k){return j.bbOrder.indexOf(k)<0;}));
-        } catch(_){}
-      }
     }
   }).catch(function(){});
 })();
@@ -2789,7 +2896,9 @@ var _unitsSystem = localStorage.getItem('ihm-visor-units') || 'metric_nautical';
    próxima bajamar) y "prof_min" (sonda esperada en esa bajamar). Vicente
    pidió ambas para fondear con margen. */
 window._BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","sunrise","wx_6h","wave"];
-window._BB_DEFAULT_ORDER = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo"];
+/* Rev535 (B-25): default snapshot del orden de Carlos (Tunatunes). MISMO que
+   DEFAULT_BB_ORDER de src/index.ts L352. Si cambia ahí, cambiar aquí. */
+window._BB_DEFAULT_ORDER = ["sog","wind","sonda","tide","sunrise","cad_rec","dist_ancla","h_fondeo","calidad","abrigo"];
 window._bbOrder = window._bbOrder || window._BB_DEFAULT_ORDER.slice();
 function m_applyBBOrder(arr){
   var bar = document.getElementById('m-bottom-bar');
@@ -5628,9 +5737,20 @@ function processPollData(s){
         : 'Backend actualizado (schema v' + s.schemaVersion + ') — toca para recargar';
       _ihmShowBanner(msg, 'reload');
       if (_ihmBannerEl) { _ihmBannerEl.dataset.kind = 'reload';
-        _ihmBannerEl.onclick = function(){ try { location.reload(true); } catch(_) { location.reload(); } }; }
+        /* Rev505: cache-bust con ?v=schemaVersion + timestamp para forzar
+           descarga fresca incluso en moviles agresivos con cache. */
+        _ihmBannerEl.onclick = function(){
+          try {
+            var newUrl = window.location.pathname + '?v=' + s.schemaVersion + '_' + Date.now();
+            if (window.location.hash) newUrl += window.location.hash;
+            window.location.replace(newUrl);
+          } catch(_) { try { location.reload(true); } catch(__) { location.reload(); } }
+        }; }
     }
-    /* Rev479: detect server restart (serverInstanceId cambia) → invalida cache local. */
+    /* Rev479: detect server restart (serverInstanceId cambia) → invalida cache local.
+       Rev505 (consolidacion LLM): cache-bust con ?v=serverInstanceId en URL.
+       location.reload(true) NO basta en navegadores moviles agresivos con cache;
+       cambiar la URL fuerza descarga fresca de mobile.html y todos sus assets. */
     if (typeof s.serverInstanceId === 'string') {
       if (_lastServerInstanceId && _lastServerInstanceId !== s.serverInstanceId) {
         var msg2 = (typeof _lang === 'string' && _lang === 'en')
@@ -5638,7 +5758,15 @@ function processPollData(s){
           : 'Backend reiniciado — refrescando';
         _ihmShowBanner(msg2, 'restart');
         try { window.__lastFondeoState = null; } catch(_){}
-        setTimeout(function(){ try { location.reload(true); } catch(_) { location.reload(); } }, 1500);
+        setTimeout(function(){
+          try {
+            var newUrl = window.location.pathname + '?v=' + encodeURIComponent(s.serverInstanceId);
+            if (window.location.hash) newUrl += window.location.hash;
+            window.location.replace(newUrl);
+          } catch(_) {
+            try { location.reload(true); } catch(_) { location.reload(); }
+          }
+        }, 1500);
       }
       _lastServerInstanceId = s.serverInstanceId;
     }
@@ -10180,8 +10308,9 @@ setInterval(_checkWeatherAlarm, 5*60*1000);
 /* ═══ SHARED INPUT STYLE (touch-friendly, wide for fingers) ═══ */
 /* ═══ SHARED INPUT STYLE (touch-friendly) ═══ */
 /* ═══ SHARED INPUT STYLE ═══ */
+/* Rev504 (feedback Vicente): _rowS sube 18->20px para coherencia con resto. */
 var _iS='width:100px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;padding:12px 14px;text-align:right;font-size:20px;-webkit-appearance:none;-moz-appearance:textfield';
-var _rowS='font-size:18px;padding:10px 0;display:flex;justify-content:space-between;align-items:center;gap:14px;border-bottom:1px solid rgba(255,255,255,.06)';
+var _rowS='font-size:20px;padding:10px 0;display:flex;justify-content:space-between;align-items:center;gap:14px;border-bottom:1px solid rgba(255,255,255,.06)';
 
 /* ═══════════════ CALC SONDA ═══════════════ */
 function fetchSondaData(){
@@ -10199,7 +10328,7 @@ function fetchSondaData(){
     var skHasDraft=cal.skDraftAvailable===true;
     if(skHasDraft){draftSrc='signalk';draft=cal.skDraftValue||draft;}
     p.innerHTML=
-      '<div class="ps"><div class="ps-t" style="font-size:17px">'+T('calado_barco')+'</div>'+
+      '<div class="ps"><div class="ps-t" style="font-size:19px">'+T('calado_barco')+'</div>'+
       '<div style="'+_rowS+'"><span>'+T('fuente_calado')+'</span><select id="snd-src" style="'+_iS+';width:150px;text-align:left"'+(skHasDraft?' disabled':'')+'>'+
         '<option value="manual"'+(draftSrc==='manual'?' selected':'')+'>Manual</option>'+
         '<option value="signalk"'+(draftSrc==='signalk'?' selected':'')+'>Signal K</option></select>'+
@@ -10208,7 +10337,7 @@ function fetchSondaData(){
       '<div style="'+_rowS+'"><span>'+T('calado_m')+' ('+unitFmt.labelDepth()+')</span><input type="number" id="snd-draft" value="'+unitFmt.depthFromMeters(draft).toFixed(2)+'" step="0.01" min="0" style="'+_iS+'" oninput="updSndEff()"'+(skHasDraft?' disabled':'')+'></div>'+
       '<div style="'+_rowS+'"><span>'+T('margen_seg')+' ('+unitFmt.labelDepth()+')</span><input type="number" id="snd-margin" value="'+unitFmt.depthFromMeters(margin).toFixed(2)+'" step="0.01" min="0" style="'+_iS+'" oninput="updSndEff()"></div>'+
       '<div style="'+_rowS+'"><span>'+T('calado_eff')+'</span><b style="color:var(--org);font-size:24px" id="snd-eff">'+unitFmt.depth(parseFloat(eff),2)+'</b></div></div>'+
-      '<div class="ps"><div class="ps-t" style="font-size:17px">'+T('estado_varada')+'</div>'+
+      '<div class="ps"><div class="ps-t" style="font-size:19px">'+T('estado_varada')+'</div>'+
       /* Rev474: el modal Marea/Prof y el bottom-bar usan `physicalRisk` (realidad
          fisica) como fuente de verdad. Este modal usaba solo `risk` (criterio
          de alarma configurable) → mostraba "SIN RIESGO" aunque fisicamente
@@ -10254,14 +10383,14 @@ function fetchFondeoData(){
        section below; greyed out when Vicente is selected (those values don't
        apply to that formula). */
     p.innerHTML=
-      '<div class="ps"><div class="ps-t" style="font-size:17px">'+T('setup_rapido')+'</div>'+
+      '<div class="ps"><div class="ps-t" style="font-size:19px">'+T('setup_rapido')+'</div>'+
       '<div style="'+_rowS+'"><span>'+T('metodo_calc')+'</span>'+
       '<select id="fnd-method" style="'+_iS+';width:220px;text-align:left" onchange="onFndMethodChange()">'+
       '<option value="traditional"'+(cfg.chainMethod!=='vicente'?' selected':'')+'>'+T('metodo_tradicional')+'</option>'+
       '<option value="vicente"'+(cfg.chainMethod==='vicente'?' selected':'')+'>'+T('metodo_vicente')+'</option></select></div>'+
       '<div style="'+_rowS+'"><span>'+T('cadena_a_bordo')+' ('+unitFmt.labelDepth()+') <small style="color:#888">'+T('cadena_a_bordo_desc')+'</small></span><input type="number" id="fnd-cadtotal" value="'+unitFmt.depthFromMeters(cfg.cadenaTotalBordo||40).toFixed(0)+'" step="5" min="5" max="1000" style="'+_iS+';width:80px"></div>'+
       '<div style="'+_rowS+'"><span>'+T('prof_manual')+' ('+unitFmt.labelDepth()+') <small style="color:#888">'+T('vacio_auto')+'</small></span><input type="number" id="fnd-depth" value="" step="0.1" min="0" placeholder="auto" style="'+_iS+';width:80px"></div></div>'+
-      '<div class="ps" id="fnd-section-scope"><div class="ps-t" style="font-size:17px">'+T('scope_titulo')+'</div>'+
+      '<div class="ps" id="fnd-section-scope"><div class="ps-t" style="font-size:19px">'+T('scope_titulo')+'</div>'+
       '<div style="font-size:15px;color:#999;margin-bottom:8px;line-height:1.4">'+T('scope_desc')+'</div>'+
       '<div style="'+_rowS+'"><span>'+T('basico')+' <small style="color:#888">'+T('calma')+'</small></span><span style="display:flex;align-items:center;gap:8px"><input type="number" id="fnd-sb" value="'+sB+'" step="0.5" min="1" max="12" style="'+_iS+';width:80px"><b>:1</b></span></div>'+
       '<div style="'+_rowS+'"><span>'+T('normal_t')+' <small style="color:#888">'+T('medias')+'</small></span><span style="display:flex;align-items:center;gap:8px"><input type="number" id="fnd-sn" value="'+sN+'" step="0.5" min="1" max="12" style="'+_iS+';width:80px"><b>:1</b></span></div>'+
@@ -10272,7 +10401,7 @@ function fetchFondeoData(){
       '<option value="basic">'+T('basico')+' ('+sB+':1)</option>'+
       '<option value="normal" selected>'+T('normal_t')+' ('+sN+':1)</option>'+
       '<option value="hard">'+T('duro')+' ('+sH+':1)</option></select></div></div>'+
-      '<div class="ps"><div class="ps-t" style="font-size:17px">'+T('horizon_titulo')+'</div>'+
+      '<div class="ps"><div class="ps-t" style="font-size:19px">'+T('horizon_titulo')+'</div>'+
       '<div style="'+_rowS+'"><span>'+T('dias_fondeo')+'</span><input type="number" id="fnd-days" value="0" min="0" max="30" style="'+_iS+';width:80px"></div>'+
       '<div style="'+_rowS+'"><span>'+T('horas_extra')+'</span><input type="number" id="fnd-hours" value="12" min="0" max="24" style="'+_iS+';width:80px"></div></div>';
     /* Rev88: si método=Vicente, el modo+ratio simplemente NO aparece —
@@ -12597,12 +12726,36 @@ function m_openMareas(){
     overlay.onclick = function(e){ if(e.target===overlay) overlay.classList.remove('open'); };
     /* iframe con touch-action y scrolling controlados: el padre fuerza
        no-pinch (la página interna ya tiene viewport sin user-scalable). */
+    /* Rev538 (feedback Carlos): añadido <h4> para que _mInjectModalHeader
+       muestre "🌊 Mareas" / "🌊 Tides" en el .m-title del header naranja.
+       Antes no había h4 → titleHTML quedaba vacío → header sin título. */
     overlay.innerHTML =
       '<div class="popup-box" onclick="event.stopPropagation()" style="padding:0!important;overflow:hidden!important">' +
+        '<h4 id="m-mareas-title" style="margin:0">🌊 ' + ((_lang==='es') ? 'Mareas' : 'Tides') + '</h4>' +
         '<iframe id="m-mareas-iframe" src="about:blank" scrolling="auto" allow="fullscreen" style="width:100%;height:100%;border:none;display:block;touch-action:pan-y"></iframe>' +
       '</div>';
     document.body.appendChild(overlay);
   }
+  /* Rev539: asegurar h4 + título en el header inyectado, aunque el overlay
+     ya existiera de una versión anterior del visor (cache, hot reload, etc.). */
+  try {
+    var box = overlay.querySelector('.popup-box');
+    var h4 = overlay.querySelector('#m-mareas-title');
+    var marTitle = '🌊 ' + ((_lang==='es') ? 'Mareas' : 'Tides');
+    if (box && !h4) {
+      h4 = document.createElement('h4');
+      h4.id = 'm-mareas-title';
+      h4.style.margin = '0';
+      h4.textContent = marTitle;
+      box.insertBefore(h4, box.firstChild);
+    } else if (h4) {
+      h4.textContent = marTitle;
+    }
+    /* Si el header ya estaba inyectado pero con .m-title vacío (overlay
+       cacheado), también lo actualizamos directamente. */
+    var hdrTitle = overlay.querySelector('.m-modal-hdr .m-title');
+    if (hdrTitle) hdrTitle.textContent = marTitle;
+  } catch(_){}
   var iframe = document.getElementById('m-mareas-iframe');
   /* Rev246: cargar siempre con timestamp para forzar reload — sin esto,
      un iframe cacheado de una sesión anterior (e.g. con la fila inferior
@@ -12624,12 +12777,27 @@ function m_openInstructions(){
     overlay.id = 'm-instructions-overlay';
     overlay.className = 'popup-overlay';
     overlay.onclick = function(e){ if(e.target===overlay) overlay.classList.remove('open'); };
+    /* Rev516: header con titulo + version (Carlos feedback 2.3.2). El h4 lo
+       recoge _mInjectModalHeader y lo monta en el faldon naranja arriba. El
+       iframe ocupa el espacio restante por debajo del header (padding-top
+       104px del default .popup-overlay .popup-box). */
     overlay.innerHTML =
-      '<div class="popup-box" onclick="event.stopPropagation()" style="padding:0!important;overflow:hidden!important">' +
-        '<iframe id="m-instructions-iframe" src="about:blank" scrolling="auto" allow="fullscreen" style="width:100%;height:100%;border:none;display:block;touch-action:pan-y"></iframe>' +
+      '<div class="popup-box" onclick="event.stopPropagation()" style="overflow:hidden!important">' +
+        '<h4 id="m-instructions-title" style="margin:0">📖 Instrucciones</h4>' +
+        '<iframe id="m-instructions-iframe" src="about:blank" scrolling="auto" allow="fullscreen" style="width:100%;border:none;display:block;touch-action:pan-y;flex:1 1 auto;min-height:0"></iframe>' +
       '</div>';
     document.body.appendChild(overlay);
   }
+  /* Rev516: refrescar version en el titulo cada apertura, leyendo build-info. */
+  try {
+    fetch('/signalk-mareas-ihm/api/build-info').then(function(r){return r.ok?r.json():null}).then(function(d){
+      var t = document.getElementById('m-instructions-title');
+      var hdrTitle = document.querySelector('#m-instructions-overlay .m-modal-hdr .m-title');
+      var html = '📖 Instrucciones' + (d && d.version ? ' · ' + d.version : '');
+      if (t) t.innerHTML = html;
+      if (hdrTitle) hdrTitle.innerHTML = html;
+    }).catch(function(){});
+  } catch(_){}
   var iframe = document.getElementById('m-instructions-iframe');
   /* Cada vez forzamos reload para que el modal Instrucciones se vuelva a
      abrir (el componente solo lo auto-abre en el primer mount via URL). */
