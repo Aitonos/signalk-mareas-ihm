@@ -1,4 +1,4 @@
-# signalk-mareas-ihm — AnchorWatch Pro: Smart Anchoring, AIS & Tides
+# AnchorWatch Pro: Smart Anchoring, AIS & Tides
 
 **A complete anchor watch and marine safety webapp for Signal K.**
 Intelligent anchor monitoring, voice alarms, AIS anti-collision with cross-session cache, shelter forecast, on-board wave measurement and IHM Spain tides — running on your OpenPlotter / Raspberry Pi.

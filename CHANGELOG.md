@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.3.3] - 2026-06-25
+
+### English
+
+- **README title cleanup** — removed the redundant `signalk-mareas-ihm —` prefix from the README heading. The page on npmjs.com now shows only the commercial name `AnchorWatch Pro: Smart Anchoring, AIS & Tides`. NPM keeps the package name (`signalk-mareas-ihm`) in its own metadata column, so duplicating it in the title was visual noise.
+
+### Español
+
+- **Limpieza del título del README** — quitado el prefijo redundante `signalk-mareas-ihm —` del encabezado del README. La página en npmjs.com ahora muestra solo el nombre comercial `AnchorWatch Pro: Smart Anchoring, AIS & Tides`. El nombre del paquete (`signalk-mareas-ihm`) ya lo enseña NPM en su propia columna de metadatos; duplicarlo en el título era ruido visual.
+
 ## [2.3.2] - 2026-06-24
 
 ### English
