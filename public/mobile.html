@@ -2140,7 +2140,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
   <div class="it" data-bb-cell="sog" data-i18n-title="bb_velocidad_tip" title="Velocidad sobre fondo"><span class="lb" data-i18n="bb_velocidad">SOG</span><span class="vl" id="m-bb-sog">—</span></div>
   <!-- Sprint F (Rev454): Heading (rumbo de proa). Datos: variable global "heading" (rad). -->
   <div class="it" data-bb-cell="heading" data-i18n-title="bb_heading_tip" title="Rumbo de la proa (heading)"><span class="lb" data-i18n="bb_heading">Heading</span><span class="vl" id="m-bb-heading">—</span></div>
-  <div class="it m-bb-wind" data-bb-cell="wind" data-i18n-title="bb_viento_tip" title="Viento real (veleta) · flecha apunta hacia DONDE VA (TO) · click → Meteo" onclick="toggleMeteo&&toggleMeteo()">
+  <div class="it m-bb-wind" data-bb-cell="wind" data-i18n-title="bb_viento_tip" title="Viento real (veleta) · flecha apunta hacia DONDE VA (TO)" onclick="toggleMeteo&&toggleMeteo()">
     <span class="lb" data-i18n="bb_viento">Viento</span>
     <!-- Rev295: alineación correcta con el resto de .vl. El SVG con margin
          negativo compensa el padding interno del viewBox 28 con flecha hasta
@@ -2157,17 +2157,17 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <span id="m-bb-wind-gust" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
   </div>
   <!-- Rev564 (feedback Carlos): click Sonda → Curvas (no a sonda-pop). -->
-  <div class="it" data-bb-cell="sonda" data-i18n-title="bb_sonda_tip" title="Profundidad bajo quilla · Sonda · click → Curvas" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()"><span class="lb" data-i18n="bb_sonda">Sonda</span><span class="vl" id="m-bb-sonda">—</span><span id="m-bb-sonda-status" style="display:none;font-size:9px;font-weight:800;margin-top:2px;text-align:center;line-height:1.1"></span></div>
+  <div class="it" data-bb-cell="sonda" data-i18n-title="bb_sonda_tip" title="Profundidad bajo quilla · Sonda" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()"><span class="lb" data-i18n="bb_sonda">Sonda</span><span class="vl" id="m-bb-sonda">—</span><span id="m-bb-sonda-status" style="display:none;font-size:9px;font-weight:800;margin-top:2px;text-align:center;line-height:1.1"></span></div>
   <!-- Sprint C (Rev452): status de marea en bottom-bar. Triangulo ▲/▼ + % entre
        extremos + label del proximo extremo (PM/BM HH:MM). Click abre Curvas. -->
-  <div class="it" id="m-bb-tide-cell" data-bb-cell="tide" data-i18n-title="bb_marea_tip" title="Estado marea · subida o bajada · click → Curvas" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()">
+  <div class="it" id="m-bb-tide-cell" data-bb-cell="tide" data-i18n-title="bb_marea_tip" title="Estado marea · subida o bajada" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()">
     <span class="lb" data-i18n="bb_marea">Marea</span>
     <span class="vl" id="m-bb-tide-val">—</span>
     <span id="m-bb-tide-next" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
   </div>
   <!-- Rev489 (feedback Vicente): widget "Dif. Bajamar" — cuánto bajará la marea (cm).
        Rev564 (feedback Carlos): click → Curvas (no a sonda-pop). -->
-  <div class="it" data-bb-cell="dif_lw" data-i18n-title="bb_dif_lw_tip" title="Diferencia hasta próxima bajamar · click → Curvas" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()">
+  <div class="it" data-bb-cell="dif_lw" data-i18n-title="bb_dif_lw_tip" title="Diferencia hasta próxima bajamar" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()">
     <span class="lb" data-i18n="bb_dif_lw">Dif. Bajamar</span>
     <span class="vl" id="m-bb-dif-lw">—</span>
     <span id="m-bb-dif-lw-end" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
@@ -2175,19 +2175,19 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
   <!-- Rev490 (feedback Vicente): widget "Prof. Mínima" — sonda esperada en la
        próxima bajamar. Numero grande = profundidad final en metros.
        Rev564 (feedback Carlos): click → Curvas (no a sonda-pop). -->
-  <div class="it" data-bb-cell="prof_min" data-i18n-title="bb_prof_min_tip" title="Profundidad mínima esperada en la próxima bajamar · click → Curvas" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()">
+  <div class="it" data-bb-cell="prof_min" data-i18n-title="bb_prof_min_tip" title="Profundidad mínima esperada en la próxima bajamar" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()">
     <span class="lb" data-i18n="bb_prof_min">Prof. mín.</span>
     <span class="vl" id="m-bb-prof-min">—</span>
     <span id="m-bb-prof-min-when" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
   </div>
   <!-- Rev564 (feedback Carlos): Cad rec + Dist ancla → Cálculo Fondeo (fondeo-pop). -->
-  <div class="it" data-bb-cell="cad_rec" data-i18n-title="bb_cadena_tip" title="Cadena recomendada · click → Cálculo Fondeo" onclick="openPopup&&openPopup('fondeo-pop');typeof fetchFondeoData==='function'&&fetchFondeoData()"><span class="lb" data-i18n="bb_cadena_rec">Cadena rec.</span><span class="vl" id="m-bb-cad">—</span></div>
-  <div class="it" data-bb-cell="dist_ancla" data-i18n-title="bb_dist_tip" title="Distancia al ancla · click → Cálculo Fondeo" onclick="openPopup&&openPopup('fondeo-pop');typeof fetchFondeoData==='function'&&fetchFondeoData()"><span class="lb" data-i18n="bb_dist_ancla">Dist. ancla</span><span class="vl" id="m-bb-dist">—</span></div>
+  <div class="it" data-bb-cell="cad_rec" data-i18n-title="bb_cadena_tip" title="Cadena recomendada" onclick="openPopup&&openPopup('fondeo-pop');typeof fetchFondeoData==='function'&&fetchFondeoData()"><span class="lb" data-i18n="bb_cadena_rec">Cadena rec.</span><span class="vl" id="m-bb-cad">—</span></div>
+  <div class="it" data-bb-cell="dist_ancla" data-i18n-title="bb_dist_tip" title="Distancia al ancla" onclick="openPopup&&openPopup('fondeo-pop');typeof fetchFondeoData==='function'&&fetchFondeoData()"><span class="lb" data-i18n="bb_dist_ancla">Dist. ancla</span><span class="vl" id="m-bb-dist">—</span></div>
   <!-- Rev331 (item 13): HORA del fondeo. Rev564: click → Hist Olas. -->
-  <div class="it" id="m-bb-anchored-since-cell" data-bb-cell="h_fondeo" data-i18n-title="bb_anchored_since_tip" title="Hora del fondeo · click → Hist. Olas" onclick="openPopup&&openPopup('wave-hist-info-pop');typeof _renderWaveHistInfo==='function'&&_renderWaveHistInfo()"><span class="lb" data-i18n="bb_anchored_since">H. fondeo</span><span class="vl" id="m-bb-anchored-since">—</span></div>
+  <div class="it" id="m-bb-anchored-since-cell" data-bb-cell="h_fondeo" data-i18n-title="bb_anchored_since_tip" title="Hora del fondeo" onclick="openPopup&&openPopup('wave-hist-info-pop');typeof _renderWaveHistInfo==='function'&&_renderWaveHistInfo()"><span class="lb" data-i18n="bb_anchored_since">H. fondeo</span><span class="vl" id="m-bb-anchored-since">—</span></div>
   <!-- Rev556: T. fondeo (duración desde drop). Rev564: click → Hist Olas. -->
-  <div class="it" id="m-bb-elapsed-cell" data-bb-cell="t_fondeo" data-i18n-title="bb_elapsed_tip" title="Tiempo desde el fondeo · click → Hist. Olas" onclick="openPopup&&openPopup('wave-hist-info-pop');typeof _renderWaveHistInfo==='function'&&_renderWaveHistInfo()"><span class="lb" data-i18n="bb_elapsed">T. fondeo</span><span class="vl" id="m-bb-elapsed">—</span></div>
-  <div class="it m-bb-graph" data-bb-cell="pres" data-i18n-title="bb_presion_tip" title="Presión barométrica · línea naranja = AHORA · click → Meteo" onclick="toggleMeteo&&toggleMeteo()">
+  <div class="it" id="m-bb-elapsed-cell" data-bb-cell="t_fondeo" data-i18n-title="bb_elapsed_tip" title="Tiempo desde el fondeo" onclick="openPopup&&openPopup('wave-hist-info-pop');typeof _renderWaveHistInfo==='function'&&_renderWaveHistInfo()"><span class="lb" data-i18n="bb_elapsed">T. fondeo</span><span class="vl" id="m-bb-elapsed">—</span></div>
+  <div class="it m-bb-graph" data-bb-cell="pres" data-i18n-title="bb_presion_tip" title="Presión barométrica · línea naranja = AHORA" onclick="toggleMeteo&&toggleMeteo()">
     <span class="lb" data-i18n="bb_presion">Presión</span>
     <!-- Rev288: viewBox extendido 0-80 para reservar espacio a la previsión
          (a la derecha del AHORA). El histórico ocupa 0-60 (línea AHORA en
@@ -2202,11 +2202,11 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     </svg>
     <span class="vl" id="m-bb-pres-val" style="font-size:13px!important">—</span>
   </div>
-  <div class="it m-bb-grade" data-bb-cell="abrigo" data-i18n-title="bb_abrigo_tip" title="Grado de abrigo · click → Abrigo" onclick="openShelterConfig&&openShelterConfig()">
+  <div class="it m-bb-grade" data-bb-cell="abrigo" data-i18n-title="bb_abrigo_tip" title="Grado de abrigo" onclick="openShelterConfig&&openShelterConfig()">
     <span class="lb" data-i18n="bb_abrigo">Abrigo</span>
     <span id="m-bb-grade" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:rgba(120,120,120,.35);color:#fff;font-weight:900;font-size:18px;line-height:1">—</span>
   </div>
-  <div class="it m-bb-donut" data-bb-cell="calidad" data-i18n-title="bb_calidad_tip" title="Calidad de abrigo (gauge) · click → Abrigo" onclick="openShelterConfig&&openShelterConfig()">
+  <div class="it m-bb-donut" data-bb-cell="calidad" data-i18n-title="bb_calidad_tip" title="Calidad de abrigo (gauge)" onclick="openShelterConfig&&openShelterConfig()">
     <span class="lb" data-i18n="bb_calidad">Calidad</span>
     <svg viewBox="0 0 36 36" width="38" height="38" style="display:block">
       <circle cx="18" cy="18" r="15.5" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="3.5"/>
@@ -2250,7 +2250,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
   <!-- Sprint H V2 (Rev467): celda Olas (Wave Nav Engine). Opt-in.
        Rev564 (feedback Carlos): click → Historial Olas (wave-hist-info-pop)
        en lugar de la página técnica /wave-debug. -->
-  <div class="it m-bb-wave" data-bb-cell="wave" data-i18n-title="bb_wave_tip" title="Estado del mar (IMU): banda + periodo + dirección · click → Hist. Olas" onclick="openPopup&&openPopup('wave-hist-info-pop');typeof _renderWaveHistInfo==='function'&&_renderWaveHistInfo()" style="display:none">
+  <div class="it m-bb-wave" data-bb-cell="wave" data-i18n-title="bb_wave_tip" title="Estado del mar (IMU): banda + periodo + dirección" onclick="openPopup&&openPopup('wave-hist-info-pop');typeof _renderWaveHistInfo==='function'&&_renderWaveHistInfo()" style="display:none">
     <span class="lb" data-i18n="bb_wave">Olas</span>
     <div id="m-bb-wave" class="wave-grid">
       <span class="wave-ico">—</span>
@@ -2351,8 +2351,10 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 
     <!-- Sprint F (Rev454): Bottom Bar configurable (orden + visibilidad). -->
     <div style="margin-bottom:18px;padding:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:10px">
-      <div style="font-size:32px!important;font-weight:900;color:#fff;margin-bottom:8px" data-i18n="cfg_bbar">📊 Bottom Bar</div>
-      <div style="font-size:16px;color:#bbb;margin-bottom:14px" data-i18n="cfg_bbar_help">Elige qué celdas mostrar en la barra inferior y en qué orden. Toca ✓/✗ para mostrar/ocultar; usa ↑/↓ para reordenar.</div>
+      <!-- Rev572 (feedback Carlos): título cambiado a "Widgets del bottom
+           bar" y texto descriptivo +4 px (16→20). -->
+      <div style="font-size:32px!important;font-weight:900;color:#fff;margin-bottom:8px" data-i18n="cfg_bbar">📊 Widgets del bottom bar</div>
+      <div style="font-size:20px;color:#bbb;margin-bottom:14px" data-i18n="cfg_bbar_help">Elige qué celdas mostrar en la barra inferior y en qué orden. Toca ✓/✗ para mostrar/ocultar; usa ↑/↓ para reordenar.</div>
       <div id="m-cfg-bbar-list" style="margin-bottom:14px"></div>
       <button onclick="m_bbarCfgResetDefault()" style="width:100%;padding:10px;font-size:14px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.25);color:#ccc;cursor:pointer" data-i18n="cfg_bbar_reset">↺ Restablecer orden por defecto</button>
     </div>
@@ -3522,27 +3524,31 @@ function m_btnCfgDelete(id){
   var nxt = arr.filter(function(b){ return !b || b.id !== id; });
   m_saveSideButtons(nxt).then(function(){ m_btnCfgRenderLists(); });
 }
-/* Sprint F (Rev454): CRUD orden + visibilidad bottom-bar desde Configuracion. */
+/* Sprint F (Rev454): CRUD orden + visibilidad bottom-bar desde Configuracion.
+   Rev572 (feedback Carlos): nombres LARGOS y descriptivos sólo en el panel
+   de configuración. Los widgets en sí siguen mostrando label corto. */
 function _bbCellName(key){
-  var t = function(k, f){ return (typeof T==='function') ? T(k, f) : f; };
+  var en = (_lang === 'en');
   switch(key){
     case 'sog':         return 'SOG';
-    case 'heading':     return t('bb_heading','Heading');
-    case 'wind':        return t('bb_viento','Viento');
-    case 'sonda':       return t('bb_sonda','Sonda');
-    case 'tide':        return t('bb_marea','Marea');
-    case 'pres':        return t('bb_presion','Presión');
-    case 'abrigo':      return t('bb_abrigo','Abrigo');
-    case 'calidad':     return t('bb_calidad','Calidad');
-    case 'cad_rec':     return t('bb_cadena_rec','Cadena rec.');
-    case 'dist_ancla':  return t('bb_dist_ancla','Dist. ancla');
-    case 'h_fondeo':    return t('bb_anchored_since','H. fondeo');
-    case 't_fondeo':    return t('bb_elapsed','T. fondeo');
-    case 'sunrise':     return t('bb_sunrise','Sol') + ' (' + (_lang === 'en' ? 'sunrise/sunset' : 'amanecer/atardecer') + ')';
-    case 'moon':        return t('bb_moon','Luna') + ' (' + (_lang === 'en' ? 'moonrise/moonset' : 'salida/ocaso luna') + ')';
-    case 'gps_acc':     return t('bb_gps','GPS') + ' (' + (_lang === 'en' ? 'accuracy HDOP+sats' : 'precisión HDOP+sats') + ')';
-    case 'wx_6h':       return t('bb_wx6h','Prev +6h') + ' (' + (_lang === 'en' ? 'weather forecast' : 'previsión meteo') + ')';
-    case 'wave':        return t('bb_wave','Olas') + ' (' + (_lang === 'en' ? 'IMU sea state' : 'estado del mar IMU') + ')';
+    case 'heading':     return en ? 'Heading' : 'Rumbo';
+    case 'wind':        return en ? 'Wind' : 'Viento';
+    case 'sonda':       return en ? 'Depth' : 'Sonda';
+    case 'tide':        return en ? 'Tide' : 'Marea';
+    case 'dif_lw':      return en ? 'Drop until Low Water' : 'Bajada hasta Bajamar';
+    case 'prof_min':    return en ? 'Min depth at Low Water' : 'Profundidad mínima en Bajamar';
+    case 'pres':        return en ? 'Pressure chart' : 'Gráfica presión';
+    case 'abrigo':      return en ? 'Shelter rating at anchorage' : 'Rating Abrigo en sitio fondeo';
+    case 'calidad':     return en ? 'Anchorage quality status' : 'Status Calidad fondeo';
+    case 'cad_rec':     return en ? 'Recommended chain' : 'Cadena recomendada';
+    case 'dist_ancla':  return en ? 'Distance to anchor' : 'Distancia al ancla';
+    case 'h_fondeo':    return en ? 'Anchor drop time' : 'Hora del fondeo';
+    case 't_fondeo':    return en ? 'Anchoring time' : 'Tiempo de fondeo';
+    case 'sunrise':     return en ? 'Sun (sunrise / sunset)' : 'Sol (salida / ocaso)';
+    case 'moon':        return en ? 'Moon (moonrise / moonset)' : 'Luna (salida / ocaso)';
+    case 'gps_acc':     return en ? 'GPS accuracy (HDOP + sats)' : 'Precisión GPS (HDOP + sats)';
+    case 'wx_6h':       return en ? 'Weather forecast +6h' : 'Previsión meteo +6h';
+    case 'wave':        return en ? 'Waves (IMU sea state)' : 'Olas (estado del mar IMU)';
     default: return key;
   }
 }
@@ -3569,8 +3575,9 @@ function m_bbarCfgRender(){
     toggle.onclick = function(){ m_bbarCfgToggle(k); };
     row.appendChild(toggle);
     // nombre
+    /* Rev572 (feedback Carlos): nombre del widget +4 px (16→20). */
     var name = document.createElement('div');
-    name.style.cssText = 'flex:1;color:#fff;font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:' + (isVisible ? '1' : '0.45');
+    name.style.cssText = 'flex:1;color:#fff;font-weight:800;font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:' + (isVisible ? '1' : '0.45');
     name.textContent = _bbCellName(k);
     row.appendChild(name);
     // up
@@ -3838,10 +3845,12 @@ function m_updateSunriseBottom(){
   var icoNext = next.kind === 'rise' ? '🌅' : '🌇';
   el.textContent = icoNext + ' ' + pad(next.t.getHours()) + ':' + pad(next.t.getMinutes());
   if (lbl){
+    /* Rev573 (feedback Carlos): en EN "Sunrise" ya incluye "sun" → redundante
+       añadir "SUN". En ES sí añadimos "SOL" para distinguir del widget Luna. */
     var txt = next.kind === 'rise'
-      ? ((_lang === 'en') ? 'Sunrise' : 'Salida')
-      : ((_lang === 'en') ? 'Sunset'  : 'Ocaso');
-    lbl.textContent = txt + ' ' + ((_lang === 'en') ? 'SUN' : 'SOL');
+      ? ((_lang === 'en') ? 'Sunrise' : 'Salida SOL')
+      : ((_lang === 'en') ? 'Sunset'  : 'Ocaso SOL');
+    lbl.textContent = txt;
   }
   if (nxtEl){
     if (following) nxtEl.textContent = arr(following.kind) + ' ' + pad(following.t.getHours()) + ':' + pad(following.t.getMinutes());
@@ -3983,10 +3992,12 @@ function m_updateMoonBottom(){
      flecha ▲/▼ sin icono. */
   el.textContent = phaseIco + ' ' + pad(next.t.getHours()) + ':' + pad(next.t.getMinutes());
   if (lbl){
+    /* Rev573 (feedback Carlos): EN "Moonrise" ya incluye "moon" → redundante.
+       En ES sí añadimos "LUNA" para distinguir del widget Sol. */
     var txtM = next.kind === 'moonrise'
-      ? ((_lang === 'en') ? 'Moonrise' : 'Salida')
-      : ((_lang === 'en') ? 'Moonset'  : 'Ocaso');
-    lbl.textContent = txtM + ' ' + ((_lang === 'en') ? 'MOON' : 'LUNA');
+      ? ((_lang === 'en') ? 'Moonrise' : 'Salida LUNA')
+      : ((_lang === 'en') ? 'Moonset'  : 'Ocaso LUNA');
+    lbl.textContent = txtM;
   }
   if (nxtEl){
     if (following) nxtEl.textContent = arrM(following.kind) + ' ' + pad(following.t.getHours()) + ':' + pad(following.t.getMinutes());
@@ -4168,42 +4179,45 @@ var _i18n={
   bb_sonda:{es:'Sonda',en:'Depth'},
   /* Sprint C (Rev452): celda marea bottom-bar. */
   bb_marea:{es:'Marea',en:'Tide'},
-  bb_marea_tip:{es:'Estado marea: subiendo (▲) o bajando (▼) · % entre extremos · proximo extremo y hora · click → Curvas',en:'Tide state: rising (▲) or falling (▼) · % between extremes · next extreme + time · click → Tide chart'},
+  /* Rev573 (feedback Carlos): hover en 2 líneas — principal \n (auxiliar).
+     Rev574: eliminados los "click → ..." — solo funciones descritas. */
+  bb_marea_tip:{es:'Estado de la marea\n(subiendo ▲ o bajando ▼ · % entre extremos · próximo extremo y hora)',en:'Tide state\n(rising ▲ or falling ▼ · % between extremes · next extreme + time)'},
   /* Rev489 (feedback Vicente): nueva celda Diferencia Bajamar. */
   bb_dif_lw:{es:'Dif. Bajamar',en:'Drop to LW'},
-  bb_dif_lw_tip:{es:'Cuánto bajará la marea hasta la próxima bajamar (cm) y sonda final esperada · click → Cálculo Sonda',en:'How much the tide will drop until next low water (cm) and expected final depth · click → Depth calc'},
+  bb_dif_lw_tip:{es:'Bajada hasta la próxima bajamar\n(cm que bajará la marea + sonda final esperada)',en:'Drop until next low water\n(cm the tide will drop + expected final depth)'},
   /* Rev490 (feedback Vicente): nueva celda Profundidad Mínima esperada.
      Rev491: titulo cambiado a "En B.M." (En Bajamar) — mas claro para el
      navegante que "Prof. mín." segun Vicente. */
   bb_prof_min:{es:'En B.M.',en:'At LW'},
-  bb_prof_min_tip:{es:'Profundidad mínima esperada en la próxima bajamar (coherente con sonda actual) · click → Cálculo Sonda',en:'Minimum expected depth at next low water (consistent with current depth display) · click → Depth calc'},
+  bb_prof_min_tip:{es:'Profundidad mínima en la próxima bajamar\n(sonda esperada coherente con sonda actual)',en:'Minimum depth at next low water\n(expected depth consistent with current sounder)'},
   tide_pm_short:{es:'PM',en:'HW'},
   tide_bm_short:{es:'BM',en:'LW'},
   /* Sprint F (Rev454): nueva celda Heading + motor bottom-bar configurable. */
   bb_heading:{es:'Heading',en:'Heading'},
-  bb_heading_tip:{es:'Rumbo de la proa (heading magnetico o verdadero segun fuente SK)',en:'Bow heading (magnetic or true depending on SK source)'},
-  cfg_bbar:{es:'📊 Bottom Bar',en:'📊 Bottom Bar'},
+  bb_heading_tip:{es:'Rumbo de la proa\n(heading magnético o verdadero según fuente SK)',en:'Bow heading\n(magnetic or true depending on SK source)'},
+  /* Rev572 (feedback Carlos): título sección config widgets bottom-bar. */
+  cfg_bbar:{es:'📊 Widgets del bottom bar',en:'📊 Bottom-bar widgets'},
   cfg_bbar_help:{es:'Elige qué celdas mostrar en la barra inferior y en qué orden. Toca ✓/✗ para mostrar/ocultar; usa ↑/↓ para reordenar.',en:'Choose which cells to show on the bottom bar and in what order. Tap ✓/✗ to show/hide; use ↑/↓ to reorder.'},
   cfg_bbar_reset:{es:'↺ Restablecer orden por defecto',en:'↺ Reset to default order'},
   bb_sunrise:{es:'Salida/Ocaso',en:'Sunrise/Sunset'},
-  bb_sunrise_tip:{es:'Próximo evento solar: 🌅 amanecer o 🌇 atardecer (basado en posición del barco)',en:'Next solar event: 🌅 sunrise or 🌇 sunset (based on boat position)'},
+  bb_sunrise_tip:{es:'Sol: próximo evento solar 🌅/🌇\n(próximo + siguiente · basado en posición del barco)',en:'Sun: next solar event 🌅/🌇\n(next + following · based on boat position)'},
   /* Rev566 (feedback Carlos): widget Luna paralelo al de Sol. */
   bb_moon:{es:'Luna',en:'Moon'},
-  bb_moon_tip:{es:'Luna: fase actual + próximo evento (salida/ocaso) + siguiente',en:'Moon: current phase + next event (rise/set) + following'},
+  bb_moon_tip:{es:'Luna: fase actual + próximo evento\n(salida/ocaso · próximo + siguiente · cálculo astronómico Meeus)',en:'Moon: current phase + next event\n(moonrise/moonset · next + following · Meeus astronomical calc)'},
   /* Rev570 (feedback Carlos): widget GPS — label = "Prec. GPS" / "GPS Prec." */
   bb_gps:{es:'Prec. GPS',en:'GPS Prec.'},
-  bb_gps_tip:{es:'Precisión GPS estimada en metros (HDOP×5) · Fix/DFix · nº satélites',en:'GPS accuracy in meters (HDOP×5) · Fix/DFix · satellite count'},
+  bb_gps_tip:{es:'Precisión GPS estimada\n(HDOP × 5 m · Fix/DFix/Sin fix · nº satélites)',en:'GPS estimated accuracy\n(HDOP × 5 m · Fix/DFix/No fix · satellite count)'},
   bb_wx6h:{es:'Meteo +6h',en:'Meteo +6h'},
-  bb_wx6h_tip:{es:'Previsión meteo dentro de 6 horas (icono + viento + temperatura). Rojo si cambio radical respecto a ahora.',en:'Weather forecast in 6 hours (icon + wind + temperature). Red if radical change vs now.'},
+  bb_wx6h_tip:{es:'Previsión meteo +6 h\n(icono + viento + temperatura · rojo si cambio radical vs ahora)',en:'Weather forecast +6 h\n(icon + wind + temperature · red if radical change vs now)'},
   bb_wave:{es:'Olas',en:'Waves'},
-  bb_wave_tip:{es:'Estado del mar estimado por IMU (motion band + periodo + dirección). Click → debug.',en:'Sea state estimated from IMU (motion band + period + direction). Click → debug.'},
+  bb_wave_tip:{es:'Estado del mar (IMU)\n(motion band + periodo + dirección)',en:'Sea state (IMU)\n(motion band + period + direction)'},
   bb_cadena_rec:{es:'Cadena rec.',en:'Chain rec.'},
   bb_dist_ancla:{es:'Dist. ancla',en:'Dist. anchor'},
   bb_anchored_since:{es:'H. fondeo',en:'Anch. h.'},
-  bb_anchored_since_tip:{es:'Hora del fondeo (+N días si han pasado uno o más)',en:'Time of anchor drop (+N days if elapsed)'},
+  bb_anchored_since_tip:{es:'Hora del fondeo\n(+N días si han pasado uno o más)',en:'Anchor drop time\n(+N days if elapsed)'},
   /* Rev556 (feedback Carlos #9c): widget tiempo transcurrido desde drop. */
   bb_elapsed:{es:'T. fondeo',en:'Anch. t.'},
-  bb_elapsed_tip:{es:'Tiempo transcurrido desde el fondeo',en:'Elapsed time since anchor drop'},
+  bb_elapsed_tip:{es:'Tiempo desde el fondeo\n(Xm / Xh Ym / Xd Yh)',en:'Elapsed since drop\n(Xm / Xh Ym / Xd Yh)'},
   /* Rev556 (feedback Carlos): widget "+" para abrir config widgets. */
   bb_cfg:{es:'Widgets',en:'Widgets'},
   bb_cfg_tip:{es:'Configurar widgets de la barra inferior',en:'Configure bottom-bar widgets'},
@@ -4320,14 +4334,16 @@ var _i18n={
   sh_sector_sg:{es:'sector abrigado',en:'sheltered sector'},
   sh_sectores:{es:'sectores abrigados',en:'sheltered sectors'},
   /* Rev313: tooltips bottom bar */
-  bb_velocidad_tip:{es:'Velocidad sobre fondo',en:'Speed over ground'},
-  bb_viento_tip:{es:'Viento real (veleta) · flecha apunta hacia DONDE VA (TO) · click → Meteo',en:'True wind (vane) · arrow points TO where it goes · click → Weather'},
-  bb_sonda_tip:{es:'Profundidad bajo quilla · Sonda',en:'Depth under keel · Sounder'},
-  bb_cadena_tip:{es:'Cadena recomendada',en:'Recommended chain'},
-  bb_dist_tip:{es:'Distancia al ancla',en:'Distance to anchor'},
-  bb_presion_tip:{es:'Presión barométrica · línea naranja = AHORA · click → Meteo',en:'Barometric pressure · orange line = NOW · click → Weather'},
-  bb_abrigo_tip:{es:'Grado de abrigo · click → Abrigo',en:'Shelter grade · click → Shelter'},
-  bb_calidad_tip:{es:'Calidad de abrigo (gauge) · click → Abrigo',en:'Shelter quality (gauge) · click → Shelter'},
+  /* Rev573 (feedback Carlos): tips en 2 líneas — principal \n (auxiliar).
+     Rev574: eliminado "click → ..." — solo funciones descritas. */
+  bb_velocidad_tip:{es:'Velocidad sobre fondo\n(SOG · GPS)',en:'Speed over ground\n(SOG · GPS)'},
+  bb_viento_tip:{es:'Viento real (veleta)\n(flecha apunta hacia DONDE VA · racha = rolling 23 min)',en:'True wind (vane)\n(arrow points TO where it goes · gust = rolling 23 min)'},
+  bb_sonda_tip:{es:'Profundidad bajo quilla\n(sonda actual · sub-label = sonda esperada en próxima bajamar)',en:'Depth under keel\n(current sounder · sub-label = expected depth at next low water)'},
+  bb_cadena_tip:{es:'Cadena recomendada\n(scope basado en sonda + altura proa)',en:'Recommended chain\n(scope based on depth + bow height)'},
+  bb_dist_tip:{es:'Distancia al ancla\n(separación GPS barco ↔ ancla echada)',en:'Distance to anchor\n(GPS separation boat ↔ dropped anchor)'},
+  bb_presion_tip:{es:'Presión barométrica\n(línea naranja = AHORA)',en:'Barometric pressure\n(orange line = NOW)'},
+  bb_abrigo_tip:{es:'Grado de abrigo en el fondeo\n(A-F: A excelente / F nulo)',en:'Shelter rating at anchorage\n(A-F: A excellent / F none)'},
+  bb_calidad_tip:{es:'Calidad de abrigo (gauge %)\n(% protección contra viento previsto)',en:'Shelter quality (gauge %)\n(% protection against forecast wind)'},
   /* Rev313: tooltips sidebar derecha */
   sb_anchor_tip:{es:'Fondear / Levar',en:'Drop / Lift anchor'},
   sb_centrar_tip:{es:'Centrar mapa',en:'Center map'},
@@ -12564,12 +12580,10 @@ function m_pollBottomBar(){
         var en2 = (_lang === 'en');
         if (typeof finM === 'number' && isFinite(finM)) {
           var critical = finM < 1.0;  /* < 1m de sonda final = atencion aunque alarma OFF */
-          /* Rev557 (feedback Carlos: "Siempre debe salir el dato, no solo
-             durante alarma"): sub-label compacto "(final X m)" SIEMPRE
-             visible, no sólo en alerta. Lo que se "quitaba" en Rev556 era la
-             palabra "final" — la quitamos pero mantenemos el valor numérico
-             entre paréntesis. Color naranja si crítico, verde claro si OK. */
-          sst.textContent = '(' + unitFmt.depth(finM, 1) + ')';
+          /* Rev573 (feedback Carlos): sub-label = "En Baja: X m" / "At LW: X m".
+             Más legible que el "(X m)" anterior — indica explícitamente que
+             es la sonda esperada en la próxima bajamar. */
+          sst.textContent = (en2 ? 'At LW: ' : 'En Baja: ') + unitFmt.depth(finM, 1);
           sst.style.color = critical ? '#ffb23f' : '#66ffaa';
           sst.style.display = 'block';
         } else if (s.tideResume) {

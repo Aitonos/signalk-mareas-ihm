@@ -38,6 +38,12 @@ import { ImuManager } from "./imu/manager.js";
 import type { ImuConfig, ImuSourceType } from "./imu/types.js";
 import { approximateTideHeightAt } from "./calculations.js";
 import FileCache from "./cache.js";
+import {
+  setSecurityLayerEnabled,
+  getSecurityLayerEnabled,
+  resolveAccessContext,
+  requireControlAccess,
+} from "./access.js";
 import createSources from "./sources/index.js";
 import { stationTimezone, HARDCODED_STATIONS } from "./sources/ihm.js";
 import {
@@ -73,7 +79,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev571";
+const PLUGIN_REVISION = "Rev576";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1274,6 +1280,22 @@ export default function (app: SignalKApp): Plugin {
     // Rev475 paso 7: refs perezosas para helpers fail-safe a nivel módulo.
     _ihmCacheRef = ihmCache as unknown as _CacheLike;
     _appRef = app;
+    // Rev575 (F1 capa acceso, feedback Carlos): carga del toggle persistido.
+    // Default OFF — comportamiento idéntico a versiones anteriores hasta que
+    // el usuario lo active desde Configuración. Errores en la carga se
+    // ignoran silenciosamente; el flag queda en OFF (safe default).
+    try {
+      const saved = await ihmCache.get("securityLayerEnabled");
+      setSecurityLayerEnabled(saved === true);
+      app.debug(`[IHM-ACCESS] security layer ${getSecurityLayerEnabled() ? "ON" : "OFF"} (persisted: ${JSON.stringify(saved)})`);
+    } catch (e: any) {
+      app.debug(`[IHM-ACCESS] could not load securityLayerEnabled: ${e?.message ?? e}`);
+      setSecurityLayerEnabled(false);
+    }
+    // requireControlAccess no se usa todavía — F1 sólo expone infraestructura.
+    // F2 lo aplicará a las 42 rutas mutables. Reference para evitar warning
+    // "imported but never used" en el linter.
+    void requireControlAccess;
     // Rev332 (Pi5 fresh install fix): canary write al startup para detectar
     // permisos rotos del data-dir ANTES de que las cargas reales fallen. Si
     // SignalK corre como usuario X pero ~/.signalk está owned por Y, el primer
@@ -1928,6 +1950,43 @@ try {
       });
     });
 
+    // Rev575 (feedback Carlos 2026-06-26): F1 capa acceso opcional.
+    // GET /api/access devuelve el AccessContext resuelto del request actual.
+    // Si securityLayerEnabled === false, devuelve {securityEnabled:false,
+    // canControl:true, level:"security-disabled"} (comportamiento heredado
+    // para usuarios que no quieren la capa). Si está ON, consulta vía self-
+    // loop a /skServer/loginStatus con la cookie del request.
+    // Frontend usa este endpoint para pintar el candado y decidir UI.
+    expressApp.get("/signalk-mareas-ihm/api/access", async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        const ctx = await resolveAccessContext(req);
+        res.json(ctx);
+      } catch (e: any) {
+        res.status(500).json({
+          ok: false,
+          error: "ACCESS_RESOLVER_ERROR",
+          message: e?.message ?? "unknown",
+        });
+      }
+    });
+    // GET del estado del toggle (qué dice el plugin). Público — no expone
+    // ningún secreto, solo si la capa está activa o no.
+    expressApp.get("/signalk-mareas-ihm/api/access/security-layer", (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      res.json({ enabled: getSecurityLayerEnabled() });
+    });
+    // POST para cambiar el toggle. F1 deliberadamente sin protección — F3
+    // moverá esta protección al frontend (switch en Config). El propietario
+    // del Pi siempre puede tocarlo via curl en localhost de cualquier modo.
+    expressApp.post("/signalk-mareas-ihm/api/access/security-layer", async (req: any, res: any) => {
+      const body = req.body || {};
+      const desired = body.enabled === true || body.enabled === "true";
+      setSecurityLayerEnabled(desired);
+      try { await ihmCache.set("securityLayerEnabled", desired); } catch {}
+      res.json({ ok: true, enabled: getSecurityLayerEnabled() });
+    });
+
     expressApp.get("/signalk-mareas-ihm/api/stations", async (_req: any, res: any) => {
       try {
         const cached = (await ihmCache.get("stationsList")) as any;
@@ -2025,7 +2084,7 @@ try {
       }
     });
 
-    expressApp.post("/signalk-mareas-ihm/api/settings", async (req: any, res: any) => {
+    expressApp.post("/signalk-mareas-ihm/api/settings", requireControlAccess, async (req: any, res: any) => {
       try {
         // lang (optional in this POST — sent only when changed)
         let lang: UiLang | undefined;
@@ -2115,7 +2174,7 @@ try {
       }
     });
 
-    expressApp.post("/signalk-mareas-ihm/api/calado", async (req: any, res: any) => {
+    expressApp.post("/signalk-mareas-ihm/api/calado", requireControlAccess, async (req: any, res: any) => {
       try {
         // Rev475 paso 2 (C-10): validación estricta. -999 ya no pasa. NaN ya no pasa.
         // Boolean("false")===true ya no pasa. draftSource enum estricto.
@@ -2187,7 +2246,7 @@ try {
       }
     });
 
-    expressApp.post("/signalk-mareas-ihm/api/alarma", async (req: any, res: any) => {
+    expressApp.post("/signalk-mareas-ihm/api/alarma", requireControlAccess, async (req: any, res: any) => {
       try {
         // Rev475 paso 2 (C-10): validación estricta. Antes:
         //   enabled = Boolean("false") === true  → alarma quedaba encendida
@@ -2282,7 +2341,7 @@ function emitNotificationClear() {
 }
 
 // Snooze grounding alarm notifications (minutes)
-expressApp.post("/signalk-mareas-ihm/api/snooze", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/snooze", requireControlAccess, async (req: any, res: any) => {
   try {
     const minutes = Math.max(1, Math.min(24 * 60, Number(req.body?.minutes) || 20));
     const untilMs = Date.now() + (minutes * 60_000);
@@ -2296,7 +2355,7 @@ expressApp.post("/signalk-mareas-ihm/api/snooze", async (req: any, res: any) => 
 });
 
 // Disable alarm definitively (shortcut)
-expressApp.post("/signalk-mareas-ihm/api/alarma/off", async (_req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/alarma/off", requireControlAccess, async (_req: any, res: any) => {
   try {
     const saved = await ihmCache.get("alarmaConfig") as any;
     const config = {
@@ -2336,7 +2395,7 @@ expressApp.get("/signalk-mareas-ihm/api/anchor/config", async (_req: any, res: a
   } catch (e: any) { res.status(500).json({ error: e?.message ?? String(e) }); }
 });
 
-expressApp.post("/signalk-mareas-ihm/api/anchor/config", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor/config", requireControlAccess, async (req: any, res: any) => {
   try {
     const b = req?.body ?? {};
     // Deploy 2.5 fix: when a partial POST arrives (e.g. from TidesView which
@@ -2364,7 +2423,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor/config", async (req: any, res: a
   } catch (e: any) { res.status(500).json({ error: e?.message ?? String(e) }); }
 });
 
-expressApp.post("/signalk-mareas-ihm/api/anchor/calc", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor/calc", requireControlAccess, async (req: any, res: any) => {
   try {
     const b = req?.body ?? {};
     const mode: AnchorMode = ["basic", "normal", "hard"].includes(b.mode) ? b.mode : "normal";
@@ -4578,7 +4637,7 @@ expressApp.get("/signalk-mareas-ihm/api/telegram/status", (_req: any, res: any) 
     tokenSet: !!_telegramBotToken,
   });
 });
-expressApp.post("/signalk-mareas-ihm/api/telegram/test", (_req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/telegram/test", requireControlAccess, (_req: any, res: any) => {
   if (!_telegramBotToken || !_telegramEffectiveChatId()) {
     return res.status(400).json({ error: "Telegram no configurado. Falta token o chat_id." });
   }
@@ -4589,7 +4648,7 @@ expressApp.post("/signalk-mareas-ihm/api/telegram/test", (_req: any, res: any) =
 });
 // Force re-discover of chat_id by polling getUpdates. Llama el móvil después
 // de que el usuario mande /start al bot.
-expressApp.post("/signalk-mareas-ihm/api/telegram/discover", async (_req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/telegram/discover", requireControlAccess, async (_req: any, res: any) => {
   if (!_telegramBotToken) {
     return res.status(400).json({ error: "Token no configurado en el schema del plugin" });
   }
@@ -4626,7 +4685,7 @@ expressApp.get("/signalk-mareas-ihm/api/mbtiles", (_req: any, res: any) => {
 });
 
 // MBTiles config (change directory)
-expressApp.post("/signalk-mareas-ihm/api/mbtiles/config", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/mbtiles/config", requireControlAccess, async (req: any, res: any) => {
   const dir = String(req?.body?.mbtilesDir ?? "").trim();
   if (!dir) return res.status(400).json({ error: "missing mbtilesDir" });
   mbtilesDir = dir;
@@ -7425,7 +7484,7 @@ expressApp.get("/signalk-mareas-ihm/api/imu/status", (_req: any, res: any) => {
 
 // Rev147: trigger manual del auto-detect. UI puede llamar a esto cuando el
 // usuario aprieta "Buscar IMU otra vez" tras cambiar el cableado o IP.
-expressApp.post("/signalk-mareas-ihm/api/imu/scan", async (_req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/imu/scan", requireControlAccess, async (_req: any, res: any) => {
   if (!_imuManager) {
     res.status(503).json({ ok: false, error: "ImuManager not ready" });
     return;
@@ -7553,7 +7612,7 @@ expressApp.get("/signalk-mareas-ihm/api/env/sensors", (_req: any, res: any) => {
 });
 
 // Force a refresh — useful for visor "actualizar" button or testing.
-expressApp.post("/signalk-mareas-ihm/api/weather/refresh", async (_req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/weather/refresh", requireControlAccess, async (_req: any, res: any) => {
   await updateWeather();
   res.json({ ok: true, advisory: _lastAdvisory, fetchedAt: _lastWeather?.fetchedAt ?? null });
 });
@@ -7574,7 +7633,7 @@ expressApp.get("/signalk-mareas-ihm/api/shelter", (_req: any, res: any) => {
 
 // Body: { mask: boolean[16] } — set all 16 sectors at once. Persisted as part
 // of anchorWatch state, recomputes assessment immediately against last forecast.
-expressApp.post("/signalk-mareas-ihm/api/shelter/mask", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/shelter/mask", requireControlAccess, async (req: any, res: any) => {
   const m = req?.body?.mask;
   if (!Array.isArray(m) || m.length !== SHELTER_SECTOR_COUNT) {
     return res.status(400).json({ error: `mask must be an array of ${SHELTER_SECTOR_COUNT} booleans` });
@@ -7588,7 +7647,7 @@ expressApp.post("/signalk-mareas-ihm/api/shelter/mask", async (req: any, res: an
 });
 
 // Toggle a single sector. Body: { index: 0..15 } — flips that sector.
-expressApp.post("/signalk-mareas-ihm/api/shelter/toggle", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/shelter/toggle", requireControlAccess, async (req: any, res: any) => {
   const idx = Number(req?.body?.index);
   if (!Number.isInteger(idx) || idx < 0 || idx >= SHELTER_SECTOR_COUNT) {
     return res.status(400).json({ error: `index must be 0..${SHELTER_SECTOR_COUNT - 1}` });
@@ -7609,7 +7668,7 @@ expressApp.post("/signalk-mareas-ihm/api/shelter/toggle", async (req: any, res: 
 // manual-edited flag. On Overpass failure, returns 503 with details.
 // Accepts optional `dist` (nm) in body or query string to override the
 // default 0.75 nm — useful for narrow anchorages or open coasts.
-expressApp.post("/signalk-mareas-ihm/api/shelter/auto-detect", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/shelter/auto-detect", requireControlAccess, async (req: any, res: any) => {
   try {
     let lat: number | undefined;
     let lng: number | undefined;
@@ -7657,7 +7716,7 @@ expressApp.post("/signalk-mareas-ihm/api/shelter/auto-detect", async (req: any, 
 
 // Adjust advisory thresholds at runtime. Body: { windWarnKt?, gustWarnKt?,
 // waveWarnM?, pressureDropWarnHpa3h? }. Persisted to cache.
-expressApp.post("/signalk-mareas-ihm/api/weather/thresholds", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/weather/thresholds", requireControlAccess, async (req: any, res: any) => {
   const b = req?.body ?? {};
   if (typeof b.windWarnKt === "number" && b.windWarnKt > 0) _weatherThresholds.windWarnKt = b.windWarnKt;
   if (typeof b.gustWarnKt === "number" && b.gustWarnKt > 0) _weatherThresholds.gustWarnKt = b.gustWarnKt;
@@ -7678,7 +7737,7 @@ expressApp.post("/signalk-mareas-ihm/api/weather/thresholds", async (req: any, r
 expressApp.get("/signalk-mareas-ihm/api/anchor-watch/track", (_req: any, res: any) => {
   res.json({ points: trackPoints });
 });
-expressApp.delete("/signalk-mareas-ihm/api/anchor-watch/track", async (_req: any, res: any) => {
+expressApp.delete("/signalk-mareas-ihm/api/anchor-watch/track", requireControlAccess, async (_req: any, res: any) => {
   trackPoints = [];
   await ihmCache.set("trackPoints", trackPoints).catch(() => {});
   broadcastSSE("track-clear");
@@ -8645,7 +8704,7 @@ expressApp.get("/signalk-mareas-ihm/api/audio/outputs", (_req: any, res: any) =>
 // al resto del sistema. Ahora guardamos el sink en `_backendSinkName` y lo
 // inyectamos como `PULSE_SINK` en cada execFile via `_PA_ENV()`. Persistido
 // en ihmCache para sobrevivir al reinicio del plugin.
-expressApp.post("/signalk-mareas-ihm/api/audio/output", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/audio/output", requireControlAccess, async (req: any, res: any) => {
   const id = String(req?.body?.id ?? "");
   if (!id || !/^[a-zA-Z0-9._-]+$/.test(id)) {
     return res.status(400).json({ error: "invalid id" });
@@ -8660,7 +8719,7 @@ expressApp.post("/signalk-mareas-ihm/api/audio/output", async (req: any, res: an
 // solo afecta al stream del plugin). Persistido en ihmCache para sobrevivir
 // reinicios. Rango 50..150; el clamp también está en `_alarmVolumePaplay`
 // para que cualquier valor corrupto en disco no provoque clipping/mute.
-expressApp.post("/signalk-mareas-ihm/api/audio/alarm-volume", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/audio/alarm-volume", requireControlAccess, async (req: any, res: any) => {
   const raw = Number(req?.body?.percent);
   if (!Number.isFinite(raw)) return res.status(400).json({ error: "invalid percent" });
   const pct = Math.min(ALARM_VOL_MAX_PCT, Math.max(ALARM_VOL_MIN_PCT, Math.round(raw)));
@@ -8682,7 +8741,7 @@ const TEST_FALLBACK_SOUNDS = [
   "/usr/share/sounds/freedesktop/stereo/complete.oga",
   "/usr/share/sounds/alsa/Front_Center.wav",
 ];
-expressApp.post("/signalk-mareas-ihm/api/audio/test", async (_req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/audio/test", requireControlAccess, async (_req: any, res: any) => {
   const lang = _currentLang === "en" ? "en" : "es";
   let file: string | null = _piVoiceOggFile("garreo", lang);
   if (!file) {
@@ -8944,7 +9003,7 @@ async function _withAnchorLock(name: string, res: any, fn: () => Promise<void>):
 }
 
 // Drop anchor — accepts {lat,lng} or empty body (uses current GPS bow position)
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", requireControlAccess, async (req: any, res: any) => {
   await _withAnchorLock("drop", res, async () => {
   let lat = Number(req?.body?.lat);
   let lng = Number(req?.body?.lng);
@@ -9019,7 +9078,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", async (req: any, re
 });
 
 // Lift anchor
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", async (_req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", requireControlAccess, async (_req: any, res: any) => {
   await _withAnchorLock("lift", res, async () => {
   // Snapshot ACKs into the grace-period buffer BEFORE clearing anchorPosition.
   _saveAisAckPending();
@@ -9069,7 +9128,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", async (_req: any, r
 });
 
 // Sprint E: Toggle anchor (drop if not anchored, lift if anchored) — for home automation
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/toggle", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/toggle", requireControlAccess, async (req: any, res: any) => {
   await _withAnchorLock("toggle", res, async () => {
   if (anchorWatch.anchored) {
     // Lift
@@ -9332,7 +9391,7 @@ try {
 } catch (e: any) {
   app.debug("[IHM] registerPutHandler not available (older SK server?) — KIP buttons will not work: " + (e?.message ?? ""));
 }
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/move", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/move", requireControlAccess, async (req: any, res: any) => {
   const lat = Number(req?.body?.lat);
   const lng = Number(req?.body?.lng);
   if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: "invalid position" });
@@ -9369,7 +9428,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/move", async (req: any, re
   res.json({ ok: true });
   broadcastSSE("move");
 });
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/alarm-extra", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/alarm-extra", requireControlAccess, async (req: any, res: any) => {
   const extra = Number(req?.body?.alarmRadiusExtra);
   if (!isFinite(extra) || extra < 0) return res.status(400).json({ error: "invalid value" });
   anchorWatch.alarmRadiusExtra = Math.max(1, Math.min(100, extra));
@@ -9386,7 +9445,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/alarm-extra", async (req: 
 });
 
 // Update swing radius override (from visor slider)
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/swing-radius", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/swing-radius", requireControlAccess, async (req: any, res: any) => {
   const radius = Number(req?.body?.swingRadius);
   if (!isFinite(radius) || radius < 1) return res.status(400).json({ error: "invalid value" });
   anchorWatch.swingRadiusOverride = Math.max(1, Math.min(200, radius));
@@ -9403,7 +9462,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/swing-radius", async (req:
 });
 
 // Update chain deployed → recalculate swing radius from chain + current depth
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/chain-deployed", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/chain-deployed", requireControlAccess, async (req: any, res: any) => {
   const meters = Number(req?.body?.meters);
   anchorWatch.chainDeployed = isFinite(meters) && meters > 0 ? meters : null;
   // Recalculate swing radius using contract model: vertical = depthBelowSurface + bowHeight
@@ -9454,7 +9513,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/chain-deployed", async (re
 });
 
 // Toggle AIS alarm (from visor alarm panel)
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-alarm-status", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-alarm-status", requireControlAccess, async (req: any, res: any) => {
   const enabled = req?.body?.enabled;
   if (typeof enabled === "boolean") {
     anchorWatch.aisAlarmEnabled = enabled;
@@ -9479,7 +9538,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-alarm-status", async (
 // Toggle garreo alarm (from visor alarm panel)
 // Rev354: toggle alarma GPS perdido. Análogo a garreo-alarm-status. Si el
 // usuario apaga la alarma mientras está sonando, la cerramos en el acto.
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/gps-lost-alarm-status", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/gps-lost-alarm-status", requireControlAccess, async (req: any, res: any) => {
   const enabled = req?.body?.enabled;
   if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled must be boolean" });
   anchorWatch.gpsLostAlarmEnabled = enabled;
@@ -9500,7 +9559,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/gps-lost-alarm-status", as
   res.json({ ok: true, gpsLostAlarmEnabled: anchorWatch.gpsLostAlarmEnabled });
 });
 
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/garreo-alarm-status", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/garreo-alarm-status", requireControlAccess, async (req: any, res: any) => {
   const enabled = req?.body?.enabled;
   if (typeof enabled === "boolean") {
     anchorWatch.garreoAlarmEnabled = enabled;
@@ -9515,7 +9574,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/garreo-alarm-status", asyn
 });
 
 // ACK individual AIS target (silence alarm for that MMSI only)
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-ack", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-ack", requireControlAccess, async (req: any, res: any) => {
   const mmsi = String(req?.body?.mmsi ?? "");
   if (!mmsi) return res.status(400).json({ error: "mmsi required" });
   if (!anchorWatch.aisAckedMMSIs) anchorWatch.aisAckedMMSIs = [];
@@ -9529,7 +9588,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-ack", async (req: any,
 });
 
 // Un-ACK individual AIS target (re-enable alarm for that MMSI only, not all)
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-unack", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-unack", requireControlAccess, async (req: any, res: any) => {
   const mmsi = String(req?.body?.mmsi ?? "");
   if (!mmsi) return res.status(400).json({ error: "mmsi required" });
   if (!anchorWatch.aisAckedMMSIs) anchorWatch.aisAckedMMSIs = [];
@@ -9543,7 +9602,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-unack", async (req: an
 });
 
 // Clear all ACKs (used when lifting anchor or resetting)
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-ack-clear", async (_req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-ack-clear", requireControlAccess, async (_req: any, res: any) => {
   anchorWatch.aisAckedMMSIs = [];
   _lastAisNotifSig = null; // force next evaluateAnchorWatch to re-emit cleanly
   _aisSilencedUntil = 0;   // Rev49: clearing all ACKs implies fresh-start, drop silence too
@@ -9592,7 +9651,7 @@ expressApp.get("/signalk-mareas-ihm/api/ais/db-debug", (req: any, res: any) => {
 expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais-favorites", (_req: any, res: any) => {
   res.json({ favorites: Array.isArray(anchorWatch.aisFavoriteMMSIs) ? anchorWatch.aisFavoriteMMSIs : [] });
 });
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-favorite-toggle", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-favorite-toggle", requireControlAccess, async (req: any, res: any) => {
   const mmsi = String(req?.body?.mmsi ?? "").replace(/^urn:mrn:imo:mmsi:/, "").replace(/^urn:mrn:signalk:uuid:/, "").trim();
   if (!mmsi) return res.status(400).json({ error: "missing mmsi" });
   const arr = Array.isArray(anchorWatch.aisFavoriteMMSIs) ? anchorWatch.aisFavoriteMMSIs : [];
@@ -9644,7 +9703,7 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/favorites", (_req: any, res
   res.json({ favorites: _favoritesCache });
 });
 
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite", requireControlAccess, async (req: any, res: any) => {
   const lat = Number(req?.body?.lat);
   const lng = Number(req?.body?.lng);
   const rawName = String(req?.body?.name ?? "").trim();
@@ -9669,7 +9728,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite", async (req: any
   res.json({ ok: true, favorite: updated, total: _favoritesCache.length });
 });
 
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite-delete", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite-delete", requireControlAccess, async (req: any, res: any) => {
   const lat = Number(req?.body?.lat);
   const lng = Number(req?.body?.lng);
   if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: "invalid coords" });
@@ -9688,7 +9747,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite-delete", async (r
 // Rev441 Sprint B: borra una entrada del historial de fondeos (anchorHistory).
 // Si la entrada esta tambien en favoritos, NO la elimina alli (eso lo hace
 // favorite-delete por separado). Body: { lat, lng }. Match dentro de 10 m.
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/history-delete", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/history-delete", requireControlAccess, async (req: any, res: any) => {
   const lat = Number(req?.body?.lat);
   const lng = Number(req?.body?.lng);
   if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: "invalid coords" });
@@ -9709,7 +9768,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/history-delete", async (re
 // Rev206 (B-02): broadcastSSE("silence") tras setear, así otros visores
 // reciben el countdown sin esperar al periodic state tick (3s) y muestran
 // 💤 + tiempo restante en tiempo real.
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/silence-alarm", (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/silence-alarm", requireControlAccess, (req: any, res: any) => {
   const kind = String(req?.body?.kind ?? "");
   const minutes = Math.max(1, Math.min(60, Number(req?.body?.minutes ?? ALARM_SILENCE_DEFAULT_MIN)));
   if (kind === "garreo") {
@@ -9733,7 +9792,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/silence-alarm", (req: any,
 // Rev48: cancel silence window (so backend audio re-arms when user re-enables
 // audio in visor). Without this, visor mute leaves backend silenced for the
 // full 5min even if user un-mutes immediately.
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/cancel-silence", (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/cancel-silence", requireControlAccess, (req: any, res: any) => {
   const kind = String(req?.body?.kind ?? "");
   if (kind === "garreo" || kind === "all") {
     _garreoSilencedUntil = 0;
@@ -9775,7 +9834,7 @@ try {
 } catch { /* registerPutHandler may not exist on older SK */ }
 
 // Toggle predictive ring (3rd ring)
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/predictive-ring", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/predictive-ring", requireControlAccess, async (req: any, res: any) => {
   if (typeof req?.body?.enabled === "boolean") anchorWatch.predictiveRingEnabled = req.body.enabled;
   if (typeof req?.body?.lookaheadHours === "number" && req.body.lookaheadHours > 0 && req.body.lookaheadHours <= 72) anchorWatch.lookaheadHours = req.body.lookaheadHours;
   await ihmCache.set("anchorWatch", anchorWatch);
@@ -9797,7 +9856,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/predictive-ring", async (r
 //      `method` lacking "sound" — that's what tells KIP / OpenPlotter
 //      Notifications / any other external SK client to stop their own audio.
 //      Without the immediate re-evaluate the next delta is up to 5s away.
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/audio-enable", async (req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/audio-enable", requireControlAccess, async (req: any, res: any) => {
   if (typeof req?.body?.enabled !== "boolean") {
     return res.status(400).json({ error: "enabled (boolean) required" });
   }
@@ -10062,7 +10121,7 @@ expressApp.get("/signalk-mareas-ihm/api/stationRef", stationRefHandler);
       }
     });
 
-    expressApp.post("/signalk-mareas-ihm/api/manual", async (req: any, res: any) => {
+    expressApp.post("/signalk-mareas-ihm/api/manual", requireControlAccess, async (req: any, res: any) => {
       try {
         const body = req?.body ?? {};
         const manualStationId = body.manualStationId != null ? String(body.manualStationId).trim() : "";

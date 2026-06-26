@@ -1,4 +1,24 @@
 
+<style>
+/* Rev573 (feedback Carlos: "aumenta texto explicación, medidas y todo lo
+   demás de instrucciones"): bump +4 px a todo el contenido del modal
+   Instrucciones para que sea cómodo leer en la cubierta. Aplicado vía
+   selectores explícitos con !important para sobrescribir el CSS heredado
+   del iframe TidesView. */
+.tide-instr p, .tide-instr li, .tide-instr td, .tide-instr th,
+#m-instructions-iframe-content p, #m-instructions-iframe-content li,
+#m-instructions-overlay p, #m-instructions-overlay li,
+.safety, p, ul li, ol li { font-size: 20px !important; line-height: 1.55 !important; }
+.safety { font-size: 21px !important; }
+h2 { font-size: 30px !important; }
+h3 { font-size: 26px !important; }
+h4 { font-size: 22px !important; }
+code, kbd { font-size: 18px !important; }
+em, strong { font-size: inherit !important; }
+small { font-size: 18px !important; }
+.measure, .unit, .number { font-size: 22px !important; font-weight: 700; }
+table { font-size: 20px !important; }
+</style>
 
 <div class="safety">
 <strong>AVISO DE SEGURIDAD</strong><br>
