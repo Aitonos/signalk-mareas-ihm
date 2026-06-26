@@ -73,7 +73,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev547";
+const PLUGIN_REVISION = "Rev562";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -347,14 +347,15 @@ const MAX_SIDE_BUTTONS_PER_SIDE = 5;
 /* Rev491 (feedback Vicente): añadidas dif_lw y prof_min a la whitelist del
    backend. Sin esto, sanitizeBBOrder() las filtraba al guardar, haciendo que
    no se pudieran reactivar tras desactivarlas en config. */
-const BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","sunrise","wx_6h","wave"] as const;
+/* Rev556 (feedback Carlos #9c): añadido t_fondeo (tiempo transcurrido desde
+   el drop) como nueva celda persistible. */
+const BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","t_fondeo","sunrise","wx_6h","wave"] as const;
 type BBCellKey = typeof BB_CELL_KEYS[number];
 /* Rev535 (B-25, feedback Carlos 2026-06-24): nuevo default snapshot del orden
    que Carlos tiene activo en Tunatunes. Sustituye al antiguo default que
    añadía heading y pres (no relevantes en su uso) y omitía sunrise (sí útil).
-   Este orden es lo que ve un usuario nuevo en primera instalación y lo que
-   restaura el botón "Restablecer defaults" del config UI. */
-const DEFAULT_BB_ORDER: BBCellKey[] = ["sog","wind","sonda","tide","sunrise","cad_rec","dist_ancla","h_fondeo","calidad","abrigo"];
+   Rev556: añadido t_fondeo tras h_fondeo. */
+const DEFAULT_BB_ORDER: BBCellKey[] = ["sog","wind","sonda","tide","sunrise","cad_rec","dist_ancla","h_fondeo","t_fondeo","calidad","abrigo"];
 function sanitizeBBOrder(arr: any): BBCellKey[] {
   if (!Array.isArray(arr)) return DEFAULT_BB_ORDER.slice();
   const seen: Record<string, boolean> = {};
@@ -2872,9 +2873,19 @@ let trackPoints: TrackPoint[] = [];
 // activa: 24h × 100 = 2400 puntos cómodos dentro del cap.
 const TRACK_MAX_POINTS = 12000;
 const TRACK_TTL_MS = 24 * 60 * 60 * 1000;        // 24 hours
-const TRACK_DIST_LOW_M = 0.5;                    // metres, at low speed
+// Rev553 (feedback Carlos: trkPts=1 constante en visor): bajado threshold de
+// 0.5→0.2 m a baja velocidad. Con GPS muy estable y barco fondeado, el drift
+// típico cae por debajo de 0.5 m y nunca se añade un 2º punto al track (queda
+// el 1 inicial para siempre). 0.2 m está por encima del ruido sub-métrico de
+// un GPS doméstico (RMS ~0.5-1.5 m) — el ruido normal supera 0.2 sin problema.
+const TRACK_DIST_LOW_M = 0.2;                    // metres, at low speed
 const TRACK_DIST_HIGH_M = 2.0;                   // metres, at cruise
 const TRACK_SPEED_THRESHOLD_MS = 1.029;          // ~2 kt in m/s
+// Rev553: keep-alive — forzar añadir punto cada 60 s independientemente del
+// threshold, para garantizar que el visor SIEMPRE vea track vivo. Si el GPS
+// está extremadamente fijo (e.g. RTK) y el drift es <0.2 m, sin keep-alive el
+// track se quedaría en 1 sólo punto histórico.
+const TRACK_KEEPALIVE_MS = 60 * 1000;            // 60 seconds
 let _trackPersistCounter = 0;
 // anchorWatchIntervalId declared above (forward declaration for stop())
 
@@ -3269,7 +3280,12 @@ function _recordTrackPoint(bowLat: number, bowLng: number) {
   const last = trackPoints[trackPoints.length - 1];
   if (last) {
     const d = haversineM(last.lat, last.lng, bowLat, bowLng);
-    if (d < distThreshold) return; // skipped: too close to last point
+    const ageMs = Date.now() - last.t;
+    // Rev553 (feedback Carlos: trkPts=1 constante): keep-alive — si pasa
+    // > TRACK_KEEPALIVE_MS desde el último punto, añadir uno aunque la
+    // distancia sea < threshold. Garantiza que el visor siempre tenga ≥2
+    // puntos (requisito para que `updateTrackGradient` pinte la polyline).
+    if (d < distThreshold && ageMs < TRACK_KEEPALIVE_MS) return;
   }
   trackPoints.push({ lat: bowLat, lng: bowLng, t: Date.now() });
   // Rev319: nuevo track point → broadcast inmediato (no esperar al timer 3s).

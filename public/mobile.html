@@ -309,16 +309,26 @@ body.wx-bar-active #approach-bar{bottom:60px;left:50%;transform:translateX(-50%)
    so the cell catches hover everywhere; we attach a CUSTOM tooltip in JS
    that stays visible while pointer is inside the cell (the native `title`
    tooltip disappears on tiny mouse movements, which the user disliked). */
-.shelter-hour{flex:1 1 0;min-width:74px;height:88px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;color:#fff;font-weight:700;text-align:center;line-height:1.1;cursor:pointer;position:relative;transition:transform .15s,box-shadow .15s;padding:6px 4px}
+/* Rev556 (feedback Carlos: "espacio enorme entre horas y datos en cada celda"):
+   `justify-content:space-between` repartía hora/viento/ola en los extremos
+   dejando huecos enormes cuando la celda crece. Cambiado a `center` + `gap:10px`
+   para que el contenido quede agrupado y respirado, no separado por hueco. */
+/* Rev559 (feedback Carlos): +10% adicional → min-width 96→106. */
+.shelter-hour{flex:1 1 0;min-width:106px;height:124px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#fff;font-weight:700;text-align:center;line-height:1.1;cursor:pointer;position:relative;transition:transform .15s,box-shadow .15s;padding:8px 4px;overflow:visible}
 /* Rev97: transform-origin:center bottom → la celda crece SOLO hacia arriba al
    seleccionar; el borde inferior se queda donde estaba. Más sombra recortada
    para no necesitar tanto padding bajo el strip. */
-.shelter-hour.selected{transform:scale(1.18);transform-origin:center bottom;z-index:10;box-shadow:0 -4px 18px rgba(0,0,0,.6),0 0 0 3px #fff;position:relative}
+/* Rev555 (feedback Carlos): scale reducido 1.18→1.10 y origin desde el
+   centro (no desde bottom) para que el crecimiento se reparta arriba y
+   abajo sin chocar con header ni recortar contenido. */
+.shelter-hour.selected{transform:scale(1.10);transform-origin:center center;z-index:10;box-shadow:0 -4px 18px rgba(0,0,0,.6),0 0 0 3px #fff;position:relative;overflow:visible}
 .shelter-hour > *{pointer-events:none}
 .shelter-hour-h{font-size:22px;color:#fff;font-weight:900;letter-spacing:.4px;text-shadow:0 1px 2px rgba(0,0,0,.4)}
 .shelter-hour-stack{display:flex;flex-direction:column;align-items:center;gap:8px}
 .shelter-hour-v{font-size:24px;font-weight:900;line-height:1}
-.shelter-hour-w{font-size:18px;color:rgba(255,255,255,.92);font-weight:800;letter-spacing:.2px;line-height:1}
+/* Rev557 (feedback Carlos): "aumenta tamaño texto info ola en las celdas
+   strip". Ola 18→26 (+8). Sincronizado en media queries más abajo. */
+.shelter-hour-w{font-size:26px;color:rgba(255,255,255,.92);font-weight:800;letter-spacing:.2px;line-height:1}
 /* Rev91: media-query SOLO para pantallas realmente pequeñas (<600px).
    En VNC del Pi con viewport ~857px ya NO se dispara — la rosa e infobox
    conservan su tamaño inline (467×467). */
@@ -329,11 +339,14 @@ body.wx-bar-active #approach-bar{bottom:60px;left:50%;transform:translateX(-50%)
   #shelter-grade-inline{width:110px!important;height:110px!important;font-size:50px!important;border-radius:12px!important}
   .shelter-donut-svg{width:110px!important;height:110px!important}
   .shelter-status-box{height:260px!important;min-width:280px!important}
-  .shelter-hour{height:90px!important;min-width:66px!important}
+  /* Rev555: altura sincronizada con .shelter-hour base 124.
+     Rev557: ola subida 14→22 (+8). */
+  /* Rev559 (feedback Carlos): +10% adicional → min-width 86→95. */
+  .shelter-hour{height:124px!important;min-width:95px!important}
   .shelter-hour-v{font-size:22px!important}
   .shelter-hour-h{font-size:13px!important}
-  .shelter-hour-w{font-size:14px!important}
-  #shelter-now-btn{height:90px!important;width:140px!important;font-size:21px!important}
+  .shelter-hour-w{font-size:22px!important}
+  #shelter-now-btn{height:124px!important;width:140px!important;font-size:21px!important}
 }
 /* Custom tooltip that follows the strip cells (Rev68). Replaces the native
    `title` tooltip which kept disappearing on tiny mouse moves. */
@@ -410,6 +423,20 @@ body.wx-bar-active #approach-bar{bottom:60px;left:50%;transform:translateX(-50%)
 /* Rev500: Tracks queda visualmente gris/disabled si AIS (maestro) esta OFF. */
 #ais-alarm-panel h5 .ais-hdr-toggles label.locked{opacity:.3;cursor:not-allowed;filter:grayscale(1)}
 #ais-alarm-panel h5 .ais-hdr-toggles label.locked input{cursor:not-allowed}
+/* Rev549 (feedback Carlos): en pantalla estrecha (portrait), cuando el bloque
+   AIS/Tracks/Alarma hace wrap a su propia línea, debe justificarse a la
+   IZQUIERDA por orden visual lógico. El margin-left:auto base lo dejaba pegado
+   al borde derecho aún en wrap, descentrando el sub-header. Forzamos
+   flex-basis 100% (ocupa la línea entera nueva) + justify-content:flex-start
+   + margin-left:0 sólo en portrait. */
+@media (orientation:portrait){
+  #ais-alarm-panel h5 .ais-hdr-toggles{
+    margin-left:0!important;
+    flex:1 1 100%!important;
+    justify-content:flex-start!important;
+    margin-top:4px!important;
+  }
+}
 /* Rev504: override eliminado — hereda default T0=32 (regla "TODOS los headers
    identicos" salvo Meteo). Mantengo flex en h5 sub-header del panel para los
    toggles AIS+Tracks+Alarma, eso sigue OK. */
@@ -747,12 +774,15 @@ body.mobile-ui #ais-alarm-panel.m-open > #ais-alarm-list{
   overscroll-behavior-y:contain;
 }
 /* Slider Radio + select Ordenar: TAMAÑOS TOUCH legibles. */
+/* Rev547 (feedback Carlos): bajado 4px (20→16) en TODO el bloque superior
+   del panel AIS (título, radio, ordenar, filtro). La lista de barcos abajo
+   queda intacta — ya tiene un tamaño óptimo. */
 body.mobile-ui #ais-alarm-panel.m-open .ais-panel-header span,
-body.mobile-ui #ais-alarm-panel.m-open .ais-panel-header label{font-size:20px!important;font-weight:700!important}
-body.mobile-ui #ais-alarm-panel.m-open #ais-radius-slider{height:36px!important}
-body.mobile-ui #ais-alarm-panel.m-open #ais-radius-val{font-size:20px!important;min-width:80px!important}
-body.mobile-ui #ais-alarm-panel.m-open #ais-sort-by{font-size:20px!important;height:48px!important;padding:6px 10px!important}
-body.mobile-ui #ais-alarm-panel.m-open #ais-filter-txt{font-size:20px!important;height:48px!important;padding:6px 10px!important}
+body.mobile-ui #ais-alarm-panel.m-open .ais-panel-header label{font-size:16px!important;font-weight:700!important}
+body.mobile-ui #ais-alarm-panel.m-open #ais-radius-slider{height:30px!important}
+body.mobile-ui #ais-alarm-panel.m-open #ais-radius-val{font-size:16px!important;min-width:80px!important}
+body.mobile-ui #ais-alarm-panel.m-open #ais-sort-by{font-size:16px!important;height:38px!important;padding:5px 10px!important}
+body.mobile-ui #ais-alarm-panel.m-open #ais-filter-txt{font-size:16px!important;height:38px!important;padding:5px 10px!important}
 /* Separacion vertical de cada subfila del header (titulo / slider / sort+filtro) */
 body.mobile-ui #ais-alarm-panel.m-open .ais-panel-header > div{padding:10px 0!important;margin:6px 0!important;border-bottom:1px solid rgba(255,255,255,.06)}
 body.mobile-ui #ais-alarm-panel.m-open .ais-panel-header > div:last-child{border-bottom:none!important}
@@ -816,7 +846,10 @@ body.mobile-ui #panel.m-open h1,body.mobile-ui #ais-alarm-panel.m-open h1{font-s
 body.mobile-ui #panel.m-open h2,body.mobile-ui #ais-alarm-panel.m-open h2{font-size:28px!important}
 body.mobile-ui #panel.m-open h3,body.mobile-ui #ais-alarm-panel.m-open h3{font-size:24px!important}
 body.mobile-ui #panel.m-open h4,body.mobile-ui #ais-alarm-panel.m-open h4{font-size:22px!important}
-body.mobile-ui #panel.m-open h5,body.mobile-ui #ais-alarm-panel.m-open h5{font-size:20px!important}
+body.mobile-ui #panel.m-open h5{font-size:20px!important}
+/* Rev547 (feedback Carlos): h5 del header AIS bajado 4px (20→16) junto con
+   el resto del bloque superior. */
+body.mobile-ui #ais-alarm-panel.m-open h5{font-size:16px!important}
 body.mobile-ui #panel.m-open button,
 body.mobile-ui #ais-alarm-panel.m-open button{
   min-height:56px;font-size:18px!important;padding:14px 18px;border-radius:12px;
@@ -1053,12 +1086,15 @@ body.mobile-ui #m-bottom-bar{
   background:rgba(10,30,50,.88);
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
   border-top:1.5px solid rgba(255,255,255,.2);
-  padding:6px 12px;min-height:54px;
+  /* Rev555 (feedback Carlos: "seguimos teniendo ese GAP del bottom bar en el
+     lado derecho"): padding-right reducido 12→4 para eliminar el espacio
+     visible entre el último item y el borde derecho del viewport. */
+  padding:6px 4px 6px 8px;min-height:54px;
   display:flex;gap:12px;align-items:center;
-  /* Rev296: lado a lado de la pantalla, sin border lateral. Cuando hay
-     espacio, distribuye items proporcionalmente; cuando no, scroll
-     horizontal con touch. */
-  justify-content:space-around;
+  /* Rev556 (feedback Carlos #8 "centra los widgets"): `safe center` —
+     centra cuando los items caben, vuelve a flex-start cuando overflow para
+     no cortar el primero. CSS3, soportado en Chrome 93+/Safari 14+/Firefox 63+. */
+  justify-content:safe center;
   overflow-x:auto;overflow-y:visible;
   -webkit-overflow-scrolling:touch;
   scrollbar-width:thin;
@@ -1085,6 +1121,9 @@ body.mobile-ui #m-bottom-bar .it::after{
   pointer-events:none;
 }
 body.mobile-ui #m-bottom-bar .it.no-sep::after{display:none}
+/* Rev562 (feedback Carlos): el widget "+" (#m-bb-config-cell) es siempre el
+   último visualmente — sin separador a su derecha (no hay nada más después). */
+body.mobile-ui #m-bottom-bar #m-bb-config-cell::after{display:none!important}
 /* Rev455: layout especifico de la celda Prev +6h.
    2 columnas: izquierda icono meteo grande (2 lineas), derecha viento arriba
    + temperatura abajo. */
@@ -1165,6 +1204,11 @@ body.mobile-ui #m-bottom-bar .m-bb-graph{cursor:pointer}
 body.mobile-ui #m-bottom-bar .m-bb-grade{cursor:pointer}
 body.mobile-ui #m-bottom-bar .m-bb-grade .ic{font-size:10px}
 body.mobile-ui #m-bottom-bar .m-bb-grade #m-bb-grade{width:28px!important;height:28px!important;font-size:18px!important}
+/* Rev553 (feedback Carlos): Rev551/552 estaban en el SVG erróneo. Carlos NO
+   pedía subir la gráfica presión de la bottom-bar sino la del infobox del
+   modal Shelter (sparkRow en _shelterRenderStatus, ~ línea 8756). Revertido
+   a los valores originales aquí — la subida real va en el div contenedor
+   del sparkSvg dentro del status-body. */
 body.mobile-ui #m-bottom-bar #m-bb-pres-svg{width:50px!important;height:18px!important}
 
 /* Rev315: estilos UNIFICADOS de back-button y título en TODAS las ventanas.
@@ -1229,7 +1273,12 @@ body.mobile-ui .popup-overlay .popup-box{
 body.mobile-ui .m-modal-hdr{
   position:fixed;top:0;left:0;right:0;
   height:var(--modal-hdr-h)!important;
-  z-index:10;
+  /* Rev554 (feedback Carlos: "scroll de shelter tapa header"): subido z-index
+     10→2050. Elementos del shelter como `.shelter-hour.selected` tienen
+     z-index:100 (línea ~1925) y se montaban sobre el header durante scroll
+     porque z:10 del header era insuficiente. 2050 > 2000 del .popup-overlay
+     base y > cualquier hijo del modal. */
+  z-index:2050;
   background:rgba(10,30,50,.98);
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
   border-bottom:2px solid rgba(255,178,63,.3);
@@ -1683,10 +1732,15 @@ body.mobile-ui #shelter-rose-wrap{
   grid-template-areas:
     "rose grade"
     "status status"!important;
-  gap:14px 16px!important;align-items:center;justify-items:center;
+  /* Rev555 (feedback Carlos #7): más separación entre rosa e infobox/grade-col. */
+  gap:24px 32px!important;
+  align-items:center;justify-items:center;
   position:static!important;top:0!important;
-  margin:10px auto 16px!important;padding:0!important;
-  max-width:920px;
+  /* Rev555 (feedback Carlos #9 #10): contenido centrado horizontalmente y
+     sin tope estrecho que generase scroll innecesario. */
+  margin:14px auto 18px!important;padding:0!important;
+  max-width:100%!important;
+  justify-content:center!important;
 }
 body.mobile-ui #shelter-status,
 body.mobile-ui .shelter-status-box{
@@ -1709,8 +1763,12 @@ body.mobile-ui #shelter-rose{
 }
 /* Rev377: titulos "Escala Exposicion" y "Proteccion" SOBRE cuadrado/donut.
    Inline tienen font-size:13px -> "enanos" -> 24px y width auto. */
+/* Rev555 (feedback Carlos: "siguen enanos en móvil"): bump +12 nominal sobre
+   original. Con zoom 0.6 heredado, +12 nominal = +7.2 visual — perceptible
+   de sobra. Escala/Protección 24→36, badge IMU/Veleta 11→24. */
 body.mobile-ui .shelter-grade-col div[data-i18n-html="sh_escala_exp"],
-body.mobile-ui .shelter-grade-col div[data-i18n="sh_proteccion"]{font-size:24px!important;width:auto!important;letter-spacing:0!important;line-height:1.15!important}
+body.mobile-ui .shelter-grade-col div[data-i18n="sh_proteccion"]{font-size:36px!important;width:auto!important;letter-spacing:0!important;line-height:1.15!important}
+body.mobile-ui #shelter-grade-imu-badge{font-size:24px!important;padding:7px 16px!important}
 /* Rev377: titulo "⚓ Shelter forecast" del modal padre shelter-pop. El h4
    esta display:none por _mInjectModalHeader; el visible es .m-modal-hdr
    .m-title (default 32px) -> 48px. */
@@ -1727,14 +1785,39 @@ body.mobile-ui #shelter-grade-inline{
 body.mobile-ui #shelter-score-donut{
   width:130px!important;height:130px!important;
 }
-/* Rev187: textos shelter +40% en todos los span/div */
-body.mobile-ui #shelter-pop .popup-box span,
-body.mobile-ui #shelter-pop .popup-box div{font-size:22px}
-body.mobile-ui #shelter-status-label{font-size:24px!important;padding:18px 20px!important}
-body.mobile-ui #shelter-status-body{font-size:22px!important;padding:18px 20px 14px!important;line-height:1.4!important}
-body.mobile-ui #shelter-summary-text{font-size:26px!important;font-weight:800;padding:16px;border-radius:12px;background:rgba(255,255,255,.06);margin:14px auto!important;max-width:760px;align-self:center!important;text-align:center!important}
-body.mobile-ui #shelter-auto-prompt{font-size:20px!important;text-align:center!important;display:block!important;width:100%!important}
-body.mobile-ui #shelter-auto-status{font-size:22px!important;font-weight:800}
+/* Rev552 (diagnosis GPT+Gemini, validado): consolidación tipográfica del
+   infobox shelter.
+   - Eliminada la regla genérica `span, div {font-size:22px}` (era Rev187):
+     aplicaba 22 px DIRECTAMENTE a cada span/div hijo, bloqueando la herencia
+     desde contenedores; mis subidas Rev547 en #shelter-auto-prompt no
+     afectaban a sus <span> internos.
+   - Base 22px declarada en .shelter-popup-box (regla fullscreen unificada
+     más abajo) — los hijos heredan salvo override por id.
+   - +4 px nominales sobre el valor original (era 24, mi Rev547 puso 26,
+     ahora 28). Con zoom 0.6 heredado del .popup-overlay, +4 nominales =
+     ~+2.4 px visuales, suficiente para que Carlos lo perciba.
+   - #shelter-summary-text: consolidado en UN solo bloque autoritativo (antes
+     la regla duplicada de la línea 1799 y el override de position/z-index
+     más abajo se anulaban entre sí). */
+/* Rev553 (feedback Carlos: "1 sigue igual"): subida Rev552 (+4 nominal) NO
+   era perceptible para Carlos — su zoom efectivo podría ser menor que el 0.6
+   asumido por GPT, o la subida cae dentro de su umbral visual. Bumpeamos
+   ahora a +8 nominales sobre el original (Rev547 base): un salto claro y
+   manifiesto que no puede pasar desapercibido. */
+body.mobile-ui #shelter-status-label{font-size:32px!important;padding:18px 20px!important}
+body.mobile-ui #shelter-status-body{font-size:30px!important;padding:18px 20px 14px!important;line-height:1.4!important}
+body.mobile-ui #shelter-summary-text{
+  position:relative!important;top:0!important;z-index:1!important;
+  font-size:34px!important;line-height:1.35!important;font-weight:800!important;
+  padding:16px;border-radius:12px;background:rgba(255,255,255,.06);
+  /* Rev555 (feedback Carlos #8): full-width + centrado. max-width:760 forzaba
+     2 líneas cuando el texto cabía cómodamente en 1 en pantallas anchas. */
+  margin:14px auto!important;
+  width:calc(100% - 24px)!important;max-width:none!important;
+  align-self:stretch!important;text-align:center!important;
+}
+body.mobile-ui #shelter-auto-prompt{font-size:28px!important;text-align:center!important;display:block!important;width:100%!important}
+body.mobile-ui #shelter-auto-status{font-size:30px!important;font-weight:800!important}
 /* Strip horas: scroll horizontal + tamaño mayor + Ahora alineado */
 body.mobile-ui #shelter-hours-row{
   overflow-x:auto!important;overflow-y:visible!important;
@@ -1752,7 +1835,8 @@ body.mobile-ui #shelter-now-btn{
    para llenar el row; asi el row con justify-content:center coloca NOW +
    strip JUNTOS centrados (NOW pegado al strip, sin gap vacio enorme). */
 body.mobile-ui #shelter-hours{gap:6px!important;flex-wrap:nowrap!important;flex:0 0 auto!important;justify-content:flex-start!important;overflow:visible!important}
-body.mobile-ui #shelter-hours > *{flex:0 0 110px!important;font-size:17px!important;min-height:92px!important}
+/* Rev559 (feedback Carlos): +10% adicional → 144→158 px. */
+body.mobile-ui #shelter-hours > *{flex:0 0 158px!important;font-size:17px!important;min-height:92px!important}
 /* Rev300: regla L1084 ELIMINADA (display:flex/column ya en L1147). */
 /* Rev295: vuelve al orden original (horas donde estaban): summary, hours,
    rose-wrap (rose+grade+status), olas. */
@@ -1768,19 +1852,19 @@ body.mobile-ui #shelter-pop #shelter-wave-hist-wrap{order:5}
     grid-template-areas:"status rose grade"!important;
   }
 }
-/* Horizontal: ahí sí permitimos scroll horizontal de la rosa+grade */
-@media (orientation:landscape){
-  body.mobile-ui #shelter-rose-wrap{overflow-x:auto;max-width:none}
-}
-body.mobile-ui #shelter-summary-text{
-  position:static!important;top:0!important;
-  font-size:22px!important;line-height:1.35;padding:14px 0;
-  background:rgba(255,255,255,.05);border-radius:10px;margin:14px 0!important;
-}
+/* Rev555 (feedback Carlos #10): "el set genera scroll cuando puede
+   extenderse". Eliminado overflow-x:auto en landscape — la rosa bajada a
+   440 px (Rev555 anterior) ya cabe junto al grade-col (140 px) + infobox
+   (status full width abajo) sin desbordar. */
+/* Rev552: regla duplicada de #shelter-summary-text ELIMINADA. Pisaba la
+   declaración autoritativa de la línea 1759 (font 22 vs 28/30). La regla
+   unificada con position:relative + font-size:30 vive ahora en el bloque
+   "diagnosis GPT+Gemini" arriba. */
 body.mobile-ui #shelter-wave-hist-wrap{
   position:static!important;top:0!important;
 }
-body.mobile-ui #shelter-wave-hist-svg{height:94px!important}
+/* Rev557 (feedback Carlos): wave-hist SVG 94→140 (+49%) en mobile-ui. */
+body.mobile-ui #shelter-wave-hist-svg{height:140px!important}
 /* Rev189: dentro de info-window de abrigo (shelter-score-pop / wave-hist-info-pop),
    donut y olas se veían enanos. Forzar tamaño grande. */
 body.mobile-ui #shelter-score-pop .shelter-donut-svg,
@@ -1807,13 +1891,30 @@ body.mobile-ui #shelter-now-btn{
    Rev189 v2: además, que la STRIP ocupe el ANCHO COMPLETO disponible (antes
    no llenaba la ventana). Forzar 100% width al row + scroll horizontal interno. */
 @media (orientation: portrait) {
-  body.mobile-ui .shelter-hour{min-height:128px!important;height:128px!important;min-width:78px!important}
+  /* Rev555: portrait +20 (148→168) — celda seleccionada con scale 1.10 cabe
+     con el contenido sin recortar olas. */
+  /* Rev559 (feedback Carlos): +10% adicional portrait → 102→112. */
+  body.mobile-ui .shelter-hour{min-height:168px!important;height:168px!important;min-width:112px!important}
   body.mobile-ui .shelter-hour-stack{gap:6px!important}
-  body.mobile-ui .shelter-hour-w{font-size:16px!important;display:block!important;visibility:visible!important;opacity:1!important}
-  body.mobile-ui #shelter-now-btn{height:128px!important;min-width:110px!important}
+  /* Rev557 (feedback Carlos): ola portrait 16→24 (+8). */
+  body.mobile-ui .shelter-hour-w{font-size:24px!important;display:block!important;visibility:visible!important;opacity:1!important}
+  body.mobile-ui #shelter-now-btn{height:168px!important;min-width:110px!important}
   body.mobile-ui #shelter-hours-row{width:100%!important;display:flex!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;padding:8px 0!important}
   body.mobile-ui #shelter-hours-row > *{flex:0 0 auto!important}
   body.mobile-ui #shelter-rose-wrap{width:100%!important;display:flex!important;justify-content:center!important;align-items:center!important;flex-wrap:wrap!important;gap:18px!important}
+}
+/* Rev555 (feedback Carlos: "ahora la rosa es muy grande y captura el tap,
+   no deja scroll; debe tener la altura que ocupan A y % abrigo"):
+   ajustamos la rosa a la altura del grade-col (440 px) — así está a la par
+   visual de la columna A/% y no captura el área entera para touch. */
+body.mobile-ui #shelter-pop #shelter-rose{
+  width:440px!important;max-width:440px!important;height:440px!important;
+  aspect-ratio:1/1;flex:none!important;
+}
+@media (max-width:768px){
+  body.mobile-ui #shelter-pop #shelter-rose{
+    width:520px!important;max-width:520px!important;height:520px!important;
+  }
 }
 /* Rev302: ÚNICA regla autoritativa para fullscreen del shelter.
    FIX descubierto por Gemini: .popup-overlay tiene `zoom: var(--ui-scale)`
@@ -1836,6 +1937,12 @@ body.mobile-ui #shelter-pop .popup-box.shelter-popup-box{
   display:flex!important;flex-direction:column!important;
   box-sizing:border-box!important;
   overflow-y:auto!important;
+  /* Rev552 (diagnosis GPT+Gemini): base 22px declarada AQUÍ — los hijos
+     heredan salvo override por id. Sustituye a la regla genérica
+     `body.mobile-ui #shelter-pop .popup-box span,...div{font-size:22px}` que
+     fue eliminada porque rompía la herencia (aplicaba 22 px directamente a
+     cada span/div hijo y bloqueaba las subidas por id en los contenedores). */
+  font-size:22px!important;
 }
 /* Rev189: caja hora seleccionada NO debe ir detrás del resumen superior.
    Subir z-index del strip y forzar position relative.
@@ -1843,20 +1950,31 @@ body.mobile-ui #shelter-pop .popup-box.shelter-popup-box{
    z-index funcione. Y el contenedor padre necesita NO ocultar overflow
    en el eje Y. */
 body.mobile-ui #shelter-hours-row{position:relative!important;z-index:50!important;overflow-y:visible!important}
+/* Rev547 (feedback Carlos): items del strip horario con flex:0 0 auto SIEMPRE
+   (no solo en portrait). En landscape los items heredaban `flex:1 1 0` que los
+   aplastaba al ancho del contenedor sin desbordar → el scroll horizontal
+   nunca aparecía aunque overflow-x:auto estuviese aplicado. */
+body.mobile-ui #shelter-hours-row > *{flex:0 0 auto!important}
+body.mobile-ui #shelter-hours-row{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}
 body.mobile-ui .shelter-hour{position:relative!important;z-index:1!important}
 body.mobile-ui .shelter-hour.selected,
 body.mobile-ui .shelter-hour.active,
 body.mobile-ui .shelter-hour:focus,
 body.mobile-ui .shelter-hour:hover{z-index:100!important;position:relative!important;box-shadow:0 4px 16px rgba(255,178,63,.5)!important}
 /* Quitar overflow:hidden del padre directo de la strip para que la caja
-   resaltada no quede recortada por encima */
-body.mobile-ui #shelter-pop #shelter-summary-text{z-index:1!important;position:relative!important}
+   resaltada no quede recortada por encima.
+   Rev552: regla separada de z-index/position de #shelter-summary-text
+   ELIMINADA — propiedades ya consolidadas en el bloque autoritativo arriba. */
 body.mobile-ui #shelter-hours-row{
   flex-wrap:nowrap!important;overflow-x:auto!important;
   -webkit-overflow-scrolling:touch;padding-bottom:8px;
   scrollbar-width:thin;
 }
-body.mobile-ui #shelter-now-btn{width:90px!important;height:64px!important;font-size:16px!important;flex:0 0 90px!important}
+/* Rev555: NOW button alineado a celdas en landscape: 124 px (= .shelter-hour
+   base Rev555). En portrait, el @media (orientation:portrait) manda 168 px. */
+@media (orientation:landscape){
+  body.mobile-ui #shelter-now-btn{flex:0 0 110px!important;width:110px!important;height:124px!important;min-height:124px!important;font-size:17px!important}
+}
 body.mobile-ui #shelter-hours{gap:6px!important;flex-wrap:nowrap!important}
 body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 /* Rev300: regla L1182 ELIMINADA — padding ya gestionado en L1147. */
@@ -1875,7 +1993,13 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
   body.mobile-ui #m-ham-r > .ico{font-size:22px!important}
   body.mobile-ui #m-leftbar > button .lbl,
   body.mobile-ui .m-sb-btn > span:not(.ico){font-size:9px!important}
-  body.mobile-ui #m-bottom-bar{right:62px;padding:6px 8px;gap:4px}
+  /* Rev549 (feedback Carlos): right:62px ELIMINADO. La regla dejaba un hueco
+     de 62px a la derecha de la barra para "no taparla con el sidebar", pero el
+     sidebar derecho ya está pos:fixed con `bottom:62px` (línea ~914) y NO se
+     solapa verticalmente con la bottom-bar (min-height 54px). Con right:0 la
+     barra llena el viewport completo en pantallas <360px; los items que no
+     quepan visualmente quedan accesibles vía scroll horizontal (overflow-x:auto). */
+  body.mobile-ui #m-bottom-bar{padding:6px 8px;gap:4px}
   body.mobile-ui #m-bottom-bar .it .vl{font-size:14px}
 }
 /* Rev180: NO escondemos snooze en landscape — el usuario lo necesita
@@ -1997,6 +2121,11 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
   </button>
   <button class="m-sb-btn" id="m-sb-panel"  onclick="m_togglePanel()" data-i18n-title="panel_cartas_capas" title="Cartas y Capas"><span class="ico">🗺️</span><span data-i18n="sb_cartas">Cartas</span></button>
   <button class="m-sb-btn" id="m-sb-ais"    onclick="m_toggleAisList()" data-i18n-title="ais_en_zona" title="AIS en zona"><span class="ico">🚢</span><span id="m-sb-ais-lbl" data-i18n="sb_ais">AIS</span></button>
+  <!-- Rev552 (feedback Carlos): revertido el cambio de Rev551 — Carlos quiere
+       🏔️ en sidebar Y en header del modal. El ⚓ se confundía con el botón
+       de fondear ancla; la montaña/abrigo es distintivo y semánticamente
+       correcto (protección contra viento por accidente geográfico). El header
+       del modal y el i18n shelter_title también cambian a 🏔️. -->
   <button class="m-sb-btn" id="m-sb-abrigo" onclick="openShelterConfig()" data-i18n-title="sb_abrigo_tip" title="Previsión abrigo"><span class="ico">🏔️</span><span data-i18n="sb_abrigo">Abrigo</span></button>
   <button class="m-sb-btn" id="m-sb-meteo"  onclick="toggleMeteo&&toggleMeteo()" data-i18n-title="menu_meteo" title="Previsión Meteo"><span class="ico">🌡️</span><span data-i18n="m_meteo_short">Meteo</span></button>
   <!-- Rev450: container para botones extras dinamicos sidebar derecha
@@ -2053,6 +2182,10 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
   <div class="it" data-bb-cell="dist_ancla" data-i18n-title="bb_dist_tip" title="Distancia al ancla" onclick="m_openInfoModal&&m_openInfoModal()"><span class="lb" data-i18n="bb_dist_ancla">Dist. ancla</span><span class="vl" id="m-bb-dist">—</span></div>
   <!-- Rev331 (item 13): HORA del fondeo (HH:MM del drop, +N si han pasado días). Siempre visible con '—' cuando no fondeado. -->
   <div class="it" id="m-bb-anchored-since-cell" data-bb-cell="h_fondeo" data-i18n-title="bb_anchored_since_tip" title="Hora del fondeo" onclick="m_openInfoModal&&m_openInfoModal()"><span class="lb" data-i18n="bb_anchored_since">H. fondeo</span><span class="vl" id="m-bb-anchored-since">—</span></div>
+  <!-- Rev556 (feedback Carlos #9c): tiempo transcurrido desde el drop
+       (formato Xh Ym o Xd Yh según duración). Complementa H. fondeo (hora
+       absoluta) con duración relativa. -->
+  <div class="it" id="m-bb-elapsed-cell" data-bb-cell="t_fondeo" data-i18n-title="bb_elapsed_tip" title="Tiempo desde el fondeo" onclick="m_openInfoModal&&m_openInfoModal()"><span class="lb" data-i18n="bb_elapsed">T. fondeo</span><span class="vl" id="m-bb-elapsed">—</span></div>
   <div class="it m-bb-graph" data-bb-cell="pres" data-i18n-title="bb_presion_tip" title="Presión barométrica · línea naranja = AHORA · click → Meteo" onclick="toggleMeteo&&toggleMeteo()">
     <span class="lb" data-i18n="bb_presion">Presión</span>
     <!-- Rev288: viewBox extendido 0-80 para reservar espacio a la previsión
@@ -2102,6 +2235,14 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       <span class="wave-period">—</span>
       <span class="wave-dir">—</span>
     </div>
+  </div>
+  <!-- Rev556 (feedback Carlos): widget "+" SIEMPRE visible al final (lado
+       derecho) para abrir la configuración de widgets directamente. Sin
+       data-bb-cell para que m_applyBBOrder NO lo reordene/oculte; con
+       order:9999 inline para garantizar que queda el último en flex. -->
+  <div class="it" id="m-bb-config-cell" title="Configurar widgets" data-i18n-title="bb_cfg_tip" onclick="m_openConfig&&m_openConfig()" style="order:9999;cursor:pointer">
+    <span class="lb" data-i18n="bb_cfg">Widgets</span>
+    <span class="vl" id="m-bb-cfg" style="font-size:22px;line-height:1">+</span>
   </div>
 </div>
 
@@ -2308,7 +2449,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
          abajo con top:-20px (sin esto, click en el link iba a parar al SVG
          de la rosa y nunca disparaba shelterAutoDetect()). -->
     <div style="display:flex;align-items:baseline;flex-wrap:wrap;gap:12px;flex:0 0 auto;line-height:1.2;margin:0;position:relative;z-index:1">
-      <h4 style="margin:0;font-size:26px;line-height:1.2"><span data-i18n="shelter_title">⚓ Previsión de Abrigo</span></h4>
+      <h4 style="margin:0;font-size:26px;line-height:1.2"><span data-i18n="shelter_title">🏔️ Previsión de Abrigo</span></h4>
       <div style="font-size:18px;color:#cfd8dc;line-height:1.2" id="shelter-auto-prompt">
         <span style="color:#666;margin-right:8px">·</span>
         <!-- Rev149: vuelta a <a> con href="#" — el button hizo trabajo de
@@ -2366,28 +2507,30 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <!-- Rev132: hist ola — labels horarias en HTML overlay (no SVG text, que
          se deformaba con preserveAspectRatio:none). SVG solo barras + líneas
          verticales finas. Altura SVG reducida a 32 px (gana ~12 px). -->
+    <!-- Rev557 (feedback Carlos #8): "sube altura de gráfica de barras olas y
+         aumenta tamaño Historial de olas en fondeo · ... · Fondeado a las
+         10:17 · 171 barras · 14.3h". Cabecera 16→24 px (+50%). Altura SVG
+         94→140 px (+49%). Yaxis labels 13→20 px (+54%). ⓘ 17→22 px. -->
     <div id="shelter-wave-hist-wrap" style="margin:0;flex:0 0 auto;position:relative;top:-40px;display:none">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:16px;font-weight:700">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;font-size:24px;font-weight:700">
         <span style="color:#9ad" data-i18n="sh_hist_olas">Historial de olas en fondeo</span>
         <span style="color:#666;font-weight:500">·</span>
         <span style="color:#888;font-weight:600" data-i18n="sh_15min_bar">5 min por barra</span>
-        <span id="shelter-wave-hist-meta" style="margin-left:auto;color:#aaa;font-weight:500"></span>
-        <span onclick="event.stopPropagation();openPopup('wave-hist-info-pop');_renderWaveHistInfo()" style="margin-left:6px;color:#9ad;font-weight:900;cursor:pointer;font-size:17px;border:1px solid #9ad;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;line-height:1" title="Leyenda + tabla">ⓘ</span>
+        <span id="shelter-wave-hist-meta" style="margin-left:auto;color:#aaa;font-weight:500;font-size:22px"></span>
+        <span onclick="event.stopPropagation();openPopup('wave-hist-info-pop');_renderWaveHistInfo()" style="margin-left:6px;color:#9ad;font-weight:900;cursor:pointer;font-size:22px;border:1px solid #9ad;border-radius:50%;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;line-height:1" title="Leyenda + tabla">ⓘ</span>
       </div>
-      <!-- Rev380: flex row con escalas en AMBOS LADOS + scroll en medio.
-           Altura SVG 75→94 px (+25%). Gridlines van de lado a lado del wrap. -->
       <div style="display:flex;align-items:stretch;gap:0">
         <!-- yaxis IZQUIERDO (fijo) -->
-        <div id="shelter-wave-hist-yaxis-left" style="position:relative;flex:0 0 80px;height:94px;pointer-events:none;font-size:13px;font-weight:700;color:rgba(255,255,255,.9);text-shadow:0 1px 1px rgba(0,0,0,.6);line-height:1"></div>
+        <div id="shelter-wave-hist-yaxis-left" style="position:relative;flex:0 0 90px;height:140px;pointer-events:none;font-size:20px;font-weight:700;color:rgba(255,255,255,.9);text-shadow:0 1px 1px rgba(0,0,0,.6);line-height:1"></div>
         <div id="shelter-wave-hist-scroll" style="position:relative;overflow-x:auto;overflow-y:visible;flex:1 1 auto;min-width:0">
-          <svg id="shelter-wave-hist-svg" height="94" viewBox="0 0 100 42" preserveAspectRatio="none" onclick="openPopup('wave-hist-info-pop');_renderWaveHistInfo()" style="display:block;background:rgba(0,0,0,.32);border:1px solid rgba(255,255,255,.14);border-radius:4px;cursor:pointer;height:94px"></svg>
-          <div id="shelter-wave-hist-labels" style="position:absolute;top:2px;left:0;height:15px;pointer-events:none;font-size:13px;font-weight:800;color:rgba(255,255,255,.75);line-height:1"></div>
-          <div id="shelter-wave-hist-anchor" style="position:absolute;top:0;left:0;height:94px;pointer-events:none;display:none">
-            <span style="position:absolute;top:50%;transform:translate(-50%,-50%);color:#ffb23f;font-size:36px;font-weight:900;line-height:1;text-shadow:0 2px 4px rgba(0,0,0,.95)">⚓</span>
+          <svg id="shelter-wave-hist-svg" height="140" viewBox="0 0 100 42" preserveAspectRatio="none" onclick="openPopup('wave-hist-info-pop');_renderWaveHistInfo()" style="display:block;background:rgba(0,0,0,.32);border:1px solid rgba(255,255,255,.14);border-radius:4px;cursor:pointer;height:140px"></svg>
+          <div id="shelter-wave-hist-labels" style="position:absolute;top:2px;left:0;height:18px;pointer-events:none;font-size:18px;font-weight:800;color:rgba(255,255,255,.75);line-height:1"></div>
+          <div id="shelter-wave-hist-anchor" style="position:absolute;top:0;left:0;height:140px;pointer-events:none;display:none">
+            <span style="position:absolute;top:50%;transform:translate(-50%,-50%);color:#ffb23f;font-size:48px;font-weight:900;line-height:1;text-shadow:0 2px 4px rgba(0,0,0,.95)">⚓</span>
           </div>
         </div>
         <!-- yaxis DERECHO (fijo) -->
-        <div id="shelter-wave-hist-yaxis" style="position:relative;flex:0 0 80px;height:94px;pointer-events:none;font-size:13px;font-weight:700;color:rgba(255,255,255,.9);text-shadow:0 1px 1px rgba(0,0,0,.6);line-height:1"></div>
+        <div id="shelter-wave-hist-yaxis" style="position:relative;flex:0 0 90px;height:140px;pointer-events:none;font-size:20px;font-weight:700;color:rgba(255,255,255,.9);text-shadow:0 1px 1px rgba(0,0,0,.6);line-height:1"></div>
       </div>
     </div>
     <!-- Rev509 (Gemini/GPT): sub-modales shelter EXTRAÍDOS de aquí y movidos
@@ -2400,10 +2543,25 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <!-- Rev80: strip con botón AHORA a la izquierda (doble ancho) que vuelve
          a la vista actual. El detail panel separado YA NO EXISTE — la info
          de la hora seleccionada se muestra en el shelter-status arriba. -->
-    <div id="shelter-hours-row" style="display:flex;gap:6px;align-items:center;margin:0;flex-wrap:nowrap;overflow:visible;padding:0;flex:0 0 auto;width:100%;position:relative;top:-19px;justify-content:center">
+    <!-- Rev554 (feedback Carlos): "cuando no llene ancho, justificado al
+         centro y en scroll siempre carga con AHORA visible". Cambiado a
+         `justify-content:safe center` (CSS3 safe alignment, soportado en
+         Chrome 93+ / Safari 14+ / Firefox 63+): cuando el contenido cabe,
+         centra; cuando no, vuelve a flex-start sin cortar el primer item.
+         Además, separamos del header (margin-top en lugar del top:-19 previo
+         — el negativo hacía que la celda seleccionada con scale 1.18 se
+         montase sobre el header). -->
+    <div id="shelter-hours-row" style="display:flex;gap:6px;align-items:center;margin:14px 0 0;flex-wrap:nowrap;overflow:visible;padding:0;flex:0 0 auto;width:100%;position:relative;top:0;justify-content:safe center">
       <!-- Rev375→Rev376: NOW idéntico en tamaño/altura/fuente a las celdas del strip. -->
       <button id="shelter-now-btn" onclick="_shelterSelectHour(null)" style="flex:0 0 auto;width:110px;height:92px;border-radius:10px;border:2px solid rgba(255,255,255,.4);background:rgba(255,235,59,.1);color:#ffeb3b;font-weight:900;font-size:17px;letter-spacing:1.4px;cursor:pointer;transition:all .15s" data-i18n="m_ahora">AHORA</button>
-      <div id="shelter-hours" style="display:flex;gap:7px;justify-content:space-evenly;flex:1 1 auto;flex-wrap:nowrap;overflow:visible;min-width:0"></div>
+      <!-- Rev557 (feedback Carlos: "centra strip, debe haber algo que lo
+           descoloca, marco más grande de lo que se ocupa"): cambiado
+           `flex:1 1 auto` (ocupaba todo el espacio sobrante del row →
+           empujaba el conjunto NOW+items a la izquierda) por `flex:0 0 auto`
+           (toma sólo el ancho del contenido). Con `justify-content:safe
+           center` en el row padre, el conjunto entero queda centrado cuando
+           cabe y se desplaza a flex-start cuando hay overflow. -->
+      <div id="shelter-hours" style="display:flex;gap:7px;justify-content:center;flex:0 0 auto;flex-wrap:nowrap;overflow:visible;min-width:0"></div>
     </div>
     <!-- Rev94: botón Cerrar inferior eliminado. Cerrar mediante ✕ arriba dcha. -->
   </div>
@@ -2679,7 +2837,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
         <span style="color:#ff5577;font-size:1em;line-height:1">❤</span>
         <span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-38%);color:#4dd0ff;font-size:.55em;text-shadow:0 0 2px #000,0 0 2px #000;line-height:1">⚓</span>
       </span>
-      <span data-i18n="fav_title_text">Listado de últimos fondeos y favoritos</span>
+      <span data-i18n="fav_title_text">Últimos fondeos</span>
     </h4>
 
     <!-- Bloque save: solo visible cuando hay ancla en posicion conocida no-fav -->
@@ -2895,10 +3053,12 @@ var _unitsSystem = localStorage.getItem('ihm-visor-units') || 'metric_nautical';
 /* Rev489-490: dos celdas nuevas tras "sonda" — "dif_lw" (bajada en cm hasta
    próxima bajamar) y "prof_min" (sonda esperada en esa bajamar). Vicente
    pidió ambas para fondear con margen. */
-window._BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","sunrise","wx_6h","wave"];
+/* Rev556: añadido t_fondeo (tiempo transcurrido desde drop). */
+window._BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","t_fondeo","sunrise","wx_6h","wave"];
 /* Rev535 (B-25): default snapshot del orden de Carlos (Tunatunes). MISMO que
-   DEFAULT_BB_ORDER de src/index.ts L352. Si cambia ahí, cambiar aquí. */
-window._BB_DEFAULT_ORDER = ["sog","wind","sonda","tide","sunrise","cad_rec","dist_ancla","h_fondeo","calidad","abrigo"];
+   DEFAULT_BB_ORDER de src/index.ts L352. Si cambia ahí, cambiar aquí.
+   Rev556: añadido t_fondeo (tiempo desde drop) tras h_fondeo. */
+window._BB_DEFAULT_ORDER = ["sog","wind","sonda","tide","sunrise","cad_rec","dist_ancla","h_fondeo","t_fondeo","calidad","abrigo"];
 window._bbOrder = window._bbOrder || window._BB_DEFAULT_ORDER.slice();
 function m_applyBBOrder(arr){
   var bar = document.getElementById('m-bottom-bar');
@@ -2921,7 +3081,20 @@ function m_applyBBOrder(arr){
   // Rev455: quitar separador derecho a la ultima celda visible.
   allCells.forEach(function(el){ el.classList.remove('no-sep'); });
   var visible = arr.map(function(k){ return byKey[k]; }).filter(function(el){ return el; });
-  if (visible.length) visible[visible.length - 1].classList.add('no-sep');
+  /* Rev562 (feedback Carlos): cuando existe el widget "+" (#m-bb-config-cell)
+     SIEMPRE va el último visualmente. Por tanto:
+     1. El último data-bb-cell NO debe llevar `no-sep` — necesita su separador
+        para no quedar pegado al "+".
+     2. Re-append del "+" al final del DOM tras el reorden, garantizando
+        posición (en lugar de depender sólo de `order:9999` que algunos
+        navegadores aplican de forma inconsistente con flex+scroll). */
+  var cfgCell = document.getElementById('m-bb-config-cell');
+  if (visible.length && !cfgCell) {
+    visible[visible.length - 1].classList.add('no-sep');
+  }
+  if (cfgCell) {
+    bar.appendChild(cfgCell);  // siempre al final del DOM
+  }
   // Actualizar indicadores de scroll tras el reflow.
   try { m_updateBBScrollIndicators(); } catch(_){}
 }
@@ -3053,6 +3226,21 @@ var unitFmt = (function(){
     },
     /* short distance (meters only or feet), for sonda etc */
     shortDistance: function(m, d){ if(m==null||!isFinite(m))return '—'; return _isImperial() ? pad(m*M_TO_FT, d||0)+' ft' : pad(m, d||0)+' m'; },
+    /* Rev561 (feedback Carlos): distancia "terrestre" — métrico SIEMPRE m/km
+       (sin millas náuticas aunque el sistema sea metric_nautical), imperial
+       SIEMPRE ft/mi (sin NM aunque sea imperial_*_nautical). Para el listado
+       AIS y otros contextos donde NM confunde (un barco amarrado a 800 m no
+       tiene sentido en 0.43 NM). */
+    distanceLand: function(m, d){
+      if(m==null||!isFinite(m))return '—';
+      if(_isImperial()){
+        var mi = m*0.000621371;
+        if(mi<0.1) return pad(m*M_TO_FT, d||0)+' ft';
+        return pad(mi, d||2)+' mi';
+      }
+      if(m<1000) return pad(m, d||0)+' m';
+      return pad(m/1000, d||2)+' km';
+    },
     /* temperature in Celsius */
     temp: function(c, d){ if(c==null||!isFinite(c))return '—'; return _isImperial() ? pad(c*9/5+32, d||0)+' °F' : pad(c, d||0)+' °C'; },
     /* pressure in hPa */
@@ -3327,6 +3515,7 @@ function _bbCellName(key){
     case 'cad_rec':     return t('bb_cadena_rec','Cadena rec.');
     case 'dist_ancla':  return t('bb_dist_ancla','Dist. ancla');
     case 'h_fondeo':    return t('bb_anchored_since','H. fondeo');
+    case 't_fondeo':    return t('bb_elapsed','T. fondeo');
     case 'sunrise':     return t('bb_sunrise','Sol') + ' (' + (_lang === 'en' ? 'sunrise/sunset' : 'amanecer/atardecer') + ')';
     case 'wx_6h':       return t('bb_wx6h','Prev +6h') + ' (' + (_lang === 'en' ? 'weather forecast' : 'previsión meteo') + ')';
     case 'wave':        return t('bb_wave','Olas') + ' (' + (_lang === 'en' ? 'IMU sea state' : 'estado del mar IMU') + ')';
@@ -3456,7 +3645,10 @@ function m_applyUnitsToUI(){
     }
     /* Rev425: AIS slider label (estatico, no se redibuja en poll) */
     var aisRadEl = document.getElementById('ais-radius-val');
-    if (aisRadEl && typeof _aisRadiusKm === 'number') aisRadEl.textContent = unitFmt.distance(_aisRadiusKm * 1000);
+    /* Rev562 (feedback Carlos): slider radio AIS en m/km (métrico) o ft/mi
+       (imperial), sin NM aunque el sistema sea náutico — coherente con el
+       listado AIS (Rev561). */
+    if (aisRadEl && typeof _aisRadiusKm === 'number') aisRadEl.textContent = unitFmt.distanceLand(_aisRadiusKm * 1000);
     /* Rev425: AIS list refresh — loadAIS() repinta marcadores+lista con
        distancias usando unitFmt. Solo dispara si la AIS list/popup esta abierta. */
     try {
@@ -3535,18 +3727,17 @@ function m_updateTideBottom(){
   // Rev453: solo el triangulo en color, % en blanco para legibilidad.
   valEl.innerHTML = '<span style="color:'+color+'">' + arrow + '</span> ' + pct + '%';
   valEl.style.color = '';
-  // Label del proximo extremo: "PM 3.2m 14:23" / "HW 10.5ft 14:23".
+  // Rev556 (feedback Carlos #9b "de Marea deja PM a las HH:MM, quita la altura"):
+  // sub-label simplificado a "PM a las 14:23" / "BM a las 02:15". La altura
+  // ya vive en el widget propio "Dif. Bajamar" + curvas, no hace falta aquí.
   var nT2 = new Date(next.time);
   var pad = function(n){ return ('0'+n).slice(-2); };
   var hhmm = pad(nT2.getHours()) + ':' + pad(nT2.getMinutes());
   var label = rising
     ? ((typeof T === 'function') ? T('tide_pm_short', 'PM') : 'PM')
     : ((typeof T === 'function') ? T('tide_bm_short', 'BM') : 'BM');
-  var hStr = (typeof next.height === 'number' && isFinite(next.height) && typeof unitFmt !== 'undefined' && unitFmt.depth)
-    ? unitFmt.depth(next.height, 1)
-    : '';
-  // Solo triangulo en color tambien en la sub-linea.
-  nextEl.innerHTML = '<span style="color:'+color+'">' + label + '</span> ' + (hStr ? (hStr + ' ') : '') + hhmm;
+  var _atTxt = (_lang === 'en') ? 'at' : 'a las';
+  nextEl.innerHTML = '<span style="color:'+color+'">' + label + '</span> ' + _atTxt + ' ' + hhmm;
   nextEl.style.color = '';
 }
 /* Tick cada 60s para que el porcentaje vaya progresando aunque no
@@ -3815,6 +4006,12 @@ var _i18n={
   bb_dist_ancla:{es:'Dist. ancla',en:'Dist. anchor'},
   bb_anchored_since:{es:'H. fondeo',en:'Anch. h.'},
   bb_anchored_since_tip:{es:'Hora del fondeo (+N días si han pasado uno o más)',en:'Time of anchor drop (+N days if elapsed)'},
+  /* Rev556 (feedback Carlos #9c): widget tiempo transcurrido desde drop. */
+  bb_elapsed:{es:'T. fondeo',en:'Anch. t.'},
+  bb_elapsed_tip:{es:'Tiempo transcurrido desde el fondeo',en:'Elapsed time since anchor drop'},
+  /* Rev556 (feedback Carlos): widget "+" para abrir config widgets. */
+  bb_cfg:{es:'Widgets',en:'Widgets'},
+  bb_cfg_tip:{es:'Configurar widgets de la barra inferior',en:'Configure bottom-bar widgets'},
   bb_presion:{es:'Presión',en:'Pressure'},
   bb_abrigo:{es:'Abrigo',en:'Shelter'},
   bb_calidad:{es:'Calidad',en:'Quality'},
@@ -3923,6 +4120,9 @@ var _i18n={
   met_atardece:{es:'Atardece',en:'Sunset'},
   m_calma:{es:'Calma',en:'Calm'},
   sh_detected:{es:'Detectado',en:'Detected'},
+  /* Rev555 (feedback Carlos #11): plural-aware del texto sectores abrigados. */
+  sh_detected_pl:{es:'Detectados',en:'Detected'},
+  sh_sector_sg:{es:'sector abrigado',en:'sheltered sector'},
   sh_sectores:{es:'sectores abrigados',en:'sheltered sectors'},
   /* Rev313: tooltips bottom bar */
   bb_velocidad_tip:{es:'Velocidad sobre fondo',en:'Speed over ground'},
@@ -4005,7 +4205,10 @@ var _i18n={
   fav_omitir:{es:'No guardar — ver lista',en:"Don't save — view list"},
   fav_save_hist_title:{es:'📍 Últimas posiciones del ancla',en:'📍 Recent anchor positions'},
   fav_save_hist_empty:{es:'Sin posiciones guardadas todavía.',en:'No anchor positions saved yet.'},
-  fav_title_text:{es:'Listado de últimos fondeos y favoritos',en:'Recent anchorages and favourites'},
+  /* Rev549 (feedback Carlos): título reducido a "Últimos fondeos" — el modal
+     ya incluye dentro las secciones FONDEOS FAVORITOS + ÚLTIMOS FONDEOS, así
+     que el título superior sólo agrupa por contexto. */
+  fav_title_text:{es:'Últimos fondeos',en:'Recent anchorings'},
   fav_block_title:{es:'FONDEOS FAVORITOS:',en:'FAVOURITE ANCHORAGES:'},
   fav_block_empty:{es:'Aún no hay favoritos guardados.',en:'No favourites saved yet.'},
   fav_save_hist_title:{es:'ÚLTIMOS FONDEOS:',en:'RECENT ANCHORAGES:'},
@@ -4132,6 +4335,9 @@ var _i18n={
   ais_preg_body:{es:'¿Activar alarma de colisión por barcos cercanos (AIS)? Detectará si otro barco entra en tu radio de borneo.',en:'Activate collision alarm from nearby ships (AIS)? It will warn you if another vessel enters your swing radius.'},
   ais_preg_si:{es:'Sí, activar',en:'Yes, enable'},
   ais_preg_no:{es:'No, ahora no',en:'No, not now'},
+  /* Rev549 (feedback Carlos): revertido — el 📍 NO se debía quitar. Carlos
+     se refería al título del modal m-fav-save-pop (fav_title_text), no a
+     este label del menú hamburguer. */
   ultimas_pos:{es:'📍 Últimos fondeos',en:'📍 Recent anchorings'},
   atras_back:{es:'‹ Atrás',en:'‹ Back'},
   tracks_plugin:{es:'📡 Tracks Plugin',en:'📡 Tracks Plugin'},
@@ -4195,7 +4401,9 @@ var _i18n={
   wx_loading:{es:'Meteo: cargando…',en:'Weather: loading…'},
   wx_no_data:{es:'Meteo: sin datos',en:'Weather: no data'},
   wx_calm:{es:'Meteo OK',en:'Weather OK'},
-  shelter_title:{es:'⚓ Previsión de Abrigo',en:'⚓ Shelter forecast'},
+  /* Rev552 (feedback Carlos): icono unificado con el sidebar — 🏔️ tanto en
+     header del modal como en botón sidebar. ⚓ se confunde con fondear ancla. */
+  shelter_title:{es:'🏔️ Previsión de Abrigo',en:'🏔️ Shelter forecast'},
   shelter_hint:{es:'Marca con verde los sectores ABRIGADOS (tierra, dique, costa upwind). Los sectores rojos son ABIERTOS.',en:'Tap green for SHELTERED sectors (land, breakwater, upwind coast). Red sectors are OPEN.'},
   shelter_clear:{es:'Limpiar todo',en:'Clear all'},
   shelter_legend_title:{es:'Escala de exposición',en:'Exposure scale'},
@@ -4369,7 +4577,8 @@ function _setAisRadius(v){
   _aisRadiusKm=n;
   try{localStorage.setItem('ihm-ais-radius-km',String(n));}catch(e){}
   var lbl=document.getElementById('ais-radius-val');
-  if(lbl)lbl.textContent=unitFmt.distance(n*1000);
+  /* Rev562: slider radio AIS sin NM aunque sea sistema náutico (Carlos). */
+  if(lbl)lbl.textContent=unitFmt.distanceLand(n*1000);
   /* Refrescar visuales y evaluacion inmediatamente. */
   if(typeof refreshAisIcons==='function'){try{refreshAisIcons();}catch(e){}}
   if(typeof aisTargets!=='undefined'&&typeof checkAisBorneoAlarm==='function'){
@@ -7469,10 +7678,25 @@ function _wxRefreshChip(){
     /* Rev67: 24h pressure sparkline. Auto-scaled to the local min/max so
        small deltas (e.g., 1015 → 1018 hPa) are still visible as motion.
        Rev80: cache past pressures for re-use in the shelter info box. */
+    var _prevPastP = _wxLastPast24hPressureHpa;
     _wxLastPast24hPressureHpa=j.forecast.past24hPressureHpa||null;
     /* Rev319: cachear future12h y range para que la curva future de la bottom
        bar use el MISMO escalado vertical que la past (continuidad visual). */
     _wxLastFuture12hPressureHpa=j.forecast.future12hPressureHpa||null;
+    /* Rev560 (feedback Carlos: "barra de presión tarda en salir en infobox"):
+       cuando _wxRefreshChip termina el primer fetch (1.5 s tras carga) o llega
+       data nueva tras un null previo, el infobox del shelter (si está abierto
+       y viendo AHORA) NO se repintaba — quedaba sin sparkline hasta el próximo
+       SSE/viento (5-60 s). Disparamos _shelterRenderPopup() inmediatamente. */
+    try {
+      var _justGotPast = (!_prevPastP || _prevPastP.length === 0) && Array.isArray(_wxLastPast24hPressureHpa) && _wxLastPast24hPressureHpa.length > 0;
+      if (_justGotPast) {
+        var _pop = document.getElementById('shelter-pop');
+        if (_pop && _pop.classList.contains('open') && typeof _isViewingNow === 'function' && _isViewingNow() && typeof _shelterRenderPopup === 'function') {
+          _shelterRenderPopup();
+        }
+      }
+    } catch(_){}
     var past=j.forecast.past24hPressureHpa;
     if(Array.isArray(past)&&past.length>0){
       var pts=past.concat([c.pressureHpa]); // include current at the tail
@@ -7969,6 +8193,10 @@ function _refreshBoatWind(){
     }
     /* Visor mapa: marker viento sobre el círculo de alarma. */
     if(typeof _wxMapMarkerUpdate==='function'){try{_wxMapMarkerUpdate();}catch(e){}}
+    /* Rev555 (feedback Carlos): refresca la celda viento del bottom-bar en
+     el MISMO tick que la flecha del visor — antes iban desfasadas porque la
+     celda esperaba al tick lento m_syncBottomBarGraphs. */
+    if(typeof _updateBBWindCell==='function'){try{_updateBBWindCell();}catch(e){}}
     /* wx-bar (barra superior): actualiza la celda viento al instante cuando
        hay dato fresco; cuando el sensor se pierde (fresh→null), dispara un
        _wxRefreshChip para recuperar el valor de Open-Meteo sin esperar 60 s. */
@@ -8413,8 +8641,14 @@ function _shelterRenderPopup(){
     var _stLink=document.getElementById('shelter-auto-status');
     if (_stLink && _shelterCache && Array.isArray(_shelterCache.mask)) {
       var _n=_shelterCache.mask.filter(function(v){return !!v;}).length;
-      var _dT=(typeof T==='function')?T('sh_detected','Detectado'):'Detectado';
-      var _sT=(typeof T==='function')?T('sh_sectores','sectores abrigados'):'sectores abrigados';
+      /* Rev555 (feedback Carlos #11): plural-aware. N=1 → "Detectado 1
+         sector abrigado" / N>1 → "Detectados N sectores abrigados". */
+      var _dT=(_n===1)
+        ? ((typeof T==='function')?T('sh_detected','Detectado'):'Detectado')
+        : ((typeof T==='function')?T('sh_detected_pl','Detectados'):'Detectados');
+      var _sT=(_n===1)
+        ? ((typeof T==='function')?T('sh_sector_sg','sector abrigado'):'sector abrigado')
+        : ((typeof T==='function')?T('sh_sectores','sectores abrigados'):'sectores abrigados');
       _stLink.textContent=_dT+' '+_n+' '+_sT;
     }
   } catch(_){}
@@ -8472,8 +8706,11 @@ function _shelterRenderPopup(){
     /* Rev315: badges Veleta/Sensor i18n. */
     var _badgeVeletaTxt=(typeof T==='function')?T('sh_veleta','Veleta'):'Veleta';
     var _badgeSensorTxt=(typeof T==='function')?T('sh_sensor','Sensor'):'Sensor';
-    var _BADGE_VELETA=' <span style="color:#3aa856;font-size:11px;font-weight:800;margin-left:4px">'+_badgeVeletaTxt+'</span>';
-    var _BADGE_SENSOR=' <span style="color:#3aa856;font-size:10px;font-weight:800;margin-left:3px">'+_badgeSensorTxt+'</span>';
+    /* Rev556 (feedback Carlos: "siguen enanos los textos verdes Veleta/IMU/Sensor"):
+       badges 10/11→22 px. Con zoom 0.6 heredado, eso visualmente ≈ 13 px,
+       que es legible junto a los valores 20-24 px. */
+    var _BADGE_VELETA=' <span style="color:#3aa856;font-size:22px;font-weight:800;margin-left:6px">'+_badgeVeletaTxt+'</span>';
+    var _BADGE_SENSOR=' <span style="color:#3aa856;font-size:22px;font-weight:800;margin-left:6px">'+_badgeSensorTxt+'</span>';
     var _useSensorWind=isNow&&_boatWind;
     var _useSensorEnv=isNow&&_envSensors;
     var stWindKt,stDirDeg,windBadge;
@@ -8507,7 +8744,7 @@ function _shelterRenderPopup(){
       var _wbCalmI=(_boatWave.intensity==='calma')&&(typeof _boatWave.heightSigM!=='number'||_boatWave.heightSigM<0.05);
       if(_wbCalmI){
         waveLine='🌊 <b style="font-size:21px">Mar en calma</b>'+
-          ' <span style="color:#3aa856;font-size:11px;font-weight:800;margin-left:4px">IMU</span>';
+          ' <span style="color:#3aa856;font-size:22px;font-weight:800;margin-left:6px">IMU</span>';
       }else{
         var _wbDir=(typeof _boatWave.dirFromDeg==='number'&&_wxC16)?_wxC16(_boatWave.dirFromDeg):'';
         var _wbPerStr=(typeof _boatWave.periodSec==='number'&&_boatWave.periodSec>0)?Math.round(_boatWave.periodSec)+' s':'';
@@ -8519,7 +8756,7 @@ function _shelterRenderPopup(){
         }
         waveLine='🌊 <b style="font-size:21px">'+_wbMain+'</b> <span style="color:#9ad">'+_wbDir+'</span>'+
           (_wbPerStr?' <span style="color:#aaa">·</span> <b>'+_wbPerStr+'</b>':'')+
-          ' <span style="color:#3aa856;font-size:11px;font-weight:800;margin-left:4px">IMU</span>';
+          ' <span style="color:#3aa856;font-size:22px;font-weight:800;margin-left:6px">IMU</span>';
       }
     }else{
       waveLine=(typeof hSt.waveHeightM==='number'&&hSt.waveHeightM>0)
@@ -8647,8 +8884,10 @@ function _shelterRenderPopup(){
     var pressureNumLine=pres>0
       ? '<div style="white-space:nowrap">📊 <b style="font-size:22px">'+(_presParts[0]||'—')+'</b> <span style="font-size:15px;color:#aaa">'+(_presParts[1]||'')+'</span>'+presBadge+'</div>'
       : '<div>📊 <span style="color:#666">—</span></div>';
+    /* Rev554 (feedback Carlos: "dale más altura aún"): sparkline de presión
+       95→120 (+26% sobre Rev553, +60% total sobre 75 px original). */
     var sparkRow=pres>0
-      ? '<div style="height:75px;display:block">'+sparkSvg+'</div>'
+      ? '<div style="height:120px;display:block">'+sparkSvg+'</div>'
       : '';
     /* Rev140: temperaturas con sensor SK cuando AHORA + disponible. */
     var tempA,tempABadge;
@@ -8776,6 +9015,16 @@ function _shelterRenderPopup(){
       }
       strip.appendChild(cell);
     }
+    /* Rev554 (feedback Carlos): "en scroll siempre carga con AHORA visible".
+       Tras renderizar el strip, forzar scrollLeft=0 para que el NOW button
+       (primer hijo de #shelter-hours-row) quede SIEMPRE visible al abrir o
+       refrescar el modal. Con `justify-content:safe center`, el browser
+       puede dejar scrollLeft en una posición intermedia auto-calculada;
+       resetearlo a 0 garantiza la vista pedida. */
+    try {
+      var _shrRow=document.getElementById('shelter-hours-row');
+      if (_shrRow) _shrRow.scrollLeft=0;
+    } catch(_){}
   }
 }
 /* Rev63: pointer-paint handlers. On pointerdown, record the target state and
@@ -8901,8 +9150,14 @@ function shelterAutoDetect(distNm){
       var n;
       if (Array.isArray(j.mask)) n = j.mask.filter(function(v){return !!v;}).length;
       else n = (j.auto && j.auto.sectorsSheltered) || 0;
-      var _detTxt=(typeof T==='function')?T('sh_detected','Detectado'):'Detectado';
-      var _sectTxt=(typeof T==='function')?T('sh_sectores','sectores abrigados'):'sectores abrigados';
+      /* Rev555 (feedback Carlos #11): plural-aware en este path también
+         (auto-detect). */
+      var _detTxt=(n===1)
+        ? ((typeof T==='function')?T('sh_detected','Detectado'):'Detectado')
+        : ((typeof T==='function')?T('sh_detected_pl','Detectados'):'Detectados');
+      var _sectTxt=(n===1)
+        ? ((typeof T==='function')?T('sh_sector_sg','sector abrigado'):'sector abrigado')
+        : ((typeof T==='function')?T('sh_sectores','sectores abrigados'):'sectores abrigados');
       status.textContent=_detTxt+' '+n+' '+_sectTxt;
     }
     if(meta)meta.innerHTML='';
@@ -9108,6 +9363,20 @@ _shelterRenderBar=function(){_wxOrigRender.apply(this,arguments);_wxMapMarkerUpd
 var _trkLastRenderedLen=0;
 var _trkLastFullRebuildMs=0;
 function updateTrackGradient(force){
+  /* Rev552 (feedback Carlos: "sigo sin ver track"): pane custom de Leaflet con
+     zIndex alto (650) para garantizar que las polylines van ENCIMA de tiles
+     (default 200) y overlay (default 400). Si las polylines existían pero
+     quedaban tapadas por algún tile layer con z-index alterado, este pane lo
+     resuelve definitivamente. console.warn (no log) para que sea visible
+     incluso si Carlos filtra info en DevTools. */
+  try {
+    if (!map.getPane('trackPane')) {
+      map.createPane('trackPane');
+      var _p = map.getPane('trackPane');
+      if (_p) { _p.style.zIndex = '650'; _p.style.pointerEvents = 'none'; }
+    }
+  } catch(_){}
+  try { console.warn('[IHM-TRACK] trkPts=' + trkPts.length + ' rendered=' + ((window._trkGradLines && window._trkGradLines.length) || 0) + ' force=' + !!force); } catch(_){}
   if(trkPts.length<2){
     if(window._trkGradLines){window._trkGradLines.forEach(function(l){if(map.hasLayer(l))map.removeLayer(l);});}
     window._trkGradLines=[];
@@ -9132,7 +9401,9 @@ function updateTrackGradient(force){
       var r=Math.round(220*(1-frac)+30*frac);
       var g=Math.round(50*(1-frac)+220*frac);
       var col='rgb('+r+','+g+',50)';
-      var ln=L.polyline(pts,{color:col,weight:3,opacity:.8}).addTo(map);
+      /* Rev552: pane custom trackPane (zIndex 650) garantiza visibilidad por
+         encima de tiles y overlay. Weight 5, opacity 0.95. */
+      var ln=L.polyline(pts,{pane:'trackPane',color:col,weight:5,opacity:.95}).addTo(map);
       window._trkGradLines.push(ln);
     }
     _trkLastRenderedLen=trkPts.length;
@@ -9144,7 +9415,7 @@ function updateTrackGradient(force){
     var newPts=[];
     for(var k=startIdx;k<trkPts.length;k++)newPts.push(trkPts[k].ll);
     if(newPts.length>=2){
-      var lnNew=L.polyline(newPts,{color:'rgb(30,220,50)',weight:3,opacity:.8}).addTo(map);
+      var lnNew=L.polyline(newPts,{pane:'trackPane',color:'rgb(30,220,50)',weight:5,opacity:.95}).addTo(map);
       window._trkGradLines.push(lnNew);
     }
     _trkLastRenderedLen=trkPts.length;
@@ -9540,7 +9811,9 @@ function showAisPopup(t,isBorneo){
       actionsEl.innerHTML=locateBtn+vfBtn;
     }
   }
-  var distStr = bPos ? unitFmt.distance(hav(bPos,{lat:t.lat,lng:t.lng})) : '–';
+  /* Rev561 (feedback Carlos): popup individual de target AIS también usa
+     distanceLand para coherencia con el listado (m/km en métrico). */
+  var distStr = bPos ? unitFmt.distanceLand(hav(bPos,{lat:t.lat,lng:t.lng})) : '–';
   var hdgStr=t.heading!=null?(t.heading*180/Math.PI).toFixed(0)+'°':(t.cog!=null?(t.cog*180/Math.PI).toFixed(0)+'°':'–');
   var statusTxt=t.isStatic?T('estatico'):T('dinamico');
   if(isBorneo&&!isAcked)statusTxt='<span style="color:var(--red);font-weight:700">'+T('en_zona_borneo')+'</span>';
@@ -9988,7 +10261,9 @@ function checkAisBorneoAlarm(targets){
       var _vfImo=(a.target&&a.target.imo&&/^\d+$/.test(String(a.target.imo)))?String(a.target.imo):'0';
       var _vfUrl='https://www.vesselfinder.com/pro/map#vessel-details?imo='+_vfImo+'&mmsi='+encodeURIComponent(a.cleanMmsi);
       var vfBtn='<span class="ais-vf-btn" data-vfurl="'+_vfUrl+'" style="cursor:pointer;font-size:18px;line-height:1;color:#9ad;margin-left:10px;padding:6px 10px;border:1px solid rgba(154,170,221,.5);border-radius:5px;user-select:none;flex:0 0 auto" title="Buscar en vesselfinder">\uD83D\uDD0D</span>';
-      item.innerHTML='<span style="display:flex;align-items:center;min-width:0;flex:1">'+favStar+'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ico+' '+dispName+(fl?' '+fl:'')+suffix+'</span>'+vfBtn+'</span><b style="color:'+dCol+';flex:0 0 auto">'+unitFmt.distance(a.dist)+'</b>';
+      /* Rev561 (feedback Carlos): listado AIS usa distanceLand → m/km en
+         métrico, ft/mi en imperial. Nunca NM aunque sistema sea náutico. */
+      item.innerHTML='<span style="display:flex;align-items:center;min-width:0;flex:1">'+favStar+'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ico+' '+dispName+(fl?' '+fl:'')+suffix+'</span>'+vfBtn+'</span><b style="color:'+dCol+';flex:0 0 auto">'+unitFmt.distanceLand(a.dist)+'</b>';
       item.onclick=(function(tgt,bor){
         return function(ev){
           /* Rev399: \u2605 y \uD83D\uDD0D no abren el popup; tienen su propia accion. */
@@ -11629,7 +11904,8 @@ document.addEventListener('DOMContentLoaded',function(){
     var _sl=document.getElementById('ais-radius-slider');
     var _lbl=document.getElementById('ais-radius-val');
     if(_sl){_sl.value=String(_aisRadiusKm);}
-    if(_lbl){_lbl.textContent = unitFmt.distance(_aisRadiusKm * 1000);}
+    /* Rev562: slider radio AIS coherente — distanceLand siempre. */
+    if(_lbl){_lbl.textContent = unitFmt.distanceLand(_aisRadiusKm * 1000);}
   }catch(_){}
   /* Rev398: sincronizar select de orden AIS con valor de localStorage. */
   try{
@@ -12067,17 +12343,18 @@ function m_pollBottomBar(){
         var en2 = (_lang === 'en');
         if (typeof finM === 'number' && isFinite(finM)) {
           var critical = finM < 1.0;  /* < 1m de sonda final = atencion aunque alarma OFF */
-          /* Rev490 (feedback usuario): sub-label SONDA mas compacto entre
-             parentesis. Los detalles "bajada -Xcm" + "hora LW" ya viven en
-             los widgets propios "Dif. Bajamar" y "Prof. min.". */
-          sst.textContent = '(' + (en2 ? 'final ' : 'final ') + unitFmt.depth(finM, 1) + ')';
+          /* Rev557 (feedback Carlos: "Siempre debe salir el dato, no solo
+             durante alarma"): sub-label compacto "(final X m)" SIEMPRE
+             visible, no sólo en alerta. Lo que se "quitaba" en Rev556 era la
+             palabra "final" — la quitamos pero mantenemos el valor numérico
+             entre paréntesis. Color naranja si crítico, verde claro si OK. */
+          sst.textContent = '(' + unitFmt.depth(finM, 1) + ')';
           sst.style.color = critical ? '#ffb23f' : '#66ffaa';
           sst.style.display = 'block';
         } else if (s.tideResume) {
-          /* Fallback: sin datos numericos pero hay resumen de marea. */
-          sst.textContent = (typeof T==='function')?T('bb_sonda_ok','OK · sin riesgo de varada'):'OK · sin riesgo de varada';
-          sst.style.color = '#66ffaa';
-          sst.style.display = 'block';
+          /* Rev556: "OK · sin riesgo de varada" eliminado — redundante con
+             widgets Marea + Abrigo. */
+          sst.style.display = 'none';
         } else { sst.style.display = 'none'; }
       }
     }
@@ -12277,24 +12554,12 @@ function m_syncBottomBarGraphs(){
         if (dstDonutText) dstDonutText.textContent = disp2.pct + '%';
       }
     }
-    /* Rev285: viento como flecha rotada (apunta FROM = dirFromDeg) con el
-       número de kt dentro. La rotación del path apunta el "cuerpo" hacia
-       la dirección de la que viene el viento (estándar náutico). */
-    if (typeof _boatWind !== 'undefined' && _boatWind && typeof _boatWind.speedKt === 'number') {
-      var arrowG = document.getElementById('m-bb-wind-arrow-g');
-      var ktTxt = document.getElementById('m-bb-wind-kt-txt');
-      if (arrowG && typeof _boatWind.dirFromDeg === 'number') {
-        var toDir = (_boatWind.dirFromDeg + 180) % 360;
-        arrowG.setAttribute('transform', 'rotate(' + toDir.toFixed(0) + ' 14 11)');
-      }
-      /* Rev423: cacheamos viento en m/s para formateo dinamico segun unidades. */
-      _lastWindSpeedMs = _boatWind.speedKt / 1.94384;
-      if (ktTxt) {
-        var _windStr = unitFmt.speed(_lastWindSpeedMs, 0);
-        var _windParts = _windStr.split(' ');
-        ktTxt.innerHTML = (_windParts[0] || '—') + '<span style="font-size:11px;font-weight:700;opacity:.75;margin-left:2px">' + (_windParts[1] || '') + '</span>';
-      }
-    }
+    /* Rev555 (feedback Carlos: "widget viento bottom-bar lleva retraso una
+       fase respecto a las flechas del visor"): extraido a _updateBBWindCell
+       para que pueda llamarse INMEDIATAMENTE desde _refreshBoatWind (cada
+       vez que llega dato fresco del backend), no sólo en el tick lento
+       m_syncBottomBarGraphs (_mPollSlow ≈ 6-10 s en Pi). */
+    if (typeof _updateBBWindCell === 'function') { _updateBBWindCell(); }
     /* Rev331 (item 13): muestra HORA del drop, no tiempo transcurrido.
        Si han pasado uno o más días desde el drop, sufijo "+N" al final.
        Formato:
@@ -12322,7 +12587,55 @@ function m_syncBottomBarGraphs(){
         anchTimeVal.textContent = '—';
       }
     }
+    /* Rev556 (feedback Carlos #9c): widget "T. fondeo" — duración desde drop.
+       Formato:
+         < 60min: "Xm"            (e.g. "23m")
+         < 24h:   "Xh Ym"         (e.g. "5h 12m")
+         >= 24h:  "Xd Yh"         (e.g. "2d 7h") */
+    var elCell = document.getElementById('m-bb-elapsed-cell');
+    var elVal  = document.getElementById('m-bb-elapsed');
+    if (elCell && elVal) {
+      if (_anchoredSinceMs && anch) {
+        var elapsedMs = Date.now() - _anchoredSinceMs;
+        var totalMin = Math.max(0, Math.floor(elapsedMs / 60000));
+        var elapsedTxt;
+        if (totalMin < 60) {
+          elapsedTxt = totalMin + 'm';
+        } else if (totalMin < 24*60) {
+          elapsedTxt = Math.floor(totalMin/60) + 'h ' + (totalMin%60) + 'm';
+        } else {
+          var totalH = Math.floor(totalMin / 60);
+          elapsedTxt = Math.floor(totalH/24) + 'd ' + (totalH%24) + 'h';
+        }
+        elVal.textContent = elapsedTxt;
+      } else {
+        elVal.textContent = '—';
+      }
+    }
   } catch(e){}
+}
+/* Rev555 (feedback Carlos): función dedicada para refrescar la celda viento
+   del bottom-bar. Llamada desde:
+   - m_syncBottomBarGraphs (tick lento, _mPollSlow): fallback.
+   - _refreshBoatWind (cada delta de viento, ~3-5 s): tiempo real, alineado
+     con la flecha del visor. Antes la celda iba con retraso de fase porque
+     SOLO se actualizaba en el tick lento. */
+function _updateBBWindCell(){
+  try {
+    if (typeof _boatWind === 'undefined' || !_boatWind || typeof _boatWind.speedKt !== 'number') return;
+    var arrowG = document.getElementById('m-bb-wind-arrow-g');
+    var ktTxt = document.getElementById('m-bb-wind-kt-txt');
+    if (arrowG && typeof _boatWind.dirFromDeg === 'number') {
+      var toDir = (_boatWind.dirFromDeg + 180) % 360;
+      arrowG.setAttribute('transform', 'rotate(' + toDir.toFixed(0) + ' 14 11)');
+    }
+    _lastWindSpeedMs = _boatWind.speedKt / 1.94384;
+    if (ktTxt) {
+      var _windStr = unitFmt.speed(_lastWindSpeedMs, 0);
+      var _windParts = _windStr.split(' ');
+      ktTxt.innerHTML = (_windParts[0] || '—') + '<span style="font-size:11px;font-weight:700;opacity:.75;margin-left:2px">' + (_windParts[1] || '') + '</span>';
+    }
+  } catch(_){}
 }
 setInterval(m_syncBottomBarGraphs, _mPollSlow);
 /* Rev331 (item 13): tick rápido SOLO del contador de fondeo (1 min suficiente
@@ -12346,6 +12659,26 @@ setInterval(function(){
       : hh+':'+mm;
   } catch(_){}
 }, 5*60*1000);
+/* Rev556 (feedback Carlos #9c): tick 1-min para la celda "T. fondeo" — la
+   duración avanza minuto a minuto, así Carlos ve el contador subir sin
+   esperar al tick lento m_syncBottomBarGraphs. */
+setInterval(function(){
+  try {
+    var elVal = document.getElementById('m-bb-elapsed');
+    if (!elVal) return;
+    if (!_anchoredSinceMs || !anch) { elVal.textContent = '—'; return; }
+    var elapsedMs = Date.now() - _anchoredSinceMs;
+    var totalMin = Math.max(0, Math.floor(elapsedMs / 60000));
+    if (totalMin < 60) {
+      elVal.textContent = totalMin + 'm';
+    } else if (totalMin < 24*60) {
+      elVal.textContent = Math.floor(totalMin/60) + 'h ' + (totalMin%60) + 'm';
+    } else {
+      var totalH = Math.floor(totalMin / 60);
+      elVal.textContent = Math.floor(totalH/24) + 'd ' + (totalH%24) + 'h';
+    }
+  } catch(_){}
+}, 60*1000);
 /* Refresca build-tag en hamburguesa */
 function m_updateBuildTag(){
   try {
@@ -12729,9 +13062,11 @@ function m_openMareas(){
     /* Rev538 (feedback Carlos): añadido <h4> para que _mInjectModalHeader
        muestre "🌊 Mareas" / "🌊 Tides" en el .m-title del header naranja.
        Antes no había h4 → titleHTML quedaba vacío → header sin título. */
+    /* Rev547: h4 display:none inline desde el inicio (mismo motivo que
+       m_openInstructions — Opera mobile no respetaba el ocultado por JS). */
     overlay.innerHTML =
       '<div class="popup-box" onclick="event.stopPropagation()" style="padding:0!important;overflow:hidden!important">' +
-        '<h4 id="m-mareas-title" style="margin:0">🌊 ' + ((_lang==='es') ? 'Mareas' : 'Tides') + '</h4>' +
+        '<h4 id="m-mareas-title" style="margin:0;display:none">🌊 ' + ((_lang==='es') ? 'Mareas' : 'Tides') + '</h4>' +
         '<iframe id="m-mareas-iframe" src="about:blank" scrolling="auto" allow="fullscreen" style="width:100%;height:100%;border:none;display:block;touch-action:pan-y"></iframe>' +
       '</div>';
     document.body.appendChild(overlay);
@@ -12781,9 +13116,14 @@ function m_openInstructions(){
        recoge _mInjectModalHeader y lo monta en el faldon naranja arriba. El
        iframe ocupa el espacio restante por debajo del header (padding-top
        104px del default .popup-overlay .popup-box). */
+    /* Rev547 (feedback Carlos): h4 con display:none INLINE desde el principio.
+       Opera mobile parece no respetar el style.display='none' aplicado por JS
+       en _mInjectModalHeader → el h4 quedaba visible como header fantasma
+       debajo del header naranja. Con display:none inline se garantiza ocultar
+       en cualquier navegador desde el primer paint. */
     overlay.innerHTML =
       '<div class="popup-box" onclick="event.stopPropagation()" style="overflow:hidden!important">' +
-        '<h4 id="m-instructions-title" style="margin:0">📖 Instrucciones</h4>' +
+        '<h4 id="m-instructions-title" style="margin:0;display:none">📖 Instrucciones</h4>' +
         '<iframe id="m-instructions-iframe" src="about:blank" scrolling="auto" allow="fullscreen" style="width:100%;border:none;display:block;touch-action:pan-y;flex:1 1 auto;min-height:0"></iframe>' +
       '</div>';
     document.body.appendChild(overlay);

@@ -1,5 +1,115 @@
 # Changelog
 
+## [2.3.4] - 2026-06-26
+
+### English
+
+**Shelter modal — readability, layout and weather chart fixes (Rev548-Rev562)**
+
+- **Infobox shelter — typography rebuild** validated by GPT-5 + Gemini Pro from first principles: removed the generic `span,div{font-size:22px}` rule that was breaking inheritance from id-containers; duplicate `#shelter-summary-text` declarations consolidated; base 22 px declared on `.shelter-popup-box` and overridden +8 nominal on each id (status-label 24→32, status-body 22→30, summary 26→34, auto-prompt 20→28, auto-status 22→30). Compensates the inherited `zoom: var(--ui-scale)` so the change is actually visible on mobile.
+- **Veleta / IMU / Sensor badges** in the infobox bumped 11→22 px (Veleta/Sensor) and IMU inline tag matched. Mar en calma now reads instead of being invisible under zoom.
+- **Wave history chart** taller: SVG 94→140 px (+49%), yaxis scale labels 13→20 px, header "Historial de olas en fondeo · 5 min por barra · Fondeado a las…" 16→24 px (+50%), ⓘ button 17→22 px.
+- **Pressure sparkline inside the infobox** taller (75→120 px, +60%) and arrives instantly on modal open instead of 5-60 s late — `_wxRefreshChip` now repaints the shelter popup the moment it fills `_wxLastPast24hPressureHpa` from null.
+- **Rose of sectors** scales properly on mobile — switched from `vmin` (which was being multiplied again by the inherited zoom) to fixed pixel values: 440 px desktop / 520 px mobile aligned with the height of the A/Grade column. No longer captures the entire tap area for swipe scroll.
+- **Sheltered sectors text** is now plural-aware: `Detectado 1 sector abrigado` vs `Detectados N sectores abrigados`. Applied in both the auto-detect path and the popup render path.
+- **Shelter scroll no longer covers header** — `.m-modal-hdr` z-index bumped from 10 to 2050 so `.shelter-hour.selected` (z-index 100) can no longer paint on top of it during scroll.
+- **Wave history rose-wrap layout** — grid gap doubled (14×16 → 24×32 px) for better separation between rose and adjacent boxes; removed unused `overflow-x: auto` that was creating phantom scroll; full-width centered.
+- **Summary text** ("Abrigado: ninguna de las próximas 12 h queda expuesta") now fits in a single line on wide screens (max-width:760 removed, full width with stretch).
+
+**Hourly strip — height, spacing and centering**
+
+- Cell height bumped 88→124 px (124→168 in portrait) so the third line ("0.7 m" wave) no longer clips out.
+- Cell width bumped progressively to 158 px (from original 110) — text breathes and the ola label fits without overlap.
+- Cell contents grouped (was `space-between` with huge gaps, now `center` + 10 px gap).
+- Wave label inside cell bumped 18→26 px (24 in portrait).
+- Cells container now `flex:0 0 auto` + `justify-content:center` + parent row `safe-center` — when content fits, the whole AHORA+cells block centers; when overflow, it falls back to flex-start without cutting the first item.
+- AHORA button height aligned with cells in every breakpoint (was 64 px in landscape while cells were 88-90).
+- Strip auto-scrolls to AHORA on render (scrollLeft=0 after appendChild).
+- Selected cell scale reduced 1.18→1.10 and origin moved from `bottom` to `center` so the cell no longer collides with the header above and content fits without crop.
+- Strip separated 14 px from header (was `top:-19px` margin negative that overlapped selected cell).
+
+**Bottom-bar widgets**
+
+- Widget viento — fixed phase lag: the wind cell was only updating on the slow tick (`_mPollSlow` ≈ 6-10 s on Pi) so it lagged behind the wind arrow on the map. Extracted to `_updateBBWindCell()` and called from `_refreshBoatWind` so both are in sync (~3-5 s).
+- Pressure cell — reverted Rev551 width change (it was hitting the wrong SVG; the cell padre was already constrained to 50 px and the fix made no visual difference).
+- Sonda — sub-label `(X m)` always visible (was hidden in Rev556 except on alarm; reverted on Carlos feedback). Word "final" removed from the label.
+- Marea — sub-label simplified to `PM a las 14:23` / `BM a las 02:15` (was `PM 2.3m 14:23`). Wave height already lives in the dedicated Dif. Bajamar widget.
+- **New widget**: `T. fondeo` — elapsed time since anchor drop (`23m` / `5h 12m` / `2d 7h`). Complements the existing `H. fondeo` (absolute drop time). Tick every 60 s.
+- **New widget**: `+` — always pinned to the right edge of the bar (uses `order:9999` + explicit DOM re-append after reorder), no `data-bb-cell` so the order CRUD doesn't touch it. Click opens the bottom-bar widgets configuration directly. Custom separator handling: previous cell keeps its divider when the `+` is present, and the `+` itself never draws one.
+- Bottom-bar layout — `justify-content` changed from `flex-start` to `safe center` so widgets center when they fit and fall back to flex-start when overflow; gap right reduced 12→4 px to remove the perceived gap at the right edge.
+
+**AIS panel**
+
+- AIS list distances and AIS radius slider now use a new `unitFmt.distanceLand()` helper: metric → `m`/`km`, imperial → `ft`/`mi`. Never `NM` even when the user system is `metric_nautical` (a vessel 800 m away was being shown as `0.43 NM` which is unreadable in context).
+- AIS toggle row (`AIS · Tracks · Alarma`) in portrait: when it wraps to its own line it now justifies to the LEFT (was sticking to the right because of `margin-left:auto` inherited from desktop layout).
+
+**Map**
+
+- Self-track on the chart now renders even when GPS is extremely stable (RTK or stationary). Distance threshold lowered 0.5 → 0.2 m and added a 60 s keep-alive so a new point is always recorded at least once per minute, guaranteeing the visor always has ≥2 points (the minimum for `updateTrackGradient` to draw the polyline). Track polylines moved to a custom Leaflet pane with `zIndex: 650` so they always paint above tile layers regardless of base-layer z-order; weight bumped 3→5, opacity .8→.95 for visibility against dark raster charts.
+
+**Modal Instrucciones (iframe)**
+
+- Hidden the orphaned `m-tv-header` (Back · Mareas · Curvas) when the iframe is opened from the visor as `?embed=1` or `?showInstructions=1`. The parent now injects its own orange header, so the inner one was duplicating it.
+
+**Other**
+
+- Reverted accidental icon swap on the Abrigo button — both sidebar button and modal header now use 🏔️ (mountain) as Carlos requested, no longer ⚓ (which conflicts visually with the anchor drop button).
+- Favorites modal title renamed from "Listado de últimos fondeos y favoritos" to simply "Últimos fondeos" (the modal already shows the favorites and recent sections internally; the title was redundant). The 📍 icon in the hamburger menu entry is unchanged.
+
+### Español
+
+**Modal Abrigo — legibilidad, layout y arreglo de gráfica meteo (Rev548-Rev562)**
+
+- **Infobox del Abrigo — tipografía reconstruida** validado por GPT-5 + Gemini Pro desde primeros principios: eliminada la regla genérica `span,div{font-size:22px}` que rompía la herencia desde id-contenedores; consolidadas las declaraciones duplicadas de `#shelter-summary-text`; base 22 px declarada en `.shelter-popup-box` y override +8 nominal sobre cada id (status-label 24→32, status-body 22→30, summary 26→34, auto-prompt 20→28, auto-status 22→30). Compensa el `zoom: var(--ui-scale)` heredado para que el cambio sea realmente visible en móvil.
+- **Badges Veleta / IMU / Sensor** del infobox subidos 11→22 px (Veleta/Sensor) y la etiqueta inline IMU al mismo nivel. "Mar en calma" ahora se lee en lugar de quedar invisible bajo el zoom.
+- **Histórico de olas** más alto: SVG 94→140 px (+49%), escalas Y 13→20 px, cabecera "Historial de olas en fondeo · 5 min por barra · Fondeado a las…" 16→24 px (+50%), botón ⓘ 17→22 px.
+- **Sparkline de presión en el infobox** más alto (75→120 px, +60%) y aparece al instante al abrir el modal en vez de tardar 5-60 s — `_wxRefreshChip` ahora repinta el popup en el momento en que `_wxLastPast24hPressureHpa` se llena desde null.
+- **Rosa de sectores** escala correctamente en móvil — cambiado de `vmin` (que se multiplicaba de nuevo por el zoom heredado) a valores px fijos: 440 px desktop / 520 px móvil alineada con la altura de la columna A/Grado. Ya no acapara toda el área táctil impidiendo el scroll.
+- **Texto de sectores abrigados** plural-aware: `Detectado 1 sector abrigado` vs `Detectados N sectores abrigados`. Aplicado en el path auto-detect y en el popup render.
+- **Scroll del Abrigo ya no tapa el header** — z-index de `.m-modal-hdr` subido de 10 a 2050 para que `.shelter-hour.selected` (z-index 100) no pueda pintar encima.
+- **Layout del rose-wrap** — gap del grid doblado (14×16 → 24×32 px) para mejor separación rosa-infobox; eliminado el `overflow-x: auto` que generaba scroll fantasma; full-width centrado.
+- **Caja resumen** ("Abrigado: ninguna de las próximas 12 h queda expuesta") cabe ahora en una sola línea en pantallas anchas (quitado `max-width:760`, ancho completo con stretch).
+
+**Strip horario — altura, espaciado y centrado**
+
+- Altura de celda subida 88→124 px (124→168 en vertical) para que la tercera línea ("0.7 m" ola) no se recorte.
+- Ancho de celda subido progresivamente a 158 px (desde los 110 originales) — el texto respira y la etiqueta de ola cabe sin solaparse.
+- Contenido de la celda agrupado (era `space-between` con huecos enormes, ahora `center` + gap 10 px).
+- Etiqueta de ola dentro de celda subida 18→26 px (24 en vertical).
+- Container de celdas ahora `flex:0 0 auto` + `justify-content:center` + row padre `safe-center` — cuando el contenido cabe, el bloque AHORA+celdas se centra entero; cuando hay overflow, cae a flex-start sin cortar el primer item.
+- Botón AHORA con altura sincronizada con las celdas en todos los breakpoints (estaba a 64 px en landscape mientras las celdas tenían 88-90).
+- Strip auto-scroll a AHORA en render (scrollLeft=0 tras appendChild).
+- Celda seleccionada con scale reducido 1.18→1.10 y origin cambiado de `bottom` a `center` para que no choque con el header de arriba y el contenido quepa sin recortar.
+- Strip separado 14 px del header (era `top:-19px` margen negativo que solapaba la celda seleccionada).
+
+**Widgets de la bottom-bar**
+
+- Widget viento — fix del lag de fase: la celda viento sólo se actualizaba en el tick lento (`_mPollSlow` ≈ 6-10 s en Pi) así que iba retrasada respecto a la flecha del visor. Extraído a `_updateBBWindCell()` y llamado desde `_refreshBoatWind` para que ambos vayan en sincronía (~3-5 s).
+- Celda presión — revertido el cambio de Rev551 (tocaba el SVG erróneo; la cell padre estaba limitada a 50 px y el cambio no daba diferencia visual).
+- Sonda — sub-label `(X m)` siempre visible (Rev556 lo ocultaba salvo en alarma; revertido por feedback Carlos). Quitada la palabra "final" del label.
+- Marea — sub-label simplificado a `PM a las 14:23` / `BM a las 02:15` (era `PM 2.3m 14:23`). La altura ya vive en el widget propio Dif. Bajamar.
+- **Nuevo widget**: `T. fondeo` — tiempo transcurrido desde el drop (`23m` / `5h 12m` / `2d 7h`). Complementa el existente `H. fondeo` (hora absoluta). Tick cada 60 s.
+- **Nuevo widget**: `+` — siempre fijo en el borde derecho de la barra (usa `order:9999` + re-append explícito al DOM tras reordenar), sin `data-bb-cell` para que el CRUD de orden no lo toque. Click abre directamente la configuración de widgets. Manejo de separador a medida: la celda anterior mantiene su divisor cuando existe el `+`, y el `+` nunca dibuja uno.
+- Layout de la bottom-bar — `justify-content` cambiado de `flex-start` a `safe center` así los widgets se centran cuando caben y caen a flex-start si hay overflow; gap derecho reducido 12→4 px para eliminar el hueco visible al borde derecho.
+
+**Panel AIS**
+
+- Distancias del listado AIS y slider de radio AIS usan ahora el nuevo helper `unitFmt.distanceLand()`: métrico → `m`/`km`, imperial → `ft`/`mi`. Nunca `NM` aunque el sistema del usuario sea `metric_nautical` (un barco a 800 m se mostraba como `0.43 NM`, ilegible en contexto).
+- Fila de toggles AIS (`AIS · Tracks · Alarma`) en vertical: cuando hace wrap a su propia línea se justifica a la IZQUIERDA (antes se pegaba a la derecha por `margin-left:auto` heredado del layout desktop).
+
+**Mapa**
+
+- Track propio del barco se pinta incluso cuando el GPS está extremadamente estable (RTK o quieto). Threshold bajado 0.5 → 0.2 m + keep-alive de 60 s para garantizar al menos un punto por minuto (mínimo de 2 que necesita `updateTrackGradient` para dibujar la polyline). Polylines del track movidas a un pane custom de Leaflet con `zIndex: 650` para que siempre pinten por encima de los tiles independientemente del z-order de las capas base; weight subido 3→5, opacidad .8→.95 para visibilidad sobre cartas raster oscuras.
+
+**Modal Instrucciones (iframe)**
+
+- Ocultado el `m-tv-header` huérfano (Atrás · Mareas · Curvas) cuando el iframe se abre desde el visor como `?embed=1` o `?showInstructions=1`. El padre ya inyecta su propio header naranja, así que el interior estaba duplicando.
+
+**Otros**
+
+- Revertido el intercambio accidental de icono en el botón Abrigo — tanto el botón del sidebar como el header del modal usan ahora 🏔️ (montaña) como pidió Carlos, ya no ⚓ (que entra en conflicto visual con el botón de fondear ancla).
+- Modal de favoritos renombrado: "Listado de últimos fondeos y favoritos" → simplemente "Últimos fondeos" (el modal ya muestra dentro las secciones de favoritos y recientes; el título era redundante). El icono 📍 del menú hamburger se mantiene intacto.
+
 ## [2.3.3] - 2026-06-25
 
 ### English
