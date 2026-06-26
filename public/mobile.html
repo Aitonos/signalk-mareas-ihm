@@ -2153,8 +2153,11 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       </svg>
       <span class="vl" id="m-bb-wind-kt-txt">—<span style="font-size:11px;font-weight:700;opacity:.75;margin-left:2px">kts</span></span>
     </div>
+    <!-- Rev567 (feedback Carlos): racha entre paréntesis bajo el valor. -->
+    <span id="m-bb-wind-gust" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
   </div>
-  <div class="it" data-bb-cell="sonda" data-i18n-title="bb_sonda_tip" title="Profundidad bajo quilla · Sonda" onclick="openPopup&&openPopup('sonda-pop');typeof fetchSondaData==='function'&&fetchSondaData()"><span class="lb" data-i18n="bb_sonda">Sonda</span><span class="vl" id="m-bb-sonda">—</span><span id="m-bb-sonda-status" style="display:none;font-size:9px;font-weight:800;margin-top:2px;text-align:center;line-height:1.1"></span></div>
+  <!-- Rev564 (feedback Carlos): click Sonda → Curvas (no a sonda-pop). -->
+  <div class="it" data-bb-cell="sonda" data-i18n-title="bb_sonda_tip" title="Profundidad bajo quilla · Sonda · click → Curvas" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()"><span class="lb" data-i18n="bb_sonda">Sonda</span><span class="vl" id="m-bb-sonda">—</span><span id="m-bb-sonda-status" style="display:none;font-size:9px;font-weight:800;margin-top:2px;text-align:center;line-height:1.1"></span></div>
   <!-- Sprint C (Rev452): status de marea en bottom-bar. Triangulo ▲/▼ + % entre
        extremos + label del proximo extremo (PM/BM HH:MM). Click abre Curvas. -->
   <div class="it" id="m-bb-tide-cell" data-bb-cell="tide" data-i18n-title="bb_marea_tip" title="Estado marea · subida o bajada · click → Curvas" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()">
@@ -2162,30 +2165,28 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <span class="vl" id="m-bb-tide-val">—</span>
     <span id="m-bb-tide-next" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
   </div>
-  <!-- Rev489 (feedback Vicente): widget "Dif. Bajamar" — cuánto bajará la
-       marea hasta la próxima bajamar (cm). Click abre modal Cálculo Sonda. -->
-  <div class="it" data-bb-cell="dif_lw" data-i18n-title="bb_dif_lw_tip" title="Diferencia hasta próxima bajamar · click → Cálculo Sonda" onclick="openPopup&&openPopup('sonda-pop');typeof fetchSondaData==='function'&&fetchSondaData()">
+  <!-- Rev489 (feedback Vicente): widget "Dif. Bajamar" — cuánto bajará la marea (cm).
+       Rev564 (feedback Carlos): click → Curvas (no a sonda-pop). -->
+  <div class="it" data-bb-cell="dif_lw" data-i18n-title="bb_dif_lw_tip" title="Diferencia hasta próxima bajamar · click → Curvas" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()">
     <span class="lb" data-i18n="bb_dif_lw">Dif. Bajamar</span>
     <span class="vl" id="m-bb-dif-lw">—</span>
     <span id="m-bb-dif-lw-end" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
   </div>
   <!-- Rev490 (feedback Vicente): widget "Prof. Mínima" — sonda esperada en la
-       próxima bajamar. Numero grande = profundidad final en metros (coherente
-       con el numero grande de SONDA, misma referencia). Sub-label = hora de la
-       proxima bajamar. Click abre modal Cálculo Sonda. -->
-  <div class="it" data-bb-cell="prof_min" data-i18n-title="bb_prof_min_tip" title="Profundidad mínima esperada en la próxima bajamar · click → Cálculo Sonda" onclick="openPopup&&openPopup('sonda-pop');typeof fetchSondaData==='function'&&fetchSondaData()">
+       próxima bajamar. Numero grande = profundidad final en metros.
+       Rev564 (feedback Carlos): click → Curvas (no a sonda-pop). -->
+  <div class="it" data-bb-cell="prof_min" data-i18n-title="bb_prof_min_tip" title="Profundidad mínima esperada en la próxima bajamar · click → Curvas" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()">
     <span class="lb" data-i18n="bb_prof_min">Prof. mín.</span>
     <span class="vl" id="m-bb-prof-min">—</span>
     <span id="m-bb-prof-min-when" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
   </div>
-  <div class="it" data-bb-cell="cad_rec" data-i18n-title="bb_cadena_tip" title="Cadena recomendada" onclick="m_openInfoModal&&m_openInfoModal()"><span class="lb" data-i18n="bb_cadena_rec">Cadena rec.</span><span class="vl" id="m-bb-cad">—</span></div>
-  <div class="it" data-bb-cell="dist_ancla" data-i18n-title="bb_dist_tip" title="Distancia al ancla" onclick="m_openInfoModal&&m_openInfoModal()"><span class="lb" data-i18n="bb_dist_ancla">Dist. ancla</span><span class="vl" id="m-bb-dist">—</span></div>
-  <!-- Rev331 (item 13): HORA del fondeo (HH:MM del drop, +N si han pasado días). Siempre visible con '—' cuando no fondeado. -->
-  <div class="it" id="m-bb-anchored-since-cell" data-bb-cell="h_fondeo" data-i18n-title="bb_anchored_since_tip" title="Hora del fondeo" onclick="m_openInfoModal&&m_openInfoModal()"><span class="lb" data-i18n="bb_anchored_since">H. fondeo</span><span class="vl" id="m-bb-anchored-since">—</span></div>
-  <!-- Rev556 (feedback Carlos #9c): tiempo transcurrido desde el drop
-       (formato Xh Ym o Xd Yh según duración). Complementa H. fondeo (hora
-       absoluta) con duración relativa. -->
-  <div class="it" id="m-bb-elapsed-cell" data-bb-cell="t_fondeo" data-i18n-title="bb_elapsed_tip" title="Tiempo desde el fondeo" onclick="m_openInfoModal&&m_openInfoModal()"><span class="lb" data-i18n="bb_elapsed">T. fondeo</span><span class="vl" id="m-bb-elapsed">—</span></div>
+  <!-- Rev564 (feedback Carlos): Cad rec + Dist ancla → Cálculo Fondeo (fondeo-pop). -->
+  <div class="it" data-bb-cell="cad_rec" data-i18n-title="bb_cadena_tip" title="Cadena recomendada · click → Cálculo Fondeo" onclick="openPopup&&openPopup('fondeo-pop');typeof fetchFondeoData==='function'&&fetchFondeoData()"><span class="lb" data-i18n="bb_cadena_rec">Cadena rec.</span><span class="vl" id="m-bb-cad">—</span></div>
+  <div class="it" data-bb-cell="dist_ancla" data-i18n-title="bb_dist_tip" title="Distancia al ancla · click → Cálculo Fondeo" onclick="openPopup&&openPopup('fondeo-pop');typeof fetchFondeoData==='function'&&fetchFondeoData()"><span class="lb" data-i18n="bb_dist_ancla">Dist. ancla</span><span class="vl" id="m-bb-dist">—</span></div>
+  <!-- Rev331 (item 13): HORA del fondeo. Rev564: click → Hist Olas. -->
+  <div class="it" id="m-bb-anchored-since-cell" data-bb-cell="h_fondeo" data-i18n-title="bb_anchored_since_tip" title="Hora del fondeo · click → Hist. Olas" onclick="openPopup&&openPopup('wave-hist-info-pop');typeof _renderWaveHistInfo==='function'&&_renderWaveHistInfo()"><span class="lb" data-i18n="bb_anchored_since">H. fondeo</span><span class="vl" id="m-bb-anchored-since">—</span></div>
+  <!-- Rev556: T. fondeo (duración desde drop). Rev564: click → Hist Olas. -->
+  <div class="it" id="m-bb-elapsed-cell" data-bb-cell="t_fondeo" data-i18n-title="bb_elapsed_tip" title="Tiempo desde el fondeo · click → Hist. Olas" onclick="openPopup&&openPopup('wave-hist-info-pop');typeof _renderWaveHistInfo==='function'&&_renderWaveHistInfo()"><span class="lb" data-i18n="bb_elapsed">T. fondeo</span><span class="vl" id="m-bb-elapsed">—</span></div>
   <div class="it m-bb-graph" data-bb-cell="pres" data-i18n-title="bb_presion_tip" title="Presión barométrica · línea naranja = AHORA · click → Meteo" onclick="toggleMeteo&&toggleMeteo()">
     <span class="lb" data-i18n="bb_presion">Presión</span>
     <!-- Rev288: viewBox extendido 0-80 para reservar espacio a la previsión
@@ -2213,10 +2214,30 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       <text id="m-bb-donut-text" x="18" y="24" text-anchor="middle" font-size="15" font-weight="900" fill="#fff" stroke="#000" stroke-width="0.6" paint-order="stroke" style="font-family:inherit">—</text>
     </svg>
   </div>
-  <!-- Sprint F (Rev454): opt-in cells (sin orden default, hay que activarlas en Config). -->
-  <div class="it" data-bb-cell="sunrise" data-i18n-title="bb_sunrise_tip" title="Amanecer / atardecer (próximo evento solar)" onclick="toggleMeteo&&toggleMeteo()" style="display:none">
+  <!-- Sprint F (Rev454): opt-in cells (sin orden default, hay que activarlas en Config).
+       Rev566 (feedback Carlos): añadido sub-label `m-bb-sunrise-next` con la
+       hora del SIGUIENTE evento solar bajo la del próximo. -->
+  <div class="it" data-bb-cell="sunrise" data-i18n-title="bb_sunrise_tip" title="Amanecer / atardecer (próximo + siguiente)" onclick="toggleMeteo&&toggleMeteo()" style="display:none">
     <span class="lb" id="m-bb-sunrise-lb">—</span>
     <span class="vl" id="m-bb-sunrise">—</span>
+    <span id="m-bb-sunrise-next" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
+  </div>
+  <!-- Rev566 (feedback Carlos): widget LUNA, paralelo a sunrise. Icono =
+       fase lunar actual SIEMPRE (no horizonte). Próximo y siguiente evento
+       moonrise/moonset con hora — el usuario distingue salida vs ocaso por
+       el orden temporal. -->
+  <div class="it" data-bb-cell="moon" data-i18n-title="bb_moon_tip" title="Luna · fase + próximo + siguiente evento" onclick="toggleMeteo&&toggleMeteo()" style="display:none">
+    <span class="lb" id="m-bb-moon-lb">—</span>
+    <span class="vl" id="m-bb-moon">—</span>
+    <span id="m-bb-moon-next" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
+  </div>
+  <!-- Rev567 (feedback Carlos): widget GPS precisión (HDOP + sats). Lee del
+       state SSE bloque `gps`. Color según calidad: ★★★ verde / ★★ ámbar /
+       ★ rojo. Sub-label = nº satélites. -->
+  <div class="it" data-bb-cell="gps_acc" data-i18n-title="bb_gps_tip" title="Precisión GPS · HDOP + nº satélites" style="display:none">
+    <span class="lb" data-i18n="bb_gps">GPS</span>
+    <span class="vl" id="m-bb-gps-val">—</span>
+    <span id="m-bb-gps-sub" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
   </div>
   <div class="it m-bb-wx6h" data-bb-cell="wx_6h" data-i18n-title="bb_wx6h_tip" title="Previsión meteo en 6 horas" onclick="toggleMeteo&&toggleMeteo()" style="display:none">
     <span class="lb" data-i18n="bb_wx6h">Prev +6h</span>
@@ -2227,8 +2248,9 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     </div>
   </div>
   <!-- Sprint H V2 (Rev467): celda Olas (Wave Nav Engine). Opt-in.
-       Click → abre pagina wave-debug en pestana nueva. -->
-  <div class="it m-bb-wave" data-bb-cell="wave" data-i18n-title="bb_wave_tip" title="Estado del mar (IMU): banda + periodo + dirección" onclick="window.open('/signalk-mareas-ihm/wave-debug','_blank','noopener')" style="display:none">
+       Rev564 (feedback Carlos): click → Historial Olas (wave-hist-info-pop)
+       en lugar de la página técnica /wave-debug. -->
+  <div class="it m-bb-wave" data-bb-cell="wave" data-i18n-title="bb_wave_tip" title="Estado del mar (IMU): banda + periodo + dirección · click → Hist. Olas" onclick="openPopup&&openPopup('wave-hist-info-pop');typeof _renderWaveHistInfo==='function'&&_renderWaveHistInfo()" style="display:none">
     <span class="lb" data-i18n="bb_wave">Olas</span>
     <div id="m-bb-wave" class="wave-grid">
       <span class="wave-ico">—</span>
@@ -3053,8 +3075,8 @@ var _unitsSystem = localStorage.getItem('ihm-visor-units') || 'metric_nautical';
 /* Rev489-490: dos celdas nuevas tras "sonda" — "dif_lw" (bajada en cm hasta
    próxima bajamar) y "prof_min" (sonda esperada en esa bajamar). Vicente
    pidió ambas para fondear con margen. */
-/* Rev556: añadido t_fondeo (tiempo transcurrido desde drop). */
-window._BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","t_fondeo","sunrise","wx_6h","wave"];
+/* Rev556: añadido t_fondeo. Rev566: añadido moon. Rev567: añadido gps_acc. */
+window._BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","t_fondeo","sunrise","moon","gps_acc","wx_6h","wave"];
 /* Rev535 (B-25): default snapshot del orden de Carlos (Tunatunes). MISMO que
    DEFAULT_BB_ORDER de src/index.ts L352. Si cambia ahí, cambiar aquí.
    Rev556: añadido t_fondeo (tiempo desde drop) tras h_fondeo. */
@@ -3517,6 +3539,8 @@ function _bbCellName(key){
     case 'h_fondeo':    return t('bb_anchored_since','H. fondeo');
     case 't_fondeo':    return t('bb_elapsed','T. fondeo');
     case 'sunrise':     return t('bb_sunrise','Sol') + ' (' + (_lang === 'en' ? 'sunrise/sunset' : 'amanecer/atardecer') + ')';
+    case 'moon':        return t('bb_moon','Luna') + ' (' + (_lang === 'en' ? 'moonrise/moonset' : 'salida/ocaso luna') + ')';
+    case 'gps_acc':     return t('bb_gps','GPS') + ' (' + (_lang === 'en' ? 'accuracy HDOP+sats' : 'precisión HDOP+sats') + ')';
     case 'wx_6h':       return t('bb_wx6h','Prev +6h') + ' (' + (_lang === 'en' ? 'weather forecast' : 'previsión meteo') + ')';
     case 'wave':        return t('bb_wave','Olas') + ' (' + (_lang === 'en' ? 'IMU sea state' : 'estado del mar IMU') + ')';
     default: return key;
@@ -3748,6 +3772,8 @@ if (!window._tideBottomTickStarted) {
   setInterval(function(){
     try{ m_updateTideBottom(); }catch(_){}
     try{ m_updateSunriseBottom(); }catch(_){}
+    /* Rev566 (feedback Carlos): widget Luna refresca cada minuto junto al sol. */
+    try{ m_updateMoonBottom(); }catch(_){}
     try{ m_updateWx6hBottom(); }catch(_){}
   }, 60000);
 }
@@ -3779,29 +3805,192 @@ function _solarTimes(date, lat, lng){
 function m_updateSunriseBottom(){
   var el  = document.getElementById('m-bb-sunrise');
   var lbl = document.getElementById('m-bb-sunrise-lb');
+  var nxtEl = document.getElementById('m-bb-sunrise-next');
   if (!el) return;
   // Rev459: lee del backend (s.sun en state poll). Sin datos → "—".
   var sun = window._sunBE;
   if (!sun || !sun.sunriseIso || !sun.sunsetIso){
-    el.textContent = '—'; if (lbl) lbl.textContent = '—'; return;
+    el.textContent = '—'; if (lbl) lbl.textContent = '—';
+    if (nxtEl) nxtEl.textContent = '—';
+    return;
   }
   var now = new Date();
   var sr = new Date(sun.sunriseIso);
   var ss = new Date(sun.sunsetIso);
-  var ev, ico, kind;
-  if (now < sr){ ev = sr; ico = '🌅'; kind = 'sunrise'; }
-  else if (now < ss){ ev = ss; ico = '🌇'; kind = 'sunset'; }
-  else {
-    // Tras el sunset de hoy: estimamos sunrise de mañana = sr + 24h (aprox).
-    // El backend reenviara el correcto en el siguiente poll cuando ya sea
-    // "mañana", asi que esta aprox solo se ve unas horas durante la noche.
-    ev = new Date(sr.getTime() + 24*3600*1000); ico = '🌅'; kind = 'sunrise';
-  }
+  /* Rev568 (feedback Carlos): label vuelve a tener su ICONO (🌅/🌇) + texto
+     Salida/Ocaso. El triángulo ▲/▼ va SOLO en el valor del próximo evento y
+     en el sub-label del siguiente. */
+  var srT = new Date(sr.getTime() + 24*3600*1000);
+  var ssT = new Date(ss.getTime() + 24*3600*1000);
+  var allEvs = [
+    { t: sr,  kind:'rise' },
+    { t: ss,  kind:'set'  },
+    { t: srT, kind:'rise' },
+    { t: ssT, kind:'set'  },
+  ].filter(function(e){ return e.t > now; }).sort(function(a,b){ return a.t - b.t; });
+  if (allEvs.length === 0){ el.textContent='—'; if(lbl)lbl.textContent='—'; if(nxtEl)nxtEl.textContent='—'; return; }
+  var next = allEvs[0], following = allEvs[1] || null;
   var pad = function(n){ return ('0'+n).slice(-2); };
-  el.textContent = ico + ' ' + pad(ev.getHours()) + ':' + pad(ev.getMinutes());
+  var arr = function(k){ return k === 'rise' ? '▲' : '▼'; };
+  /* Rev571 (feedback Carlos): icono va con la HORA (próximo evento), label
+     es texto plano "Salida SOL"/"Ocaso SOL", siguiente evento usa flecha
+     ▲/▼ sin icono. */
+  var icoNext = next.kind === 'rise' ? '🌅' : '🌇';
+  el.textContent = icoNext + ' ' + pad(next.t.getHours()) + ':' + pad(next.t.getMinutes());
   if (lbl){
-    if (kind === 'sunrise') lbl.textContent = (_lang === 'en') ? 'Sunrise' : 'Salida';
-    else lbl.textContent = (_lang === 'en') ? 'Sunset' : 'Ocaso';
+    var txt = next.kind === 'rise'
+      ? ((_lang === 'en') ? 'Sunrise' : 'Salida')
+      : ((_lang === 'en') ? 'Sunset'  : 'Ocaso');
+    lbl.textContent = txt + ' ' + ((_lang === 'en') ? 'SUN' : 'SOL');
+  }
+  if (nxtEl){
+    if (following) nxtEl.textContent = arr(following.kind) + ' ' + pad(following.t.getHours()) + ':' + pad(following.t.getMinutes());
+    else nxtEl.textContent = '—';
+  }
+}
+
+/* Rev568 (feedback Carlos: "quita las estrellas y di los m de precisión y
+   si es Fix o DFix, dale color naranja cuando es baja fiabilidad, rojo nula
+   y verde buena"): widget GPS precisión.
+   - VALOR  : precisión estimada en metros (HDOP × σUERE 5 m).
+   - SUB    : "Fix" / "DFix" / "No fix" (según methodQuality o fixQuality SK).
+   - COLOR  : verde = buena (HDOP<2 + fix válido) / naranja = baja (HDOP 2-5
+              o DR) / rojo = nula (no fix, HDOP>10 o sin dato). */
+function m_updateGpsBottom(){
+  var el  = document.getElementById('m-bb-gps-val');
+  var sub = document.getElementById('m-bb-gps-sub');
+  if (!el) return;
+  var gps = window._gpsBE;
+  if (!gps || (gps.hdop == null && gps.satellites == null && !gps.fixMethod && gps.fixQuality == null)){
+    el.textContent = '—'; el.style.color = '#e74c3c';
+    if (sub) { sub.textContent = (_lang === 'en' ? 'No fix' : 'Sin fix'); sub.style.color = '#e74c3c'; }
+    return;
+  }
+  // Normalizar tipo de fix: string SK methodQuality o numérico fixQuality.
+  var fixLabel = '—', isDFix = false, isFix = false, noFix = false;
+  if (gps.fixMethod){
+    var fm = String(gps.fixMethod).toLowerCase();
+    if (fm.indexOf('no') >= 0 || fm.indexOf('estimated') >= 0) noFix = true;
+    else if (fm.indexOf('dgps') >= 0 || fm.indexOf('dgnss') >= 0 || fm.indexOf('rtk') >= 0) { isDFix = true; fixLabel = 'DFix'; }
+    else { isFix = true; fixLabel = 'Fix'; }
+  } else if (typeof gps.fixQuality === 'number'){
+    var fq = gps.fixQuality;
+    if (fq === 0)      { noFix = true; }
+    else if (fq === 1) { isFix = true;  fixLabel = 'Fix'; }
+    else if (fq >= 2)  { isDFix = true; fixLabel = 'DFix'; }
+  } else if (typeof gps.hdop === 'number'){
+    // Sin info de fixQuality pero hay HDOP → asumir Fix válido.
+    isFix = true; fixLabel = 'Fix';
+  }
+  if (noFix){ fixLabel = (_lang === 'en' ? 'No fix' : 'Sin fix'); }
+  // Precisión estimada en metros: HDOP × σUERE (5 m típico GPS doméstico).
+  var h = (typeof gps.hdop === 'number' && isFinite(gps.hdop)) ? gps.hdop : null;
+  var accM = (h != null) ? (h * 5) : null;
+  // Determinar color por fiabilidad combinada (HDOP + fix).
+  var col;
+  if (noFix)                                            col = '#e74c3c'; // rojo = nula
+  else if (h != null && h >= 5)                         col = '#e74c3c'; // rojo = HDOP malo
+  else if ((h != null && h >= 2) || isDFix === false && !isFix) col = '#ff8a65'; // naranja = baja
+  else                                                  col = '#3aa856'; // verde = buena
+  // Sobreescribir: si DFix → siempre verde (mejor que Fix normal).
+  if (isDFix && h != null && h < 5) col = '#3aa856';
+  if (accM != null){
+    el.textContent = accM.toFixed(1) + ' m';
+  } else {
+    el.textContent = '—';
+  }
+  el.style.color = col;
+  if (sub){
+    var subTxt = fixLabel;
+    if (typeof gps.satellites === 'number' && isFinite(gps.satellites)){
+      subTxt += ' · ' + Math.round(gps.satellites) + ' sat';
+    }
+    sub.textContent = subTxt;
+    sub.style.color = col;
+  }
+}
+
+/* Rev566 (feedback Carlos): widget Luna paralelo al de Sol. El ICONO es
+   SIEMPRE la fase lunar actual (🌑🌒🌓🌔🌕🌖🌗🌘) — no un icono fijo de
+   horizonte tipo 🌅/🌇. El usuario distingue "salida" vs "ocaso" por las
+   horas (la primera es el evento próximo, la segunda el siguiente). */
+function m_updateMoonBottom(){
+  var el    = document.getElementById('m-bb-moon');
+  var lbl   = document.getElementById('m-bb-moon-lb');
+  var nxtEl = document.getElementById('m-bb-moon-next');
+  if (!el) return;
+  // Necesitamos posición y _lunarTimes para calcular eventos.
+  var _lt = window._lunarTimes;
+  if (typeof _lt !== 'function' || typeof bPos !== 'object' || !bPos
+      || typeof bPos.lat !== 'number' || typeof bPos.lng !== 'number'){
+    el.textContent = '—'; if (lbl) lbl.textContent = '—';
+    if (nxtEl) nxtEl.textContent = '—';
+    return;
+  }
+  var now = new Date();
+  var today = new Date(now); today.setHours(0,0,0,0);
+  var tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
+  var dayAfter = new Date(today); dayAfter.setDate(dayAfter.getDate()+2);
+  var mtToday    = _lt(today,    bPos.lat, bPos.lng);
+  var mtTomorrow = _lt(tomorrow, bPos.lat, bPos.lng);
+  var mtDayAfter = _lt(dayAfter, bPos.lat, bPos.lng);
+  // Icono = fase lunar del momento (siempre, no depende del evento próximo).
+  var phaseIco;
+  try { phaseIco = (typeof window._moonIco === 'string' && window._moonIco) ? window._moonIco : '🌙'; } catch(_){ phaseIco = '🌙'; }
+  // Si tenemos moonPhase disponible (definido dentro de m_renderMeteoWindy
+  // como función local), no la podemos llamar desde aquí. Fallback: cálculo
+  // inline minimal de la fase actual (= mismo algoritmo).
+  try {
+    var ref = Date.UTC(2000,0,6,18,14)/86400000;
+    var days = (now.getTime()/86400000) - ref;
+    var phase = ((days % 29.530589) + 29.530589) % 29.530589;
+    if (phase < 1.85) phaseIco = '🌑';
+    else if (phase < 5.54)  phaseIco = '🌒';
+    else if (phase < 9.23)  phaseIco = '🌓';
+    else if (phase < 12.92) phaseIco = '🌔';
+    else if (phase < 16.61) phaseIco = '🌕';
+    else if (phase < 20.30) phaseIco = '🌖';
+    else if (phase < 23.99) phaseIco = '🌗';
+    else phaseIco = '🌘';
+  } catch(_){}
+  // Lista de eventos futuros (rise/set) en los próximos 2 días.
+  var allEvs = [];
+  if (mtToday.moonrise)    allEvs.push({ t: mtToday.moonrise,    kind:'moonrise' });
+  if (mtToday.moonset)     allEvs.push({ t: mtToday.moonset,     kind:'moonset'  });
+  if (mtTomorrow.moonrise) allEvs.push({ t: mtTomorrow.moonrise, kind:'moonrise' });
+  if (mtTomorrow.moonset)  allEvs.push({ t: mtTomorrow.moonset,  kind:'moonset'  });
+  if (mtDayAfter.moonrise) allEvs.push({ t: mtDayAfter.moonrise, kind:'moonrise' });
+  if (mtDayAfter.moonset)  allEvs.push({ t: mtDayAfter.moonset,  kind:'moonset'  });
+  allEvs = allEvs.filter(function(e){ return e.t > now; }).sort(function(a,b){ return a.t - b.t; });
+  var pad = function(n){ return ('0'+n).slice(-2); };
+  if (allEvs.length === 0){
+    el.textContent = phaseIco + ' —';
+    if (lbl) lbl.textContent = (_lang === 'en') ? 'Moon' : 'Luna';
+    if (nxtEl) nxtEl.textContent = '—';
+    return;
+  }
+  var next = allEvs[0], following = allEvs[1] || null;
+  /* Rev568 (feedback Carlos: "quita el triangulo del label que solo queda
+     para el proximo evento donde debes quitar el icono"):
+     - LABEL  : icono fase (🌖) + texto Salida/Ocaso. SIN triángulo.
+     - VALOR  : ▲/▼ + HH:MM. SIN icono fase.
+     - SUB    : ▲/▼ + HH:MM. SIN icono fase.
+     El icono de fase aparece UNA vez en el label como signature visual del
+     widget Luna (distingue del Sol). */
+  var arrM = function(k){ return k === 'moonrise' ? '▲' : '▼'; };
+  /* Rev571 (feedback Carlos): icono fase va con la HORA (próximo evento),
+     label es texto plano "Salida LUNA"/"Ocaso LUNA", siguiente evento usa
+     flecha ▲/▼ sin icono. */
+  el.textContent = phaseIco + ' ' + pad(next.t.getHours()) + ':' + pad(next.t.getMinutes());
+  if (lbl){
+    var txtM = next.kind === 'moonrise'
+      ? ((_lang === 'en') ? 'Moonrise' : 'Salida')
+      : ((_lang === 'en') ? 'Moonset'  : 'Ocaso');
+    lbl.textContent = txtM + ' ' + ((_lang === 'en') ? 'MOON' : 'LUNA');
+  }
+  if (nxtEl){
+    if (following) nxtEl.textContent = arrM(following.kind) + ' ' + pad(following.t.getHours()) + ':' + pad(following.t.getMinutes());
+    else nxtEl.textContent = '—';
   }
 }
 
@@ -3998,6 +4187,12 @@ var _i18n={
   cfg_bbar_reset:{es:'↺ Restablecer orden por defecto',en:'↺ Reset to default order'},
   bb_sunrise:{es:'Salida/Ocaso',en:'Sunrise/Sunset'},
   bb_sunrise_tip:{es:'Próximo evento solar: 🌅 amanecer o 🌇 atardecer (basado en posición del barco)',en:'Next solar event: 🌅 sunrise or 🌇 sunset (based on boat position)'},
+  /* Rev566 (feedback Carlos): widget Luna paralelo al de Sol. */
+  bb_moon:{es:'Luna',en:'Moon'},
+  bb_moon_tip:{es:'Luna: fase actual + próximo evento (salida/ocaso) + siguiente',en:'Moon: current phase + next event (rise/set) + following'},
+  /* Rev570 (feedback Carlos): widget GPS — label = "Prec. GPS" / "GPS Prec." */
+  bb_gps:{es:'Prec. GPS',en:'GPS Prec.'},
+  bb_gps_tip:{es:'Precisión GPS estimada en metros (HDOP×5) · Fix/DFix · nº satélites',en:'GPS accuracy in meters (HDOP×5) · Fix/DFix · satellite count'},
   bb_wx6h:{es:'Meteo +6h',en:'Meteo +6h'},
   bb_wx6h_tip:{es:'Previsión meteo dentro de 6 horas (icono + viento + temperatura). Rojo si cambio radical respecto a ahora.',en:'Weather forecast in 6 hours (icon + wind + temperature). Red if radical change vs now.'},
   bb_wave:{es:'Olas',en:'Waves'},
@@ -4322,6 +4517,9 @@ var _i18n={
   ais_sort_type:{es:'Tipo',en:'Type'},
   ais_filter_ph:{es:'🔎 Filtrar nombre/MMSI',en:'🔎 Filter name/MMSI'},
   ais_no_results:{es:'Sin resultados',en:'No results'},
+  /* Rev563 (feedback Carlos): si filtro AIS no encuentra ningún target en
+     la lista local, ofrecer búsqueda en Vesselfinder con el nombre buscado. */
+  ais_search_vf:{es:'🔍 Buscar en Vesselfinder',en:'🔍 Search in Vesselfinder'},
   ais_first_seen:{es:'Visto por primera vez',en:'First seen'},
   ais_last_seen:{es:'Última vez visto',en:'Last seen'},
   desaparecido_a:{es:'Desaparecido a las',en:'Lost contact at'},
@@ -6592,6 +6790,10 @@ function processPollData(s){
     if(s.tideEvents&&s.tideEvents.length>0){meteoTideData=s.tideEvents;try{if(typeof m_updateTideBottom==='function')m_updateTideBottom();}catch(_){}}
     /* Rev459: SoT backend para sunrise/wx6h. Cache en window y disparar render. */
     if(s.sun){ window._sunBE = s.sun; try{ if(typeof m_updateSunriseBottom==='function') m_updateSunriseBottom(); }catch(_){} }
+    /* Rev566: widget Luna re-render con bPos actualizado del state. */
+    try{ if(typeof m_updateMoonBottom==='function') m_updateMoonBottom(); }catch(_){}
+    /* Rev567: bloque gps del state SSE → widget bottom-bar Precisión GPS. */
+    if(s.gps){ window._gpsBE = s.gps; try{ if(typeof m_updateGpsBottom==='function') m_updateGpsBottom(); }catch(_){} }
     if(s.wx6h){ window._wx6hBE = s.wx6h; try{ if(typeof m_updateWx6hBottom==='function') m_updateWx6hBottom(); }catch(_){} }
     /* Rev467: cache snapshot del motor wave nav y render celda Olas. */
     if(s.wave){ window._waveBE = s.wave; try{ if(typeof m_updateWaveBottom==='function') m_updateWaveBottom(); }catch(_){} }
@@ -10230,9 +10432,28 @@ function checkAisBorneoAlarm(targets){
     });
   }
   /* Rev401: si HABIA targets pero el filtro los oculto todos, mostrar
-     "Sin resultados" en vez de dejar la lista vieja o vacia. */
-  if(_aisFilterTxt && _hadAlertsBeforeFilter && alerts.length===0){
-    list.innerHTML='<div style="padding:14px 8px;text-align:center;color:#888;font-style:italic">'+T('ais_no_results','Sin resultados')+'</div>';
+     "Sin resultados" en vez de dejar la lista vieja o vacia.
+     Rev563 (feedback Carlos): añadido botón "Buscar en Vesselfinder" con el
+     término buscado para que el usuario pueda investigar barcos que no están
+     en su radio AIS local. Aplicamos en CUALQUIER caso con filtro y 0
+     resultados (no sólo cuando había antes) — si Carlos busca un barco y no
+     hay tráfico AIS, también debe poder lanzar la búsqueda externa. */
+  if(_aisFilterTxt && alerts.length===0){
+    var _vfTxt = _aisFilterTxt;
+    var _vfUrl = 'https://www.vesselfinder.com/vessels?name=' + encodeURIComponent(_vfTxt);
+    var _vfBtnLbl = T('ais_search_vf','🔍 Buscar en Vesselfinder');
+    list.innerHTML =
+      '<div style="padding:14px 8px;text-align:center;color:#888;font-style:italic;font-size:15px">' +
+        T('ais_no_results','Sin resultados') +
+      '</div>' +
+      '<div style="padding:6px 8px 14px;text-align:center">' +
+        '<a href="' + _vfUrl + '" target="_blank" rel="noopener" ' +
+           'style="display:inline-flex;align-items:center;gap:6px;padding:10px 18px;' +
+                  'border:1px solid #9ad;border-radius:8px;color:#9ad;text-decoration:none;' +
+                  'font-weight:700;font-size:15px;background:rgba(154,170,221,.08)">' +
+          _vfBtnLbl + ' "' + _vfTxt.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '"' +
+        '</a>' +
+      '</div>';
     panel.classList.add('open');
     return;
   }
@@ -12635,6 +12856,34 @@ function _updateBBWindCell(){
       var _windParts = _windStr.split(' ');
       ktTxt.innerHTML = (_windParts[0] || '—') + '<span style="font-size:11px;font-weight:700;opacity:.75;margin-left:2px">' + (_windParts[1] || '') + '</span>';
     }
+    /* Rev569 (feedback Carlos): fuente = _envSensors.gustKt (la que el
+       infobox usa). Fallback _boatWind si no disponible.
+       Rev570 (feedback Carlos: "que salga siempre la ultima que hubo"):
+       cacheamos la última racha vista en window._lastGustKt para que
+       persista en pantalla aunque el sensor deje de transmitir
+       temporalmente — el dato sigue siendo válido como info "última
+       racha conocida". */
+    var gustEl = document.getElementById('m-bb-wind-gust');
+    if (gustEl) {
+      var _gKt = null;
+      if (typeof _envSensors === 'object' && _envSensors && _envSensors.gustAvailable
+          && typeof _envSensors.gustKt === 'number' && _envSensors.gustKt > 0) {
+        _gKt = _envSensors.gustKt;
+      } else if (_boatWind.gustAvailable && typeof _boatWind.gustKt === 'number' && _boatWind.gustKt > 0) {
+        _gKt = _boatWind.gustKt;
+      }
+      /* Persistir último valor conocido. */
+      if (_gKt != null) { window._lastGustKt = _gKt; }
+      var _dispGust = _gKt != null ? _gKt : (typeof window._lastGustKt === 'number' ? window._lastGustKt : null);
+      if (_dispGust != null) {
+        var _gMs = _dispGust / 1.94384;
+        var _gStr = unitFmt.speed(_gMs, 0);
+        gustEl.textContent = '(' + (_lang === 'en' ? 'gust' : 'racha') + ' ' + _gStr + ')';
+        gustEl.style.color = _dispGust > 25 ? '#e74c3c' : (_dispGust > 16 ? '#f39c12' : '#cde');
+      } else {
+        gustEl.textContent = '';
+      }
+    }
   } catch(_){}
 }
 setInterval(m_syncBottomBarGraphs, _mPollSlow);
@@ -13937,6 +14186,63 @@ function m_toggleMeteoSummary(){
   } catch(_){}
 }
 
+/* Rev565 (feedback Carlos): cálculo astronómico moonrise/moonset con
+   precisión ±5 min (algoritmo Meeus simplificado, inspirado en SunCalc).
+   Reemplaza la fórmula tosca `(17+dom*0.83)%24` de la versión legacy.
+   Toma posición real del barco (lat, lng) y devuelve { moonrise, moonset }
+   como Date objects en hora local del navegador. Si la luna no sale o no
+   se pone en el día (latitudes extremas, fase circumpolar), el campo
+   correspondiente queda undefined. */
+(function(){
+  var R = Math.PI/180, J2000 = 2451545, DAYMS = 86400000;
+  function toJulian(d){ return d.valueOf()/DAYMS - 0.5 + 2440588; }
+  function toDays(d){ return toJulian(d) - J2000; }
+  function rightAsc(l,b){ var e=R*23.4397; return Math.atan2(Math.sin(l)*Math.cos(e)-Math.tan(b)*Math.sin(e), Math.cos(l)); }
+  function decl(l,b){ var e=R*23.4397; return Math.asin(Math.sin(b)*Math.cos(e)+Math.cos(b)*Math.sin(e)*Math.sin(l)); }
+  function siderealTime(d,lw){ return R*(280.16+360.9856235*d) - lw; }
+  function astroRefraction(h){ if(h<0)h=0; return 0.0002967/Math.tan(h+0.00312536/(h+0.08901179)); }
+  function moonCoords(d){
+    var L=R*(218.316+13.176396*d), M=R*(134.963+13.064993*d), F=R*(93.272+13.22935*d);
+    var l=L+R*6.289*Math.sin(M), b=R*5.128*Math.sin(F);
+    return { ra: rightAsc(l,b), dec: decl(l,b) };
+  }
+  function moonPos(date, lat, lng){
+    var lw=R*-lng, phi=R*lat, d=toDays(date), c=moonCoords(d);
+    var H = siderealTime(d,lw) - c.ra;
+    var h = Math.asin(Math.sin(phi)*Math.sin(c.dec)+Math.cos(phi)*Math.cos(c.dec)*Math.cos(H));
+    return { altitude: h + astroRefraction(h) };
+  }
+  function hoursLater(date, h){ return new Date(date.valueOf() + h*DAYMS/24); }
+  window._lunarTimes = function(date, lat, lng){
+    var t = new Date(date); t.setHours(0,0,0,0);
+    var hc = 0.133*R;
+    var h0 = moonPos(t, lat, lng).altitude - hc;
+    var rise, set, ye, d, roots, x1, x2, dx;
+    for (var i=1; i<=24; i+=2){
+      var h1 = moonPos(hoursLater(t,i),   lat, lng).altitude - hc;
+      var h2 = moonPos(hoursLater(t,i+1), lat, lng).altitude - hc;
+      var a = (h0+h2)/2 - h1, b = (h2-h0)/2, xe = -b/(2*a);
+      ye = (a*xe+b)*xe + h1;
+      d = b*b - 4*a*h1; roots = 0;
+      if (d >= 0){
+        dx = Math.sqrt(d)/(Math.abs(a)*2);
+        x1 = xe - dx; x2 = xe + dx;
+        if (Math.abs(x1) <= 1) roots++;
+        if (Math.abs(x2) <= 1) roots++;
+        if (x1 < -1) x1 = x2;
+      }
+      if (roots === 1){ if (h0 < 0) rise = i + x1; else set = i + x1; }
+      else if (roots === 2){ rise = i + (ye < 0 ? x2 : x1); set  = i + (ye < 0 ? x1 : x2); }
+      if (rise && set) break;
+      h0 = h2;
+    }
+    var result = {};
+    if (rise) result.moonrise = hoursLater(t, rise);
+    if (set)  result.moonset  = hoursLater(t, set);
+    return result;
+  };
+})();
+
 function m_renderMeteoWindy(d, seaD){
   var panel = document.getElementById('meteo-panel');
   if (!panel || !d || !d.hourly) return;
@@ -14006,6 +14312,38 @@ function m_renderMeteoWindy(d, seaD){
       var ss0 = new Date(d.daily.sunset[di]);
       meteoEvents.push({ time: sr0, kind:'orto',  ico:'🌅', col:'#ffd54f', txt:(typeof T==='function')?T('met_amanece','Amanece'):'Amanece' });
       meteoEvents.push({ time: ss0, kind:'ocaso', ico:'🌇', col:'#ff8a65', txt:(typeof T==='function')?T('met_atardece','Atardece'):'Atardece' });
+    }
+  }
+  /* Rev565 (feedback Carlos): añadidos eventos moonrise/moonset con cálculo
+     astronómico real (SunCalc/Meeus, ±5 min). Rev567: abreviatura de fase
+     en una sola línea + flecha ▲/▼ sintética junto al icono de fase. */
+  function _phaseAbbrev(phaseName, en){
+    /* Mapeo confirmado por Carlos. Max ~10 chars para que quepa en columna
+       de evento (~105 px). */
+    var ES = { 'Nueva':'Nueva', 'Creciente':'Crec.', 'Cuarto creciente':'C. Crec.',
+               'Gibosa creciente':'Gib. Crec.', 'Llena':'Llena',
+               'Gibosa menguante':'Gib. Meng.', 'Cuarto menguante':'C. Meng.',
+               'Menguante':'Meng.' };
+    var EN = { 'Nueva':'New', 'Creciente':'Wax. Cre.', 'Cuarto creciente':'1st Qtr',
+               'Gibosa creciente':'Wax. Gib.', 'Llena':'Full',
+               'Gibosa menguante':'Wan. Gib.', 'Cuarto menguante':'Last Qtr',
+               'Menguante':'Wan. Cre.' };
+    return (en ? EN : ES)[phaseName] || phaseName;
+  }
+  if (typeof _lunarTimes === 'function' && typeof bPos === 'object' && bPos && typeof bPos.lat === 'number') {
+    var _moonLang = (typeof _lang!=='undefined'&&_lang==='en');
+    for (var mdi=0; mdi<3; mdi++){
+      var mDay = new Date(now); mDay.setDate(mDay.getDate()+mdi); mDay.setHours(0,0,0,0);
+      var mt = _lunarTimes(mDay, bPos.lat, bPos.lng);
+      var mPhase = moonPhase(mDay);
+      var mAbbr = _phaseAbbrev(mPhase.name, _moonLang);
+      if (mt.moonrise) {
+        /* ico = fase + flecha ▲ (salida) en una sola línea. txt = abreviatura. */
+        meteoEvents.push({ time: mt.moonrise, kind:'moonrise', ico: mPhase.ico+' ▲', col:'#90caf9', txt: mAbbr });
+      }
+      if (mt.moonset) {
+        meteoEvents.push({ time: mt.moonset, kind:'moonset', ico: mPhase.ico+' ▼', col:'#7986cb', txt: mAbbr });
+      }
     }
   }
   /* Rev228 (corrección): usar meteoTideData que ya tiene TODAS las mareas
@@ -14216,10 +14554,13 @@ function m_renderMeteoWindy(d, seaD){
     var t = new Date(col.t);
     if (col.type === 'event') {
       var ev = col.ev;
-      var evtBg = ev.kind === 'pleamar' ? 'rgba(77,208,255,.28)' :
-                  ev.kind === 'bajamar' ? 'rgba(255,112,67,.28)' :
-                  ev.kind === 'orto'    ? 'rgba(255,213,79,.22)' :
-                                           'rgba(255,138,101,.22)';
+      /* Rev565: añadidos kinds moonrise/moonset con tonos azulados (luna). */
+      var evtBg = ev.kind === 'pleamar'  ? 'rgba(77,208,255,.28)' :
+                  ev.kind === 'bajamar'  ? 'rgba(255,112,67,.28)' :
+                  ev.kind === 'orto'     ? 'rgba(255,213,79,.22)' :
+                  ev.kind === 'moonrise' ? 'rgba(144,202,249,.22)' :
+                  ev.kind === 'moonset'  ? 'rgba(121,134,203,.22)' :
+                                            'rgba(255,138,101,.22)';
       var hhmm = pad(t.getHours())+':'+pad(t.getMinutes());
       /* Rev228/231: click en cabecera de marea abre el popup de Curvas
          (TidesView). Marcamos _mFromMeteo en el overlay para que el botón
@@ -14287,10 +14628,13 @@ function m_renderMeteoWindy(d, seaD){
       var altBg;
       if (col.type === 'event') {
         var ev = col.ev;
-        altBg = ev.kind === 'pleamar' ? 'rgba(77,208,255,.22)' :
-                ev.kind === 'bajamar' ? 'rgba(255,112,67,.22)' :
-                ev.kind === 'orto'    ? 'rgba(255,213,79,.18)' :
-                                         'rgba(255,138,101,.18)';
+        /* Rev565: altBg para columnas de evento incluyendo moonrise/moonset. */
+        altBg = ev.kind === 'pleamar'  ? 'rgba(77,208,255,.22)' :
+                ev.kind === 'bajamar'  ? 'rgba(255,112,67,.22)' :
+                ev.kind === 'orto'     ? 'rgba(255,213,79,.18)' :
+                ev.kind === 'moonrise' ? 'rgba(144,202,249,.18)' :
+                ev.kind === 'moonset'  ? 'rgba(121,134,203,.18)' :
+                                          'rgba(255,138,101,.18)';
         sep = ';border-left:2px dashed '+ev.col;
       } else {
         var tt = new Date(col.t);

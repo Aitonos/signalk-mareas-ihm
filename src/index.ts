@@ -73,7 +73,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev562";
+const PLUGIN_REVISION = "Rev571";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -347,9 +347,9 @@ const MAX_SIDE_BUTTONS_PER_SIDE = 5;
 /* Rev491 (feedback Vicente): añadidas dif_lw y prof_min a la whitelist del
    backend. Sin esto, sanitizeBBOrder() las filtraba al guardar, haciendo que
    no se pudieran reactivar tras desactivarlas en config. */
-/* Rev556 (feedback Carlos #9c): añadido t_fondeo (tiempo transcurrido desde
-   el drop) como nueva celda persistible. */
-const BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","t_fondeo","sunrise","wx_6h","wave"] as const;
+/* Rev556 (feedback Carlos #9c): añadido t_fondeo. Rev566: moon.
+   Rev567 (feedback Carlos): gps_acc — widget precisión GPS (HDOP + sats). */
+const BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","t_fondeo","sunrise","moon","gps_acc","wx_6h","wave"] as const;
 type BBCellKey = typeof BB_CELL_KEYS[number];
 /* Rev535 (B-25, feedback Carlos 2026-06-24): nuevo default snapshot del orden
    que Carlos tiene activo en Tunatunes. Sustituye al antiguo default que
@@ -5289,6 +5289,45 @@ function getAnchorWatchState() {
     tideStationName: (lastForecast && lastForecast.station && lastForecast.station.name)
       ? String(lastForecast.station.name) : "",
     predictiveSwing: _lastPredictiveSwing,
+    /* Rev567/568 (feedback Carlos): bloque gps con HDOP + nº satélites +
+       fixQuality string (Fix / DFix / No fix) para el widget bottom-bar
+       "GPS". Frontend muestra precisión en metros (HDOP × σUERE 5m) + Fix
+       label, color por fiabilidad. Si los paths SK no existen, null. */
+    gps: (function(){
+      const readN = (p: string): number | null => {
+        try {
+          const v = app.getSelfPath(p) as any;
+          if (v == null) return null;
+          if (typeof v === "object") {
+            const x = v.value ?? v;
+            return typeof x === "number" && isFinite(x) ? x : null;
+          }
+          return typeof v === "number" && isFinite(v) ? v : null;
+        } catch { return null; }
+      };
+      const readS = (p: string): string | null => {
+        try {
+          const v = app.getSelfPath(p) as any;
+          if (v == null) return null;
+          if (typeof v === "object") {
+            const x = v.value ?? v;
+            return typeof x === "string" && x ? x : null;
+          }
+          return typeof v === "string" && v ? v : null;
+        } catch { return null; }
+      };
+      return {
+        hdop:        readN("navigation.gnss.horizontalDilution"),
+        satellites:  readN("navigation.gnss.satellites"),
+        /* SK estándar `navigation.gnss.methodQuality` devuelve string como
+           "GNSS Fix", "DGNSS fix", "No GPS", "Estimated". Si no existe,
+           probamos fixQuality numérico (0=no, 1=GPS, 2=DGPS, 4=RTK, 5=Float
+           RTK, 6=DR). El frontend normaliza a Fix/DFix/No fix. */
+        fixMethod:   readS("navigation.gnss.methodQuality"),
+        fixQuality:  readN("navigation.gnss.fixQuality"),
+        fixType:     readN("navigation.gnss.type") ?? readN("navigation.gnss.fixType"),
+      };
+    })(),
     // Authoritative ACK list — frontends sync from this so multiple browser
     // windows / devices stay coherent. localStorage is just a transient cache.
     aisAckedMMSIs: anchorWatch.aisAckedMMSIs ?? [],
@@ -5701,7 +5740,11 @@ function _getBoatWind(): {
 // SK no publica environment.wind.gust. Estándar meteorológico: gust = pico
 // del viento sostenido en últimos 10 min. Muestreo a 1 Hz desde el polling
 // del bridge (suficiente para detectar rachas reales en un fondeo).
-const _GUST_WINDOW_MS = 10 * 60 * 1000;
+/* Rev567 (feedback Carlos: "racha de los últimos 23 minutos"): ventana
+   ampliada de 10 → 23 min para que la celda de bottom-bar Viento muestre
+   pico relevante de la última media hora aprox. (estándar meteorológico
+   suele ser 10 min, pero Carlos quiere ventana más amplia para fondeo). */
+const _GUST_WINDOW_MS = 23 * 60 * 1000;
 const _gustBuffer: { ts: number; kt: number }[] = [];
 function _gustSample() {
   const w = _getBoatWind();
@@ -7401,11 +7444,37 @@ expressApp.get("/signalk-mareas-ihm/api/wind/boat", (_req: any, res: any) => {
     res.json({ available: false, source: null });
     return;
   }
+  /* Rev567 (feedback Carlos: "racha de los últimos 23 minutos"): añadidos
+     campos gustKt + gustAvailable al endpoint /wind/boat — antes sólo
+     existían en /env/sensors así que el widget de viento del bottom-bar
+     no podía pintar la racha. Prioridad: sensor estándar SK
+     environment.wind.gust; fallback al rolling max del speedKt en la
+     ventana 23 min (_gustBuffer / _getGustKt). */
+  let gustKt: number | null = null;
+  let gustAvailable = false;
+  try {
+    const now = Date.now();
+    const gust = _skVal("environment.wind.gust");
+    if (typeof gust.v === "number" && (gust.ts === 0 || now - gust.ts < 60_000)) {
+      gustKt = gust.v * 1.94384;
+      gustAvailable = true;
+    } else {
+      /* Rev571 (feedback Carlos: "no sale del tiron"): threshold 30→5
+         muestras para que aparezca tras 5 s del arranque, no 30 s. */
+      const rolling = _getGustKt();
+      if (rolling != null && _gustBuffer.length >= 5) {
+        gustKt = rolling;
+        gustAvailable = true;
+      }
+    }
+  } catch { /* defensive */ }
   res.json({
     available: true,
     source: "boat",
     dirFromDeg: w.dirFromDeg,
     speedKt: w.speedKt,
+    gustKt,
+    gustAvailable,
     ageMs: w.ageMs,
     headingMagDeg: w.headingMagDeg,
     apparentAngleDeg: w.apparentAngleDeg,
@@ -7470,8 +7539,12 @@ expressApp.get("/signalk-mareas-ihm/api/env/sensors", (_req: any, res: any) => {
     out.gustKt = gust.v * 1.94384;
     out.gustAvailable = true;
   } else {
+    /* Rev571 (feedback Carlos: "no sale del tiron"): threshold bajado de
+       30→5 muestras (~5s) para que la racha aparezca casi al instante tras
+       el arranque del plugin. Con solo 5 muestras el rolling max ya es
+       informativo (al menos refleja viento de los últimos segundos). */
     const rolling = _getGustKt();
-    if (rolling != null && _gustBuffer.length >= 30) { // ≥30 muestras (~30s)
+    if (rolling != null && _gustBuffer.length >= 5) {
       out.gustKt = rolling;
       out.gustAvailable = true;
     }

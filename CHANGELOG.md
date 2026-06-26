@@ -1,5 +1,81 @@
 # Changelog
 
+## [2.3.5] - 2026-06-26
+
+### English
+
+**Bottom-bar widgets — directs, new Wind/Sun/Moon/GPS widgets, gust display**
+
+- **Widget click destinations remapped** (Carlos feedback): Sonda/Tide/Dif-LW/Prof.min. now open Curvas (`curvas-pop` + `fetchCurvas()`); Cad.rec./Dist.ancla open Cálculo Fondeo (`fondeo-pop`); H.fondeo/T.fondeo/Wave open Historial Olas (`wave-hist-info-pop`). Wave widget no longer opens the `/wave-debug` technical page.
+- **Wind widget**: now shows the gust value `(racha X kt)` under the main reading. Source = `_envSensors.gustKt` (same as the shelter infobox). Rolling window enlarged 10 → 23 min for a more useful peak. Last seen gust is cached so it stays visible even if the sensor pauses briefly. Threshold to display dropped from 30 samples (~30 s) to 5 (~5 s) so the gust appears almost immediately after plugin start.
+- **Sun widget** redesigned: label shows "Salida SOL" / "Ocaso SOL" (text only), value shows icon + time of the next event (🌅 06:32 / 🌇 21:45), sub-label shows ▲/▼ + time of the following event.
+- **Moon widget** new + parallel design: label "Salida LUNA" / "Ocaso LUNA", value shows current moon phase icon + time of next moonrise/moonset, sub shows ▲/▼ + time of the following event. Astronomical calculation (Meeus simplified inline, ±5 min accuracy).
+- **GPS accuracy widget** new (`gps_acc`, opt-in): label "Prec. GPS" / "GPS Prec.", value = estimated precision in meters (HDOP × 5), sub-label = Fix / DFix / Sin fix · N sat. Color codes: green = good, orange = low reliability, red = none/no fix. Reads `navigation.gnss.horizontalDilution`, `satellites`, `methodQuality` from SignalK.
+- **+ widget** (already in 2.3.4) — pinned to the right edge, opens widget configuration. Separator handling fixed so the previous cell keeps its divider and "+" never draws one.
+- **Bottom-bar layout** centered (`safe center`), gap-right reduced to remove perceived gap at the right edge.
+
+**Meteo modal — moonrise/moonset astronomical events**
+
+- Real moonrise/moonset events added to the hourly table (next 3 days), replacing the legacy "tossed" formula `(17 + dom*0.83) % 24`. New `_lunarTimes(date, lat, lng)` (Meeus simplified, SunCalc-style) gives ±5 min precision based on the boat's real position.
+- Event columns show: moon phase icon + ▲/▼ arrow, hour, and abbreviated phase name (Gib. Crec. / Wax. Gib. etc).
+
+**AIS panel**
+
+- Distances in the AIS list and the AIS radius slider now use a new `unitFmt.distanceLand()` helper: metric → `m`/`km`, imperial → `ft`/`mi`. Never `NM` even when the user system is `metric_nautical`.
+- When the AIS filter finds no targets in the local list, a "🔍 Search in Vesselfinder" button appears with the search term — opens `vesselfinder.com/vessels?name=<term>` in a new tab.
+- AIS toggle row in portrait wraps to the left (was sticking right because of inherited `margin-left:auto`).
+
+**Shelter modal polish**
+
+- Pressure sparkline appears instantly when opening the modal instead of waiting 5-60 s for the next SSE tick (fix to `_wxRefreshChip` re-paint trigger).
+- "Detectados N sectores abrigados" / "Detectado 1 sector abrigado" — plural-aware in both paths.
+- Wind/gust badges (Veleta · Sensor · IMU) inside the infobox bumped to 22 px (were 10-11 px, illegible under zoom 0.6).
+
+**Modal Instructions (iframe)**
+
+- Hidden the orphaned inner header (Atrás · Mareas · Curvas) when the iframe is opened from the visor with `?embed=1` or `?showInstructions=1`. The parent already injects its own header.
+
+**Map**
+
+- Self-track now renders even when GPS is extremely stable. Distance threshold 0.5 → 0.2 m + 60 s keep-alive guarantee at least one new point per minute. Polylines moved to a custom Leaflet pane with `zIndex: 650` and weight bumped to 5 / opacity 0.95.
+
+### Español
+
+**Widgets de la bottom-bar — destinos de click, nuevos Viento/Sol/Luna/GPS, racha de viento**
+
+- **Destinos de click remapeados** (feedback Carlos): Sonda/Marea/Dif.Bajamar/Prof.mín. abren Curvas; Cad.rec./Dist.ancla abren Cálculo Fondeo; H.fondeo/T.fondeo/Wave abren Historial Olas. Wave ya no abre la página técnica `/wave-debug`.
+- **Widget Viento**: muestra ahora la racha `(racha X kt)` bajo el valor principal. Fuente = `_envSensors.gustKt` (misma del infobox del Abrigo). Ventana del rolling ampliada 10 → 23 min para pico más útil. Última racha vista se cachea para que persista aunque el sensor pause. Threshold para mostrar bajado de 30 muestras (~30 s) a 5 (~5 s) para que aparezca casi inmediatamente tras el arranque del plugin.
+- **Widget Sol** rediseñado: label "Salida SOL" / "Ocaso SOL" (sólo texto), valor con icono + hora del próximo evento (🌅 06:32 / 🌇 21:45), sub-label con ▲/▼ + hora del siguiente.
+- **Widget Luna** nuevo paralelo: label "Salida LUNA" / "Ocaso LUNA", valor con icono de fase actual + hora del próximo moonrise/moonset, sub-label con ▲/▼ + hora del siguiente. Cálculo astronómico (Meeus simplificado inline, precisión ±5 min).
+- **Widget Precisión GPS** nuevo (`gps_acc`, opt-in): label "Prec. GPS" / "GPS Prec.", valor = precisión estimada en metros (HDOP × 5), sub-label = Fix / DFix / Sin fix · N sat. Colores: verde = buena, naranja = baja fiabilidad, rojo = nula/sin fix. Lee `navigation.gnss.horizontalDilution`, `satellites`, `methodQuality` de SignalK.
+- **Widget +** (ya en 2.3.4) — fijo al borde derecho, abre la configuración de widgets. Separadores arreglados: la celda anterior conserva su divisor y el "+" nunca dibuja uno.
+- **Layout bottom-bar** centrado (`safe center`), gap derecho reducido para eliminar hueco visual al borde.
+
+**Modal Meteo — eventos moonrise/moonset astronómicos**
+
+- Eventos reales moonrise/moonset añadidos a la tabla horaria (próximos 3 días), reemplazando la fórmula tosca legacy `(17 + dom*0.83) % 24`. Nueva función `_lunarTimes(date, lat, lng)` (Meeus simplificada, estilo SunCalc) da precisión ±5 min basada en la posición real del barco.
+- Columnas de evento muestran: icono de fase + flecha ▲/▼, hora, y nombre de fase abreviado (Gib. Crec. / Wax. Gib. etc).
+
+**Panel AIS**
+
+- Distancias del listado AIS y slider del radio AIS usan ahora el nuevo helper `unitFmt.distanceLand()`: métrico → `m`/`km`, imperial → `ft`/`mi`. Nunca `NM` aunque el sistema sea `metric_nautical`.
+- Cuando el filtro AIS no encuentra targets en la lista local, aparece un botón "🔍 Buscar en Vesselfinder" con el término buscado — abre `vesselfinder.com/vessels?name=<término>` en pestaña nueva.
+- Fila de toggles AIS en vertical wrappea a la izquierda (antes se quedaba a la derecha por `margin-left:auto` heredado).
+
+**Pulido modal Abrigo**
+
+- Sparkline de presión aparece al instante al abrir el modal en lugar de tardar 5-60 s al próximo tick SSE (fix al trigger de repintado en `_wxRefreshChip`).
+- "Detectados N sectores abrigados" / "Detectado 1 sector abrigado" — plural-aware en los dos paths.
+- Badges Veleta · Sensor · IMU del infobox subidos a 22 px (eran 10-11 px, ilegibles bajo el zoom 0.6).
+
+**Modal Instrucciones (iframe)**
+
+- Ocultado el header interno huérfano (Atrás · Mareas · Curvas) cuando el iframe se abre desde el visor con `?embed=1` o `?showInstructions=1`. El padre ya inyecta su propio header.
+
+**Mapa**
+
+- Track propio se pinta ahora incluso cuando el GPS está extremadamente estable. Threshold 0.5 → 0.2 m + keep-alive 60 s garantizan al menos un punto nuevo por minuto. Polylines movidas a un pane custom de Leaflet con `zIndex: 650` y weight subido a 5 / opacidad 0.95.
+
 ## [2.3.4] - 2026-06-26
 
 ### English
