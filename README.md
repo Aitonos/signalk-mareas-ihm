@@ -28,6 +28,7 @@ A single Signal K plugin that turns your boat computer into a serious **anchor w
 - 🌀 **Built-in shortcuts** to Windy, Windregatta.com, KIP, SK Freeboard.
 - 📱 **Works on any screen** — from a phone in hand to the big bridge monitor. The viewer reorders itself and buttons stay the right size for finger-touch use.
 - 🇬🇧 🇪🇸 **Fully bilingual UI** (English / Spanish) — switch live from the menu.
+- 👥 **Multi-user PIN control** — protect boat actions (drop/lift anchor, alarms, settings) with a master PIN + optional guest PINs (charter crew, family, etc.) with per-user notes and optional expiry. Read stays open.
 
 Runs on **Raspberry Pi** (OpenPlotter), **any Linux box** or **macOS / Windows** with Signal K Server.
 
@@ -103,6 +104,15 @@ Most anchor watch apps are paid, closed source, single-device and tied to a vend
 - **KIP buttons** for drop/lift and toggle alarms — open Freeboard-SK with one tap from the side bar.
 - **REST endpoints** for Alexa, Google Home, Node-RED, MQTT bridges, custom dashboards.
 - **`/toggle` endpoint** for single-button remote controls.
+
+#### User control (multi-user PIN, new in 2.4.0)
+- **Master + Guests** model. First PIN created becomes the master (manages the layer + everyday use). The master can add guest PINs at any time.
+- **Public read stays open**. Only mutating actions (drop/lift anchor, alarms, settings, PIN management) require a valid PIN. Anyone browsing the map or tides sees the same data as before.
+- **Optional expiry per guest** with quick-buttons: no expiry, +1 day, +7, +30, +90, +1 year. Charter crew gets a PIN that dies on Sunday, family gets a permanent one.
+- **Notes** and **PIN visible to master** — the master opens the guest card and sees their current PIN in plain text (the file lives on the owner's Pi, treated as boat-local).
+- **Active users list** shows each open session with device (OS · browser), IP and remaining minutes/hours/days. The master can revoke any guest session remotely.
+- **Master session persistent** (1 year cookie TTL) — the owner does not have to re-enter PIN every 30 minutes. Guest sessions match the PIN's expiry.
+- **Zero Signal K account setup required**. No `/admin/#/security` fiddling; everything is inside the plugin.
 
 ### URLs
 
@@ -188,6 +198,7 @@ Un único plugin de Signal K que convierte el ordenador del barco en un **gestor
 - 🌀 **Atajos integrados** a Windy, Windregatta.com, KIP, SK Freeboard.
 - 📱 **Versátil en cualquier pantalla** — desde el móvil en mano hasta el monitor grande del puente. El visor se reordena solo y los botones se mantienen del tamaño adecuado para tocar sin equivocarte.
 - 🇬🇧 🇪🇸 **UI bilingüe** con cambio en vivo desde el menú.
+- 👥 **Control de usuarios por PIN** — protege las acciones del barco (echar/levar, alarmas, configuración) con un PIN maestro + PINs de invitado opcionales (tripulación de charter, familia, etc.) con notas y caducidad opcional. La lectura queda abierta.
 
 Funciona en **Raspberry Pi** (OpenPlotter), **cualquier Linux** o **macOS / Windows** con Signal K Server.
 
@@ -263,6 +274,15 @@ La mayoría de apps de anchor watch son de pago, código cerrado, un solo dispos
 - **Botones KIP** para echar/levar y conmutar alarmas — abre Freeboard-SK con un toque desde la sidebar.
 - **Endpoints REST** para Alexa, Google Home, Node-RED, puentes MQTT, dashboards a medida.
 - **Endpoint `/toggle`** para mandos remotos de un solo botón.
+
+#### Control de usuarios (multi-PIN, nuevo en 2.4.0)
+- Modelo **Maestro + Invitados**. El primer PIN creado es el maestro (gestiona el control + uso normal). El maestro puede añadir PINs de invitado en cualquier momento.
+- **La lectura pública sigue abierta**. Sólo las acciones que mutan estado (echar/levar, alarmas, configuración, gestión de PINs) requieren PIN válido. Quien sólo mira el mapa o las mareas ve los mismos datos que antes.
+- **Caducidad opcional por invitado** con botones rápidos: sin caducidad, +1 día, +7, +30, +90, +1 año. A la tripulación del charter le pones un PIN que caduca el domingo; a la familia uno permanente.
+- **Notas** y **PIN visible al maestro** — el maestro abre la ficha del invitado y ve su PIN en claro (el fichero vive en la Pi del propio armador, tratado como local del barco).
+- **Lista de usuarios activos** muestra cada sesión con dispositivo (OS · navegador), IP y minutos/horas/días restantes. El maestro puede revocar cualquier sesión de invitado desde su terminal.
+- **Sesión del maestro persistente** (cookie TTL 1 año) — el armador no re-introduce PIN cada 30 minutos. Las sesiones de invitado se ajustan a la caducidad de su PIN.
+- **Cero setup de cuentas Signal K**. No hay que tocar `/admin/#/security`; todo vive dentro del plugin.
 
 ### URLs
 

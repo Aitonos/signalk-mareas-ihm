@@ -243,6 +243,19 @@ profundidad_futura = profundidad_actual + (marea_actual − marea_futura)
 </ul>
 <p>Ninguna capa no oficial debe presentarse como sustituta de la cartografía náutica oficial vigente.</p>
 
+<h3>11 bis. Control de usuarios (multi-PIN, v2.4.0)</h3>
+<p>Nuevo desde la versión 2.4.0. El plugin puede exigir un <strong>PIN</strong> para todas las acciones que mutan estado (echar/levar ancla, alarmas, configuración). La lectura pública queda abierta: quien sólo mira el mapa, las mareas o el visor no necesita PIN.</p>
+<ul>
+  <li><strong>Cómo activarlo:</strong> Configuración → bloque "👥 Control de usuarios". La primera vez pulsa "🔓 Introducir PIN" o el toggle: te pide crear el <strong>PIN MAESTRO</strong> (un alias + 4-8 dígitos). Ese PIN queda como propietario del barco y sirve para todo.</li>
+  <li><strong>Añadir invitados:</strong> como maestro, botón "+ Añadir usuario". Cada invitado tiene su alias, su PIN, notas opcionales y una <strong>caducidad opcional</strong> (sin caducidad, +1 día, +7, +30, +90, +1 año). Un charter que sale el domingo lleva un PIN que expira el domingo.</li>
+  <li><strong>Ficha del invitado:</strong> el maestro puede ver el PIN del invitado, cambiar su PIN, cambiar la caducidad o borrarlo. Al cambiar la caducidad, la sesión activa del invitado se actualiza al vuelo.</li>
+  <li><strong>Usuarios activos:</strong> el maestro ve la lista de dispositivos con sesión abierta (alias, sistema operativo · navegador, IP, tiempo restante) y puede <strong>revocar cualquier sesión de invitado</strong> desde su terminal.</li>
+  <li><strong>Sesiones:</strong> la sesión del maestro es persistente (1 año) para no tener que reintroducir PIN cada 30 min. La sesión del invitado dura hasta que caduque su PIN.</li>
+  <li><strong>Cerrar sesión:</strong> arriba de Configuración, bloque "🔓 Mi sesión", botón "Cerrar sesión". Tanto maestro como invitado pueden salir.</li>
+  <li><strong>Si nadie tiene el PIN maestro:</strong> el fichero <code>~/.signalk/plugin-config-data/mareas-ihm/ihm/securityPins.json</code> guarda los PINs (en el propio Pi del armador). Borrarlo resetea el control a "sin usuarios". No hay recovery por correo — el barco es local.</li>
+  <li><strong>Desactivar el control:</strong> el maestro puede volver el toggle a OFF en cualquier momento; entonces todo funciona como antes (sin PIN para nada).</li>
+</ul>
+
 <!-- ================================================================ -->
 <h2 class="mareas">📊 MÓDULO MAREAS (IHM)</h2>
 

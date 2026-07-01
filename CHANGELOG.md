@@ -1,5 +1,107 @@
 # Changelog
 
+## [2.4.0] - 2026-07-02
+
+### English
+
+**Multi-user PIN control (new module)**
+
+A new **User Control** layer (Rev573-Rev606) protects boat actions (drop/lift anchor, alarms, settings) with a local PIN system. **Public read remains open** — only mutating actions require a PIN. Zero Signal K account setup required; everything lives inside the plugin.
+
+- **Master + Guests model**. The first PIN created is the MASTER (manages the layer + other PINs + everyday use). The master can create GUEST PINs for crew or charter guests. Guests can use the plugin normally but cannot manage users or toggle the layer.
+- **Per-user PIN visible to master** (Rev603). The master opens a guest's card and sees their current PIN in plain text. Aimed at a boat scenario where the file lives on the owner's own Pi.
+- **Optional expiry** with quick-buttons: no expiry / +1 day / +7 / +30 / +90 / +1 year.
+- **Notes** field per user (charter crew, family member, etc.).
+- **Change guest PIN from the master's card** (`🔑 Change now`). Master fixes a new number without needing the old one.
+- **Active users list**, master-only. Shows every open session with alias, OS · browser, IP, remaining minutes/hours/days. Master can revoke any guest session; cannot revoke another master session (there is only one) nor themselves.
+- **Coherent expiry across PIN ↔ cookie**: guest with no expiry PIN → persistent cookie; guest with expiry → cookie lasts until the PIN expires. Master session persistent (1 year TTL) — the boat's owner does not have to re-enter PIN every 30 minutes.
+- **Master control retained**: if the "User control" toggle is OFF, everything works as before Rev573 (no PIN required for any action).
+- **User-Agent parsing fixed** (Rev607). Opera Mobile on Android used to show as "Linux · Chrome" (regex `|` returns first-position match, not the most specific one). Now cascading `if/else` in specificity order — Android before Linux, Opera before Chrome, Edge before Chrome, CriOS/FxiOS/EdgA aliases recognised.
+
+**Notifications: `weatherAdvisory` false-warn fix (Rev608)** ⚠️
+
+Fixed a **critical bug** reported after a scare on a real boat: the plugin kept emitting `notifications.signalk-mareas-ihm.weatherAdvisory` with `state:warn` and `method:['visual']` **even with the "Bad weather" alarm toggle OFF for days**. The toggle lived only in browser localStorage; the backend polled Open-Meteo and emitted the warn regardless. Now:
+
+- New backend flag `_weatherAdvisoryEnabled`, persisted in cache.
+- If the toggle is OFF, the notification path is still published but always with `state:'normal'` and empty `method` — SK does not raise a visual alarm.
+- On plugin start, if the toggle is OFF, the plugin publishes an immediate `state:'normal'` delta to blank out any stale `warn` from before the restart.
+- Frontend `setAlarm('weather')` now POSTs the state to the backend and syncs with the backend on visor boot (backend is the source of truth).
+
+**Anchor & voice fixes**
+
+- **Idempotent `/drop`** (Rev602): if already anchored, the endpoint returns OK without re-firing the "Anchor down" voice nor re-broadcasting SSE. Fixes cross-device scenario where device B tapped "Lift" once and got "Anchor down" voice + no action, then tapped again to actually lift.
+- **Sync state before deciding** (Rev602): `m_onAnchorBtn` now fetches `/state` before choosing `doDrop` vs `doLift`, ensuring the local `anch` variable matches the backend's truth.
+- **Anti-spurious voice guard** (Rev600, Rev604): `_speakAlarm('anchor_down')` gated on `anchoredSinceMs` freshness AND `window._lastLocalLiftMs` recency. A delayed SSE `drop` event landing after a local `lift` no longer triggers the voice.
+- **Voice dedupe window** shortened from 30 s → 5 s (Rev598): 30 s was too aggressive and silenced legitimate voices during rapid QA drops/lifts.
+- **AIS activate popup cancelled on lift** (Rev604): the 5 s `setTimeout` that asks the user to enable AIS alarm after drop is now cleared when the user lifts anchor before the timeout fires. The popup no longer pops up seconds after the anchor is up.
+
+**Track rendering**
+
+- **z-index bug fixed** (Rev608): the boat marker now paints **on top of** the track polyline. Custom Leaflet `trackPane` lowered from `zIndex:650` → `550` (Leaflet's `markerPane` is at 600).
+- **Grey out old tracks** (Rev608): points more than 4 hours old are painted progressive grey instead of the red→green gradient. Yesterday's track no longer looks as fresh as today's.
+- **Optional horizon** for own tracks with default 12 h (Rev608). Points beyond the horizon are not drawn. Runtime setters `m_trkSetLimitHours`, `m_trkSetOwnEnabled`, `m_trkClearOwn` (UI in Cartas panel scheduled for next release).
+
+**UX & wording**
+
+- "Security layer" renamed to "**User control**" (Rev599). Toggle "Activada/Desactivada" → "Activado/Desactivado" (masculine).
+- "PIN" nomenclature aligned with "User" everywhere the human concept made more sense: "Registered PINs" → "Registered users"; "Active PIN sessions" → "Active users"; "My PIN session" → "My session"; "Edit guest PIN" → "Edit guest user"; "Sign out PIN" → "Sign out"; "+ Add PIN" → "+ Add user" (Rev601).
+- **PIN dialer** iteratively enlarged (Rev585 → Rev589) to reach 110×100 px keys with 38 px font — comfortable on a real phone.
+- **Anonymous entry point** (Rev593): if PINs exist and you are not signed in, the sidebar 🔒 button opens the PIN modal directly (no need to open Config first).
+- **Master's session shown as "No expiry"** in Active users list, instead of showing thousands of minutes (Rev597).
+- **Guest sees their own remaining time** in "My session" (Rev606) — separately for PIN expiry (validity) and session cookie (until next login).
+- **CSS hierarchy audit** of the Config modal (Rev587): section titles unified to 28 px bold, help text 18 px grey, sub-sections 22 px, primary/secondary/reset buttons styled with shared classes.
+- **Lock icon in the sidebar** moved to the left column, above the Alarms button (Rev587); coloured background + glow to make it noticeable when the control is active (Rev595).
+
+### Español
+
+**Control de usuarios (módulo nuevo)**
+
+Nuevo módulo **Control de usuarios** (Rev573-Rev606) que protege las acciones del barco (echar/levar ancla, alarmas, configuración) con un sistema de PIN local. **La lectura pública se mantiene abierta** — sólo las acciones que mutan estado requieren PIN. No requiere configurar cuentas de Signal K; todo vive dentro del plugin.
+
+- **Modelo Maestro + Invitados**. El primer PIN creado es el MAESTRO (gestiona el control + otros PINs + uso normal). El maestro puede crear PINs INVITADO para tripulación o charters. Los invitados pueden usar el plugin normalmente pero no pueden gestionar usuarios ni tocar el control.
+- **PIN por usuario visible al maestro** (Rev603). El maestro abre la ficha de un invitado y ve su PIN actual en claro. Coherente con el escenario: el fichero vive en la Pi del propio armador.
+- **Caducidad opcional** con botones rápidos: sin caducidad / +1 día / +7 / +30 / +90 / +1 año.
+- **Notas** por usuario (tripulación de charter, familiar, etc.).
+- **Cambiar PIN del invitado desde su ficha** (`🔑 Cambiar ahora`). El maestro fija el nuevo número sin necesitar el anterior.
+- **Lista de usuarios activos**, sólo maestro. Muestra cada sesión abierta con alias, OS · navegador, IP, minutos/horas/días restantes. El maestro puede revocar cualquier sesión de invitado; no puede revocar otra sesión de maestro (sólo hay una) ni a sí mismo.
+- **Coherencia caducidad PIN ↔ cookie**: invitado con PIN sin caducidad → cookie persistente; con caducidad → cookie hasta que caduque el PIN. Sesión maestro persistente (TTL 1 año) — el armador no re-introduce PIN cada 30 minutos.
+- **Control retenido por el maestro**: si el toggle "Control de usuarios" está OFF, todo funciona como antes de Rev573 (sin PIN para nada).
+- **Parseo User-Agent arreglado** (Rev607). Opera Mobile en Android salía como "Linux · Chrome" (regex `|` devuelve la primera coincidencia por posición, no la más específica). Ahora cascada `if/else` por especificidad — Android antes que Linux, Opera antes que Chrome, Edge antes que Chrome, aliases CriOS/FxiOS/EdgA reconocidos.
+
+**Notificaciones: fix `weatherAdvisory` fantasma (Rev608)** ⚠️
+
+Arreglado **bug grave** reportado tras un susto en un barco real: el plugin seguía emitiendo `notifications.signalk-mareas-ihm.weatherAdvisory` con `state:warn` y `method:['visual']` **con el interruptor "Mala condición climática" APAGADO durante días**. El toggle vivía sólo en localStorage del navegador; el backend polleaba Open-Meteo y emitía el warn de todas formas. Ahora:
+
+- Nueva flag backend `_weatherAdvisoryEnabled`, persistido en cache.
+- Si el toggle está OFF, el path se sigue publicando pero siempre con `state:'normal'` y `method` vacío — Signal K no dispara alarma visual.
+- Al arrancar el plugin, si el toggle está OFF, se publica delta inmediato `state:'normal'` para blanquear cualquier `warn` colgado del reinicio.
+- Frontend `setAlarm('weather')` ahora POSTea el estado al backend y sincroniza con el backend al arrancar el visor (backend = fuente de verdad).
+
+**Fondeo y voz**
+
+- **`/drop` idempotente** (Rev602): si ya estás fondeado, el endpoint devuelve OK sin re-disparar la voz "Ancla fondeada" ni re-emitir SSE. Arregla el escenario cross-device donde el dispositivo B pulsaba "Levar" y la primera pulsación decía "Ancla fondeada" sin hacer nada, teniendo que pulsar una segunda vez para levar de verdad.
+- **Sincronización de estado antes de decidir** (Rev602): `m_onAnchorBtn` hace fetch `/state` antes de elegir `doDrop` vs `doLift`, garantizando que la variable local `anch` coincide con la verdad del backend.
+- **Guard anti-voz-espuria** (Rev600, Rev604): `_speakAlarm('anchor_down')` respeta el frescor de `anchoredSinceMs` Y `window._lastLocalLiftMs`. Un SSE `drop` atrasado que llega tras un `lift` local ya no dispara la voz.
+- **Dedupe voz** bajado de 30 s → 5 s (Rev598): 30 s era demasiado agresivo y silenciaba voces legítimas en QA con drops/lifts rápidos.
+- **Popup activar AIS cancelado al levar** (Rev604): el `setTimeout` de 5 s que pregunta si activar la alarma AIS tras fondear ahora se cancela cuando el usuario leva antes de que salte. El popup ya no aparece segundos después de levar.
+
+**Renderizado de tracks**
+
+- **Bug z-index arreglado** (Rev608): el barco ahora se pinta **encima** del polyline del track. Pane custom de Leaflet `trackPane` bajado de `zIndex:650` → `550` (el `markerPane` de Leaflet vale 600).
+- **Tracks viejos en gris** (Rev608): los puntos con más de 4 h de antigüedad se pintan en gris progresivo en lugar del gradiente rojo→verde. El track de ayer ya no se ve tan fresco como el de hoy.
+- **Horizonte opcional** para tracks propios con default 12 h (Rev608). Los puntos más allá del horizonte no se dibujan. Setters runtime `m_trkSetLimitHours`, `m_trkSetOwnEnabled`, `m_trkClearOwn` (UI en el panel Cartas pendiente para la próxima release).
+
+**UX y textos**
+
+- "Capa de seguridad" renombrado a "**Control de usuarios**" (Rev599). Toggle "Activada/Desactivada" → "Activado/Desactivado" (masculino).
+- Nomenclatura "PIN" alineada con "Usuario" allí donde el concepto humano tenía más sentido: "PINs registrados" → "Usuarios registrados"; "Sesiones PIN activas" → "Usuarios activos"; "Mi sesión PIN" → "Mi sesión"; "Editar PIN invitado" → "Editar usuario invitado"; "Cerrar sesión PIN" → "Cerrar sesión"; "+ Añadir PIN" → "+ Añadir usuario" (Rev601).
+- **Dialer PIN** ampliado iterativamente (Rev585 → Rev589) hasta teclas 110×100 px con fuente 38 px — cómodo en un móvil real.
+- **Punto de entrada anónimo** (Rev593): si hay PINs y no estás autenticado, el botón 🔒 de la sidebar abre directamente el modal PIN (sin pasar por Config).
+- **Sesión del maestro como "Sin caducidad"** en la lista de usuarios activos, en lugar de mostrar miles de minutos (Rev597).
+- **El invitado ve su propio tiempo restante** en "Mi sesión" (Rev606) — separado para caducidad del PIN (validez) y cookie de sesión (hasta el próximo login).
+- **Audit CSS jerarquía** del modal Configuración (Rev587): títulos de sección uniformados a 28 px bold, help 18 px gris, sub-secciones 22 px, botones primario/secundario/reset con clases compartidas.
+- **Icono del candado** movido a la sidebar izquierda encima de Alarmas (Rev587); fondo de color + glow para que destaque cuando el control está activo (Rev595).
+
 ## [2.3.5] - 2026-06-26
 
 ### English

@@ -2052,6 +2052,13 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
      estilo que #m-sidebar derecha). -->
 <div id="m-leftbar">
   <button id="m-ham" data-i18n-title="lb_ham_tip" title="Menú" onclick="document.getElementById('m-menu').classList.add('open')"><span class="ico">☰</span></button>
+  <!-- Rev587 (feedback Carlos): botón candado movido aquí, encima de Alarmas.
+       Rev595 (feedback Carlos "visualmente insignificante"): fondo de color
+       según estado para que destaque, label más grande. -->
+  <button id="m-sb-access" data-i18n-title="sb_access_tip" title="Capa de seguridad — toca para PIN / config">
+    <span class="ico" id="m-sb-access-ico" style="font-size:30px">🔓</span>
+    <span class="lbl" id="m-sb-access-lbl" data-i18n="sb_access" style="font-weight:900">Acceso</span>
+  </button>
   <!-- Rev434: orden izq tras hamburger: Alarmas, Snooze, Silencio, Curvas, Mareas, KIP, Freeboard.
        Meteo se ha movido a la sidebar derecha al fondo (donde antes estaba Alarmas). -->
   <button id="m-sb-alarm" data-i18n-title="sb_alarmas_tip" title="Panel de alarmas" onclick="toggleAlarmPanel()">
@@ -2098,6 +2105,117 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 <div id="m-bb-scroll-left" class="m-bb-scroll-ind" onclick="m_bbToggleBar()">◀</div>
 <div id="m-bb-scroll-right" class="m-bb-scroll-ind show" onclick="m_bbToggleBar()">▶</div>
 
+<!-- Rev586 (refactor feedback Carlos: "desactiva referencias a usuario SK"):
+     banner solo-lectura SIN botón "Iniciar sesión". Todo el banner es
+     pulsable y abre el modal PIN. -->
+<div id="m-access-banner" onclick="m_pinOpen('check')" style="display:none;position:fixed;left:8px;right:8px;bottom:62px;z-index:1500;background:rgba(255,138,101,.95);color:#000;padding:10px 14px;border-radius:10px;box-shadow:0 -2px 12px rgba(0,0,0,.5);cursor:pointer">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:nowrap">
+    <span style="font-size:22px;line-height:1">🔒</span>
+    <span style="font-weight:900;font-size:16px;flex:1" data-i18n="access_readonly_title">Modo SOLO lectura — toca para introducir PIN</span>
+  </div>
+</div>
+
+<!-- Rev580 (feedback Carlos): modal PIN con PIN PAD visual (sin <input
+     type=password>) para evitar que el password manager del navegador
+     ofrezca autofill y bloquee la UX. Botones numéricos grandes + display
+     con ●. Todo el estado en JS, ningún form, ningún input. -->
+<!-- Rev581 (feedback Carlos): z-index alto para garantizar que el modal PIN
+     queda SIEMPRE encima de cualquier otro popup-overlay (config, etc.). -->
+<div class="popup-overlay" id="m-pin-pop" style="z-index:3500" onclick="if(event.target.id==='m-pin-pop')m_pinClose()">
+  <!-- Rev589 (feedback Carlos "aún más grande"): teclas 110×100 px, modal 410 px.
+       Tamaño dedo cómodo en móvil real bajo zoom 0.6 heredado del overlay. -->
+  <div class="popup-box" onclick="event.stopPropagation()" style="max-width:410px;padding:26px">
+    <h4 id="m-pin-title" style="margin:0 0 14px;font-size:32px;color:#fff;text-align:center">🔐 PIN</h4>
+    <div id="m-pin-msg" style="font-size:20px;color:#cde;margin-bottom:14px;text-align:center;line-height:1.35"></div>
+    <div id="m-pin-alias-wrap" style="display:none;margin-bottom:14px">
+      <input id="m-pin-alias" type="text" maxlength="24" placeholder="Nombre del PIN" data-i18n-placeholder="pin_alias_placeholder" style="width:100%;padding:13px 16px;font-size:22px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:10px;box-sizing:border-box">
+    </div>
+    <div id="m-pin-display" style="display:flex;justify-content:center;gap:12px;margin:10px 0 18px;min-height:40px;align-items:center"></div>
+    <div id="m-pin-error" style="display:none;color:#e74c3c;font-size:20px;font-weight:700;margin-bottom:12px;text-align:center"></div>
+    <div style="display:grid;grid-template-columns:repeat(3,110px);gap:12px;justify-content:center;margin-bottom:16px">
+      <button class="m-pin-key" onclick="m_pinPress('1')">1</button>
+      <button class="m-pin-key" onclick="m_pinPress('2')">2</button>
+      <button class="m-pin-key" onclick="m_pinPress('3')">3</button>
+      <button class="m-pin-key" onclick="m_pinPress('4')">4</button>
+      <button class="m-pin-key" onclick="m_pinPress('5')">5</button>
+      <button class="m-pin-key" onclick="m_pinPress('6')">6</button>
+      <button class="m-pin-key" onclick="m_pinPress('7')">7</button>
+      <button class="m-pin-key" onclick="m_pinPress('8')">8</button>
+      <button class="m-pin-key" onclick="m_pinPress('9')">9</button>
+      <button class="m-pin-key" onclick="m_pinBackspace()" style="background:rgba(244,67,54,.18);border-color:rgba(244,67,54,.5);color:#f88">⌫</button>
+      <button class="m-pin-key" onclick="m_pinPress('0')">0</button>
+      <button class="m-pin-key" onclick="m_pinSubmit()" style="background:rgba(58,168,86,.25);border-color:#3aa856;color:#3aa856">✓</button>
+    </div>
+    <button onclick="m_pinClose()" style="width:100%;padding:14px;background:rgba(0,0,0,.35);color:#ccc;border:1px solid rgba(255,255,255,.18);border-radius:10px;font-weight:700;cursor:pointer;font-size:20px" data-i18n="pin_cancel">Cancelar</button>
+  </div>
+</div>
+<style>
+.m-pin-key{
+  /* Rev589: 110×100 px, fuente 38. */
+  width:110px;height:100px;font-size:38px;font-weight:800;color:#fff;
+  background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.20);
+  border-radius:14px;cursor:pointer;user-select:none;padding:0;
+  transition:background .12s,transform .08s;
+}
+.m-pin-key:active{ background:rgba(255,255,255,.18);transform:scale(.92); }
+.m-pin-quickbtn{
+  flex:1;min-width:70px;padding:9px 6px;font-size:14px;font-weight:700;
+  cursor:pointer;border-radius:7px;
+  border:1px solid rgba(154,170,221,.4);
+  background:rgba(154,170,221,.10);color:#9ad;
+}
+.m-pin-quickbtn:active{ background:rgba(154,170,221,.25); }
+</style>
+
+<!-- Rev586: overlay long-press eliminado (refactor a modelo PIN simple). -->
+
+<!-- Rev589 (Bloque A): modal de edición de PIN invitado.
+     Solo accesible por el maestro. Permite cambiar nivel (full/self), notas
+     y caducidad sin tocar el PIN numérico. Para cambiar el PIN tiene un botón
+     aparte que abre el dialer PIN en modo 'change-pwd'. -->
+<div class="popup-overlay" id="m-pin-edit-pop" style="z-index:3400" onclick="if(event.target.id==='m-pin-edit-pop')closePopup('m-pin-edit-pop')">
+  <div class="popup-box" onclick="event.stopPropagation()" style="max-width:480px">
+    <h4 data-i18n="pin_edit_title">Editar usuario invitado</h4>
+    <div id="m-pin-edit-header" style="font-size:22px;font-weight:800;color:#fff;margin-bottom:10px"></div>
+    <!-- Rev603 (feedback Carlos opción B): PIN visible al maestro. -->
+    <div id="m-pin-edit-currentpin-wrap" style="display:none;margin-bottom:18px;padding:12px;background:rgba(154,170,221,.10);border:1px solid rgba(154,170,221,.4);border-radius:8px">
+      <div style="font-size:14px;color:#9ad;font-weight:700;margin-bottom:4px" data-i18n="pin_edit_current_pin">PIN actual</div>
+      <div id="m-pin-edit-currentpin" style="font-family:'Courier New',monospace;font-size:26px;font-weight:900;color:#fff;letter-spacing:6px"></div>
+      <div id="m-pin-edit-currentpin-legacy" style="display:none;font-size:12px;color:#bbb;font-style:italic;margin-top:4px" data-i18n="pin_edit_current_pin_legacy"></div>
+    </div>
+    <!-- Rev596 (feedback Carlos "menos es más"): eliminado selector full/self.
+         Todos los invitados son full (mismas capacidades de uso que maestro,
+         excepto gestión de capa y otros PINs). -->
+    <label style="display:block;font-size:16px;color:#bbb;font-weight:700;margin-bottom:6px" data-i18n="pin_notes_label">Notas</label>
+    <textarea id="m-pin-edit-notes" maxlength="120" rows="2" placeholder="p. ej. tripulación de charter" data-i18n-placeholder="pin_notes_placeholder" style="width:100%;padding:10px 12px;font-size:16px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;box-sizing:border-box;margin-bottom:18px;font-family:inherit;resize:vertical"></textarea>
+    <!-- Rev596: date picker eliminado, solo botones rápidos. -->
+    <label style="display:block;font-size:16px;color:#bbb;font-weight:700;margin-bottom:6px" data-i18n="pin_expiry_label">Validez</label>
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+      <button onclick="m_pinEditExpiryClear()" class="m-pin-quickbtn" style="background:rgba(0,0,0,.45);border-color:rgba(255,255,255,.25);color:#ddd" data-i18n="pin_expiry_never">Sin caducidad</button>
+      <button onclick="m_pinEditExpiryQuick(1)"  class="m-pin-quickbtn">+1 día</button>
+      <button onclick="m_pinEditExpiryQuick(7)"  class="m-pin-quickbtn">+7 días</button>
+      <button onclick="m_pinEditExpiryQuick(30)" class="m-pin-quickbtn">+30 días</button>
+      <button onclick="m_pinEditExpiryQuick(90)" class="m-pin-quickbtn">+90 días</button>
+      <button onclick="m_pinEditExpiryQuick(365)" class="m-pin-quickbtn">+1 año</button>
+    </div>
+    <div id="m-pin-edit-expiry-status" style="font-size:14px;color:#9ad;margin:0 0 18px 0;text-align:center;min-height:18px;font-weight:700"></div>
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      <button onclick="closePopup('m-pin-edit-pop')" style="flex:1;padding:12px;background:rgba(0,0,0,.35);color:#ccc;border:1px solid rgba(255,255,255,.18);border-radius:8px;font-weight:700;cursor:pointer;font-size:16px" data-i18n="pin_cancel">Cancelar</button>
+      <button onclick="m_pinEditSave()" style="flex:1;padding:12px;background:rgba(58,168,86,.25);color:#3aa856;border:1.5px solid #3aa856;border-radius:8px;font-weight:800;cursor:pointer;font-size:16px" data-i18n="pin_edit_save">Guardar cambios</button>
+    </div>
+    <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:14px">
+      <div style="font-size:14px;color:#bbb;margin-bottom:8px" data-i18n="pin_edit_changepwd_help">Pide un nuevo PIN al maestro…</div>
+      <button onclick="m_pinEditChangePwd()" style="width:100%;padding:11px;background:rgba(255,178,63,.18);color:#ffb23f;border:1.5px solid #ffb23f;border-radius:8px;font-weight:800;cursor:pointer;font-size:15px" data-i18n="pin_edit_changepwd_btn">🔑 Cambiar ahora</button>
+    </div>
+    <!-- Rev601: placeholder para los logs de actividad del invitado.
+         Carlos quiere: creación, primer login, último visto, dispositivos,
+         acciones con GPS+hora. Implementación pendiente (TODO backlog). -->
+    <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:14px;margin-top:14px;opacity:.6">
+      <div style="font-size:14px;color:#bbb;font-style:italic;text-align:center" data-i18n="pin_edit_logs_pending">(historial de accesos próximamente)</div>
+    </div>
+  </div>
+</div>
+
 <!-- Sidebar derecha — botones touch grandes que llaman a las
      mismas funciones que el desktop.
      Rev433: orden final: Hamburger, Echar, Centrar, Favoritos, Cartas, AIS, Abrigo, Alarmas.
@@ -2107,6 +2225,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
      - Calc Fondeo movido al menu hamburger (Rev421). -->
 <div id="m-sidebar">
   <button id="m-ham-r" data-i18n-title="lb_ham_tip" title="Menú" onclick="document.getElementById('m-menu').classList.add('open')"><span class="ico">☰</span></button>
+  <!-- Rev587: botón candado movido a sidebar izquierda (encima de Alarmas). -->
   <button class="m-sb-btn" id="m-sb-anchor" onclick="m_onAnchorBtn()" data-i18n-title="sb_anchor_tip" title="Fondear/Levar"><span class="ico">⚓</span><span id="m-sb-anchor-lbl" data-i18n="sb_echar">Echar</span></button>
   <button class="m-sb-btn" id="m-sb-center" onclick="centerOnAnchor&&centerOnAnchor()||m_centerOnBoat()" data-i18n-title="sb_centrar_tip" title="Centrar mapa">
     <span class="ico" style="display:inline-flex;align-items:center;justify-content:center"><svg viewBox="0 0 44 44" width="34" height="34"><circle cx="22" cy="22" r="18" fill="none" stroke="#f44336" stroke-width="2.5" stroke-dasharray="4 3"/><line x1="22" y1="0" x2="22" y2="44" stroke="#f44336" stroke-width="1.5"/><line x1="0" y1="22" x2="44" y2="22" stroke="#f44336" stroke-width="1.5"/><circle cx="22" cy="22" r="3" fill="#f44336"/><text x="22" y="27" text-anchor="middle" font-size="18" fill="#fff" style="filter:drop-shadow(0 0 2px #000)">⚓</text></svg></span>
@@ -2333,12 +2452,35 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
   <div class="popup-box" onclick="event.stopPropagation()">
     <h4 data-i18n="cfg_title">⚙️ Configuración</h4>
 
+    <!-- Rev587 (feedback Carlos: "los tamaños de Configuración no respetan
+         la jerarquía"). Consolidación tipográfica con clases reutilizables.
+         Jerarquía:
+           H2 título sección (📏 Unidades, etc): .m-cfg-h2 = 28px bold blanco
+           Texto explicativo de sección: .m-cfg-help = 18px gris
+           H3 sub-sección (PINs registrados): .m-cfg-h3 = 22px bold blanco
+           Inputs/selects principales: 20px
+           Botones primarios (verde/azul): 18px bold
+           Botones secundarios (reset gris): 15px
+           Microcopy/status: 14px verde claro -->
+    <!-- Rev588: sección "Mi sesión PIN" visible siempre que el usuario está
+         autenticado (incluyendo invitados). Permite cerrar sesión desde
+         cualquier rol. Aparece al principio para que sea fácil de encontrar. -->
+    <div id="m-cfg-session-block" class="m-cfg-section" style="display:none">
+      <div class="m-cfg-h2"><span id="m-cfg-session-icon">🔓</span> <span data-i18n="cfg_session_title">Mi sesión PIN</span></div>
+      <div id="m-cfg-session-info" class="m-cfg-help"></div>
+      <!-- Rev591: caducidad PIN visible al propio usuario. -->
+      <div id="m-cfg-session-expiry" style="margin:-4px 0 8px 0;padding:10px 12px;border-radius:8px;font-size:15px;font-weight:700;display:none"></div>
+      <!-- Rev606: tiempo restante de la SESIÓN cookie (≠ caducidad PIN).
+           Para que el invitado sepa cuándo tendrá que volver a meter PIN. -->
+      <div id="m-cfg-session-cookie-ttl" style="margin:0 0 14px 0;padding:8px 12px;border-radius:8px;font-size:14px;color:#cde;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);display:none"></div>
+      <button onclick="m_pinLock()" class="m-cfg-btn-secondary" style="width:100%;padding:14px;font-size:18px" data-i18n="pin_logout">Cerrar sesión PIN</button>
+    </div>
+
     <!-- Seccion Unidades -->
-    <div style="margin-bottom:24px;padding:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:10px">
-      <div style="font-size:32px!important;font-weight:900;color:#fff;margin-bottom:12px" data-i18n="cfg_units">📏 Unidades</div>
-      <div style="font-size:18px;color:#bbb;margin-bottom:14px" data-i18n="cfg_units_help">Elige el sistema de unidades para todo el visor: profundidad, velocidad, distancia, temperatura y presión.</div>
-      <select id="m-cfg-units-sel" onchange="m_onUnitsChange(this.value)"
-              style="width:100%;padding:14px 16px;font-size:22px;font-weight:700;border-radius:10px;border:2px solid rgba(255,255,255,.2);background:rgba(0,0,0,.35);color:#fff;cursor:pointer">
+    <div class="m-cfg-section">
+      <div class="m-cfg-h2" data-i18n="cfg_units">📏 Unidades</div>
+      <div class="m-cfg-help" data-i18n="cfg_units_help">Elige el sistema de unidades para todo el visor: profundidad, velocidad, distancia, temperatura y presión.</div>
+      <select id="m-cfg-units-sel" onchange="m_onUnitsChange(this.value)" class="m-cfg-input">
         <option value="metric_nautical" data-i18n="cfg_u_mn">Métricas náuticas (m · kn · NM · °C · hPa)</option>
         <option value="metric" data-i18n="cfg_u_m">Métricas (m · m/s · km · °C · hPa)</option>
         <option value="imperial_us_nautical" data-i18n="cfg_u_iun">Imperiales náuticas US (ft · kn · NM · °F · inHg)</option>
@@ -2346,40 +2488,136 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
         <option value="imperial_uk_nautical" data-i18n="cfg_u_ikn">Imperiales náuticas UK (ft · kn · NM · °F · mbar)</option>
         <option value="imperial_uk" data-i18n="cfg_u_ik">Imperiales UK (ft · mph · mi · °F · mbar)</option>
       </select>
-      <div id="m-cfg-units-status" style="font-size:14px;color:#9c9;margin-top:8px;min-height:18px"></div>
+      <div id="m-cfg-units-status" class="m-cfg-status"></div>
     </div>
 
-    <!-- Sprint F (Rev454): Bottom Bar configurable (orden + visibilidad). -->
-    <div style="margin-bottom:18px;padding:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:10px">
-      <!-- Rev572 (feedback Carlos): título cambiado a "Widgets del bottom
-           bar" y texto descriptivo +4 px (16→20). -->
-      <div style="font-size:32px!important;font-weight:900;color:#fff;margin-bottom:8px" data-i18n="cfg_bbar">📊 Widgets del bottom bar</div>
-      <div style="font-size:20px;color:#bbb;margin-bottom:14px" data-i18n="cfg_bbar_help">Elige qué celdas mostrar en la barra inferior y en qué orden. Toca ✓/✗ para mostrar/ocultar; usa ↑/↓ para reordenar.</div>
+    <!-- Rev586/587/593: bloque PIN de control.
+         Visible para: anónimos (para que puedan iniciar sesión), maestro,
+         o cuando no hay PINs (para crear maestro). Oculto solo a invitados
+         ya autenticados. La gestión interna (toggle + lista + añadir) sólo
+         se muestra al maestro o cuando no hay PINs aún. -->
+    <div id="m-cfg-access-block" class="m-cfg-section">
+      <div class="m-cfg-h2" data-i18n="cfg_access">🔐 PIN de control</div>
+      <div class="m-cfg-help" data-i18n="cfg_access_help">Cuando esté activada, las mutaciones (echar/levar ancla, alarmas, configuración…) requieren un PIN. La lectura sigue siendo pública. El primer PIN creado es el MAESTRO (administra capa + PINs); puede crear PINs INVITADO que solo desbloquean uso. Mantenla desactivada si navegas en solitario.</div>
+      <!-- Rev593: prompt para anónimos con PINs registrados. -->
+      <div id="m-cfg-access-loginprompt" style="display:none;padding:14px;border:1.5px solid #ffb23f;background:rgba(255,178,63,.10);border-radius:10px;text-align:center">
+        <div style="font-size:16px;color:#ffb23f;margin-bottom:10px" data-i18n="cfg_access_login_hint">Introduce un PIN para gestionar la capa de seguridad.</div>
+        <button onclick="m_pinOpen('check')" class="m-cfg-btn-primary" style="padding:14px 24px;font-size:18px" data-i18n="cfg_access_login_btn">🔓 Introducir PIN</button>
+      </div>
+      <!-- Bloque de gestión (toggle + lista). Visible solo a maestro o cuando
+           no hay PINs (escenario primera instalación). -->
+      <div id="m-cfg-access-admin" style="display:none">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap">
+          <!-- Rev594 fix bug toggle visual: SIN data-i18n, el texto lo
+               gestiona m_applyAccessState. -->
+          <button id="m-cfg-access-toggle" onclick="m_toggleSecurityLayer()" class="m-cfg-btn-toggle">🔓 Desactivado</button>
+          <div id="m-cfg-access-state" style="flex:1;min-width:200px;color:#cde;font-size:16px;font-weight:600"></div>
+        </div>
+        <!-- Rev595 (feedback Carlos "sesiones más visible arriba"): movido a
+             primero, antes que la lista de PINs. -->
+        <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:14px;margin-top:8px">
+          <div class="m-cfg-h3" style="margin-bottom:8px" data-i18n="cfg_sessions_title">Sesiones PIN activas</div>
+          <div class="m-cfg-help" style="margin-bottom:10px" data-i18n="cfg_sessions_help">Dispositivos con PIN abierto.</div>
+          <div id="m-cfg-sessions-list" style="font-size:14px"></div>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:14px;margin-top:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <div class="m-cfg-h3" data-i18n="cfg_pins_title">PINs registrados</div>
+            <div style="display:flex;gap:8px">
+              <button id="m-cfg-pin-logout" onclick="m_pinLock()" class="m-cfg-btn-secondary" style="display:none" data-i18n="pin_logout">Cerrar sesión PIN</button>
+              <button onclick="m_pinAddNew()" class="m-cfg-btn-primary" data-i18n="cfg_pins_add">+ Añadir PIN</button>
+            </div>
+          </div>
+          <div id="m-cfg-pins-list" style="font-size:16px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="m-cfg-section">
+      <div class="m-cfg-h2" data-i18n="cfg_bbar">📊 Widgets del bottom bar</div>
+      <div class="m-cfg-help" data-i18n="cfg_bbar_help">Elige qué celdas mostrar en la barra inferior y en qué orden. Toca ✓/✗ para mostrar/ocultar; usa ↑/↓ para reordenar.</div>
       <div id="m-cfg-bbar-list" style="margin-bottom:14px"></div>
-      <button onclick="m_bbarCfgResetDefault()" style="width:100%;padding:10px;font-size:14px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.25);color:#ccc;cursor:pointer" data-i18n="cfg_bbar_reset">↺ Restablecer orden por defecto</button>
+      <button onclick="m_bbarCfgResetDefault()" class="m-cfg-btn-reset" data-i18n="cfg_bbar_reset">↺ Restablecer orden por defecto</button>
     </div>
 
-    <!-- Rev450: Botones laterales (motor custom). Defaults reemplazables (KIP, Freeboard).
-         Max 5 por sidebar. URL externa o webapp SK. Persistencia en backend. -->
-    <div style="margin-bottom:18px;padding:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:10px">
-      <div style="font-size:32px!important;font-weight:900;color:#fff;margin-bottom:8px" data-i18n="cfg_buttons">🧩 Botones laterales</div>
-      <div style="font-size:16px;color:#bbb;margin-bottom:14px" data-i18n="cfg_buttons_help">Añade enlaces a apps de Signal K (KIP, Freeboard, etc.) o a cualquier URL. Aparecerán en la barra izquierda o derecha y se abren en una pestaña nueva.</div>
+    <div class="m-cfg-section">
+      <div class="m-cfg-h2" data-i18n="cfg_buttons">🧩 Botones laterales</div>
+      <div class="m-cfg-help" data-i18n="cfg_buttons_help">Añade enlaces a apps de Signal K (KIP, Freeboard, etc.) o a cualquier URL. Aparecerán en la barra izquierda o derecha y se abren en una pestaña nueva.</div>
       <div id="m-cfg-buttons-left-list" style="margin-bottom:10px"></div>
-      <button onclick="m_btnCfgOpenEdit('','left')" style="width:100%;margin-bottom:14px;padding:12px;font-size:18px;font-weight:700;border-radius:10px;border:2px dashed rgba(255,255,255,.3);background:rgba(255,255,255,.04);color:#9ad;cursor:pointer" data-i18n="cfg_btn_add_left">➕ Añadir botón a barra izquierda</button>
-      <div id="m-cfg-buttons-right-list" style="margin-bottom:10px"></div>
-      <button onclick="m_btnCfgOpenEdit('','right')" style="width:100%;margin-bottom:14px;padding:12px;font-size:18px;font-weight:700;border-radius:10px;border:2px dashed rgba(255,255,255,.3);background:rgba(255,255,255,.04);color:#9ad;cursor:pointer" data-i18n="cfg_btn_add_right">➕ Añadir botón a barra derecha</button>
-      <button onclick="m_btnCfgResetDefaults()" style="width:100%;padding:10px;font-size:14px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.25);color:#ccc;cursor:pointer" data-i18n="cfg_btn_reset">↺ Restablecer KIP + Freeboard por defecto</button>
+      <button onclick="m_btnCfgOpenEdit('','left')" class="m-cfg-btn-add" data-i18n="cfg_btn_add_left">➕ Añadir botón a barra izquierda</button>
+      <div id="m-cfg-buttons-right-list" style="margin-bottom:10px;margin-top:14px"></div>
+      <button onclick="m_btnCfgOpenEdit('','right')" class="m-cfg-btn-add" data-i18n="cfg_btn_add_right">➕ Añadir botón a barra derecha</button>
+      <button onclick="m_btnCfgResetDefaults()" class="m-cfg-btn-reset" style="margin-top:14px" data-i18n="cfg_btn_reset">↺ Restablecer KIP + Freeboard por defecto</button>
     </div>
 
-    <!-- Rev464: Diagnostico (paginas debug IMU + Wave Nav). Abre en pestana nueva. -->
-    <div style="margin-bottom:18px;padding:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:10px">
-      <div style="font-size:32px!important;font-weight:900;color:#fff;margin-bottom:8px" data-i18n="cfg_diag">🔬 Diagnóstico</div>
-      <div style="font-size:16px;color:#bbb;margin-bottom:14px" data-i18n="cfg_diag_help">Paneles de inspección en vivo para verificar sensores y motor de olas. Útil al instalar el plugin o validar en navegación.</div>
-      <button onclick="window.open('/signalk-mareas-ihm/imu-debug','_blank','noopener')" style="width:100%;margin-bottom:10px;padding:12px;font-size:16px;font-weight:700;border-radius:10px;border:1px solid rgba(154,170,221,.4);background:rgba(154,170,221,.08);color:#9ad;cursor:pointer" data-i18n="cfg_diag_imu">📐 IMU Audit (signos · sample rate · gravedad)</button>
-      <button onclick="window.open('/signalk-mareas-ihm/wave-debug','_blank','noopener')" style="width:100%;padding:12px;font-size:16px;font-weight:700;border-radius:10px;border:1px solid rgba(154,170,221,.4);background:rgba(154,170,221,.08);color:#9ad;cursor:pointer" data-i18n="cfg_diag_wave">🌊 Wave Nav Engine (gates · confidence · dirección)</button>
+    <div class="m-cfg-section">
+      <div class="m-cfg-h2" data-i18n="cfg_diag">🔬 Diagnóstico</div>
+      <div class="m-cfg-help" data-i18n="cfg_diag_help">Paneles de inspección en vivo para verificar sensores y motor de olas. Útil al instalar el plugin o validar en navegación.</div>
+      <button onclick="window.open('/signalk-mareas-ihm/imu-debug','_blank','noopener')" class="m-cfg-btn-diag" data-i18n="cfg_diag_imu">📐 IMU Audit (signos · sample rate · gravedad)</button>
+      <button onclick="window.open('/signalk-mareas-ihm/wave-debug','_blank','noopener')" class="m-cfg-btn-diag" style="margin-top:10px" data-i18n="cfg_diag_wave">🌊 Wave Nav Engine (gates · confidence · dirección)</button>
     </div>
   </div>
 </div>
+
+<!-- Rev587: estilos consolidados para el modal de Configuración.
+     Toda la jerarquía tipográfica vive aquí en un solo sitio. -->
+<style>
+.m-cfg-section{
+  margin-bottom:20px;padding:18px;
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:10px;
+}
+.m-cfg-h2{
+  font-size:28px;font-weight:900;color:#fff;margin-bottom:8px;line-height:1.15;
+}
+.m-cfg-h3{
+  font-size:22px;font-weight:800;color:#fff;line-height:1.2;
+}
+.m-cfg-help{
+  font-size:18px;color:#bbb;margin-bottom:14px;line-height:1.4;
+}
+.m-cfg-status{
+  font-size:14px;color:#9c9;margin-top:8px;min-height:18px;
+}
+.m-cfg-input{
+  width:100%;padding:14px 16px;font-size:20px;font-weight:700;
+  border-radius:10px;border:2px solid rgba(255,255,255,.2);
+  background:rgba(0,0,0,.35);color:#fff;cursor:pointer;
+  box-sizing:border-box;
+}
+.m-cfg-btn-toggle{
+  flex:0 0 auto;padding:14px 22px;font-size:18px;font-weight:900;
+  border-radius:10px;cursor:pointer;
+  border:2px solid rgba(255,255,255,.25);
+  background:rgba(0,0,0,.35);color:#ccc;min-width:160px;
+}
+.m-cfg-btn-primary{
+  padding:11px 18px;font-size:18px;font-weight:800;cursor:pointer;
+  border-radius:8px;border:1px solid #3aa856;
+  background:rgba(58,168,86,.18);color:#3aa856;
+}
+.m-cfg-btn-secondary{
+  padding:9px 14px;font-size:15px;font-weight:700;cursor:pointer;
+  border-radius:8px;border:1px solid rgba(255,255,255,.25);
+  background:rgba(0,0,0,.45);color:#ddd;
+}
+.m-cfg-btn-reset{
+  width:100%;padding:11px;font-size:15px;cursor:pointer;
+  border-radius:8px;border:1px solid rgba(255,255,255,.18);
+  background:rgba(0,0,0,.25);color:#ccc;
+}
+.m-cfg-btn-add{
+  width:100%;padding:12px;font-size:18px;font-weight:700;cursor:pointer;
+  border-radius:10px;border:2px dashed rgba(255,255,255,.3);
+  background:rgba(255,255,255,.04);color:#9ad;
+}
+.m-cfg-btn-diag{
+  width:100%;padding:13px;font-size:17px;font-weight:700;cursor:pointer;
+  border-radius:10px;border:1px solid rgba(154,170,221,.4);
+  background:rgba(154,170,221,.08);color:#9ad;
+}
+</style>
 
 <!-- Rev450: modal edicion de boton lateral (Anadir/Editar). Sobre el modal Config. -->
 <div class="popup-overlay" id="m-btn-edit-pop" style="z-index:2200" onclick="if(event.target.id==='m-btn-edit-pop')closePopup('m-btn-edit-pop')">
@@ -3308,6 +3546,8 @@ function m_openConfig(){
   openPopup('m-config-pop');
   try{ m_btnCfgRenderLists(); }catch(_){}
   try{ m_bbarCfgRender(); }catch(_){}
+  try{ if(typeof m_loadPinsList==='function') m_loadPinsList(); }catch(_){}
+  try{ if(typeof m_loadSessionsList==='function') m_loadSessionsList(); }catch(_){}
   try{ if(typeof translateAll === 'function') translateAll(); }catch(_){}
 }
 function m_closeConfig(){ closePopup('m-config-pop'); }
@@ -4197,6 +4437,111 @@ var _i18n={
   bb_heading_tip:{es:'Rumbo de la proa\n(heading magnético o verdadero según fuente SK)',en:'Bow heading\n(magnetic or true depending on SK source)'},
   /* Rev572 (feedback Carlos): título sección config widgets bottom-bar. */
   cfg_bbar:{es:'📊 Widgets del bottom bar',en:'📊 Bottom-bar widgets'},
+  /* Rev599 (feedback Carlos): "Control de usuarios" en masculino — es un
+     CONTROL, no una CAPA. Eliminada referencia a SK auth. */
+  cfg_access:{es:'👥 Control de usuarios',en:'👥 User control'},
+  cfg_access_help:{es:'Cuando esté activado, las acciones del barco (echar/levar ancla, alarmas, configuración…) requieren un PIN. Quien sólo mira la lectura no necesita PIN. El primer PIN creado es el MAESTRO (gestiona el control y los demás PINs); el maestro puede crear PINs de INVITADO para tripulación o invitados. Manténlo desactivado si navegas en solitario y no te preocupa el toque accidental.',en:'When enabled, boat actions (drop/lift anchor, alarms, settings…) require a PIN. Anyone reading does not need a PIN. The first PIN created is the MASTER (manages the control and the other PINs); the master can create GUEST PINs for crew or visitors. Leave it OFF if you sail solo and accidental touch is not a concern.'},
+  /* Rev601 (feedback Carlos): nomenclatura "Usuarios" en lugar de "PINs"
+     en la UI. El PIN sigue siendo el dato técnico (4-8 dígitos), pero el
+     concepto que ve el usuario es la persona / cuenta. */
+  cfg_pins_title:{es:'Usuarios registrados',en:'Registered users'},
+  cfg_pins_add:{es:'+ Añadir usuario',en:'+ Add user'},
+  cfg_pins_empty:{es:'Aún no hay usuarios. Pulsa "+ Añadir usuario" para crear el primero.',en:'No users yet. Click "+ Add user" to create the first.'},
+  pin_alias_label:{es:'Nombre del PIN:',en:'PIN name:'},
+  pin_alias_placeholder:{es:'p. ej. PIN del barco',en:'e.g. Boat PIN'},
+  pin_alias_required:{es:'Pon un nombre al PIN',en:'Set a PIN name'},
+  pin_delete_confirm:{es:'¿Borrar este PIN?',en:'Delete this PIN?'},
+  /* Rev586 (refactor 2-niveles): roles y errores específicos. */
+  pin_role_master:{es:'Maestro',en:'Master'},
+  pin_role_guest:{es:'Invitado',en:'Guest'},
+  pin_master_protected:{es:'No se puede borrar',en:'Cannot be deleted'},
+  pin_err_alias_dup:{es:'Ya existe un PIN con ese nombre',en:'A PIN with that name already exists'},
+  pin_err_pin_dup:{es:'Ese PIN ya está en uso',en:'That PIN is already in use'},
+  pin_err_master_required:{es:'Necesitas el PIN maestro',en:'Master PIN required'},
+  pin_logout:{es:'Cerrar sesión',en:'Sign out'},
+  cfg_session_title:{es:'Mi sesión',en:'My session'},
+  cfg_session_master:{es:'Estás autenticado como MAESTRO {ALIAS}. Tienes acceso total a configuración y gestión de PINs.',en:'You are signed in as MASTER {ALIAS}. Full access to settings and PIN management.'},
+  cfg_session_guest:{es:'Estás autenticado como INVITADO {ALIAS}. Puedes usar el plugin pero no cambiar el control de usuarios ni gestionar otros PINs.',en:'You are signed in as GUEST {ALIAS}. You can use the plugin but cannot change the user control or manage other PINs.'},
+  /* Rev589: Bloque A — gestión avanzada de invitados. */
+  pin_err_expired:{es:'PIN caducado. Pide al maestro que lo renueve.',en:'PIN expired. Ask the master to renew it.'},
+  pin_level_full:{es:'Control total (puede levar el ancla aunque la haya fondeado otro)',en:'Full control (can lift the anchor even if another set it)'},
+  pin_level_self:{es:'Sólo sus acciones (sólo puede levar el ancla que él mismo fondeó)',en:'Self-only (can only lift the anchor they set themselves)'},
+  pin_level_label:{es:'Nivel de invitado',en:'Guest level'},
+  pin_notes_label:{es:'Notas (opcional, 120 caracteres)',en:'Notes (optional, 120 chars)'},
+  pin_notes_placeholder:{es:'p. ej. tripulación de charter',en:'e.g. charter crew'},
+  pin_expiry_label:{es:'Validez',en:'Expiry'},
+  pin_expiry_never:{es:'Sin caducidad',en:'No expiry'},
+  pin_expiry_days:{es:'Caduca en {N} días',en:'Expires in {N} days'},
+  pin_expired_chip:{es:'CADUCADO',en:'EXPIRED'},
+  pin_edit_title:{es:'Editar usuario invitado',en:'Edit guest user'},
+  pin_edit_created:{es:'Creado',en:'Created'},
+  pin_edit_logs_pending:{es:'(historial de accesos próximamente)',en:'(access history coming soon)'},
+  /* Rev603: PIN actual visible al maestro. */
+  pin_edit_current_pin:{es:'PIN actual',en:'Current PIN'},
+  pin_edit_current_pin_legacy:{es:'(PIN antiguo guardado solo en hash; usa Cambiar ahora para fijar uno visible)',en:'(legacy PIN stored as hash only; use Change now to set a visible one)'},
+  pin_edit_save:{es:'Guardar cambios',en:'Save changes'},
+  pin_edit_changepwd:{es:'Cambiar PIN numérico',en:'Change PIN number'},
+  pin_edit_changepwd_help:{es:'Pide un nuevo PIN de 4-8 dígitos para este invitado (el maestro lo fija, el invitado no necesita conocer el anterior).',en:'Set a new 4-8 digit PIN for this guest (master sets it, guest does not need the old one).'},
+  pin_edit_changepwd_btn:{es:'Cambiar ahora',en:'Change now'},
+  /* Rev591: caducidad visible al propio usuario. */
+  cfg_session_expiry_never:{es:'Tu PIN no caduca.',en:'Your PIN does not expire.'},
+  cfg_session_expiry_on:{es:'Tu PIN caduca el {DATE} (en {N} días).',en:'Your PIN expires on {DATE} (in {N} days).'},
+  cfg_session_expiry_soon:{es:'⚠️ Tu PIN caduca el {DATE} — quedan {N} días.',en:'⚠️ Your PIN expires on {DATE} — {N} days left.'},
+  cfg_session_expiry_today:{es:'⚠️ Tu PIN caduca HOY.',en:'⚠️ Your PIN expires TODAY.'},
+  /* Rev606: tiempo restante de la sesión cookie (separado de la caducidad PIN). */
+  cfg_session_cookie_persistent:{es:'⏱️ Sesión: sin caducidad mientras no cierres sesión.',en:'⏱️ Session: no expiry until you sign out.'},
+  cfg_session_cookie_days:{es:'⏱️ Sesión: caduca en {N} días.',en:'⏱️ Session: expires in {N} days.'},
+  cfg_session_cookie_hours:{es:'⏱️ Sesión: caduca en {N} horas.',en:'⏱️ Session: expires in {N} hours.'},
+  cfg_session_cookie_min:{es:'⏱️ Sesión: caduca en {N} min.',en:'⏱️ Session: expires in {N} min.'},
+  /* Rev592 Bloque B: ownership del ancla. */
+  lift_owner_only:{es:'Solo el maestro o {OWNER} (quien fondeó) pueden levar el ancla.',en:'Only the master or {OWNER} (who set the anchor) can lift it.'},
+  anchor_owner_label:{es:'Fondeado por',en:'Set by'},
+  anchor_owner_you:{es:'Fondeado por ti',en:'Set by you'},
+  anchor_owner_other:{es:'Fondeado por {OWNER}',en:'Set by {OWNER}'},
+  /* Rev593: prompt para anónimo cuando hay PINs registrados. */
+  cfg_access_login_hint:{es:'Introduce un PIN para gestionar el control de usuarios.',en:'Enter a PIN to manage user control.'},
+  cfg_access_login_btn:{es:'🔓 Introducir PIN',en:'🔓 Enter PIN'},
+  /* Rev594: sesiones PIN activas. */
+  cfg_sessions_title:{es:'Usuarios activos',en:'Active users'},
+  cfg_sessions_help:{es:'Usuarios con sesión abierta ahora mismo (dispositivo + IP). Solo lo ve el maestro. Puede cerrar cualquier sesión.',en:'Users with an open session right now (device + IP). Master only. You can close any session.'},
+  cfg_sessions_empty:{es:'No hay usuarios activos.',en:'No active users.'},
+  cfg_sessions_me:{es:'(tu sesión actual)',en:'(your current session)'},
+  cfg_sessions_revoke:{es:'Revocar',en:'Revoke'},
+  cfg_sessions_min_left:{es:'{N} min restantes',en:'{N} min left'},
+  cfg_sessions_no_expiry:{es:'Sin caducidad (sesión permanente del maestro)',en:'No expiry (master persistent session)'},
+  cfg_sessions_no_expiry_guest:{es:'Sin caducidad (PIN sin fecha)',en:'No expiry (PIN has no date)'},
+  cfg_sessions_days_left:{es:'{N} días restantes',en:'{N} days left'},
+  cfg_sessions_hours_left:{es:'{N} horas restantes',en:'{N} hours left'},
+  cfg_access_off:{es:'🔓 Desactivada',en:'🔓 Disabled'},
+  cfg_access_on:{es:'🔒 Activada',en:'🔒 Enabled'},
+  sb_access:{es:'Acceso',en:'Access'},
+  sb_access_tip:{es:'Estado de acceso · click: info · mantén 2 s: bloquear/desbloquear controles',en:'Access state · click: info · hold 2 s: lock/unlock controls'},
+  /* Rev578 (feedback Carlos): textos del banner reducidos a una línea. */
+  access_readonly_title:{es:'Modo SOLO lectura — toca para introducir PIN',en:'READ-ONLY mode — tap to enter PIN'},
+  access_readonly_desc:{es:'Introducir PIN',en:'Enter PIN'}, /* compat: en uso por alerts antiguos */
+  access_locked_title:{es:'Controles bloqueados',en:'Controls locked'},
+  access_locked_desc:{es:'Mantén pulsado el candado 2 s para desbloquear.',en:'Press and hold the lock for 2 s to unlock.'},
+  access_login_btn:{es:'Iniciar sesión',en:'Sign in'},
+  access_layer_just_off:{es:'Capa desactivada. Todos los controles disponibles para cualquiera en la red.',en:'Layer disabled. All controls available to anyone on the network.'},
+  access_layer_just_on:{es:'Capa activada. Las mutaciones requerirán login con escritura en Signal K.',en:'Layer enabled. Mutations will require Signal K write-login.'},
+  access_unlocking:{es:'Desbloqueando…',en:'Unlocking…'},
+  /* Rev578 (feedback Carlos): modal PIN + textos sistema PIN. */
+  pin_cancel:{es:'Cancelar',en:'Cancel'},
+  pin_ok:{es:'Aceptar',en:'OK'},
+  pin_current_label:{es:'PIN actual:',en:'Current PIN:'},
+  pin_create_title:{es:'🆕 Crear PIN',en:'🆕 Create PIN'},
+  pin_create_msg:{es:'Aún no tienes PIN. CREA uno ahora (4-8 dígitos). Lo necesitarás para desactivar esta capa o desbloquear los controles más adelante. Si lo pierdes, borra el fichero `securityPinHash.json` del Pi por SSH y vuelves a este paso.',en:'You have no PIN yet. CREATE one now (4-8 digits). You will need it to disable this layer or unlock controls later. If lost, remove `securityPinHash.json` on the Pi via SSH and restart this step.'},
+  pin_unlock_title:{es:'🔓 Introduce PIN para desbloquear',en:'🔓 Enter PIN to unlock'},
+  pin_toggle_title:{es:'🔒 Introduce PIN',en:'🔒 Enter PIN'},
+  pin_err_invalid:{es:'PIN inválido (4-8 dígitos)',en:'Invalid PIN (4-8 digits)'},
+  pin_err_mismatch:{es:'PIN incorrecto',en:'Wrong PIN'},
+  pin_err_current_mismatch:{es:'PIN actual incorrecto',en:'Wrong current PIN'},
+  pin_set_ok:{es:'PIN guardado',en:'PIN saved'},
+  /* Rev581 (feedback Carlos: "habrá que meterlo 2 veces"): confirmación PIN. */
+  pin_create_step1:{es:'Paso 1 de 2 — teclea tu nuevo PIN (4-8 dígitos) y pulsa ✓.',en:'Step 1 of 2 — type your new PIN (4-8 digits) and press ✓.'},
+  pin_create_step2_title:{es:'🔁 Repite el PIN',en:'🔁 Repeat PIN'},
+  pin_create_step2_msg:{es:'Paso 2 de 2 — vuelve a teclear el mismo PIN para confirmarlo.',en:'Step 2 of 2 — type the same PIN again to confirm.'},
+  pin_err_no_match:{es:'Los PIN no coinciden, vuelve a empezar',en:'PINs do not match, start over'},
   cfg_bbar_help:{es:'Elige qué celdas mostrar en la barra inferior y en qué orden. Toca ✓/✗ para mostrar/ocultar; usa ↑/↓ para reordenar.',en:'Choose which cells to show on the bottom bar and in what order. Tap ✓/✗ to show/hide; use ↑/↓ to reorder.'},
   cfg_bbar_reset:{es:'↺ Restablecer orden por defecto',en:'↺ Reset to default order'},
   bb_sunrise:{es:'Salida/Ocaso',en:'Sunrise/Sunset'},
@@ -5882,20 +6227,26 @@ function doDrop(){if(anch||!bPos){if(!bPos)alert('Sin posición GPS');return;}
     _alarmGarreoEnabled=true;localStorage.setItem('ihm-garreo-alarm','1');
     /* AIS OFF localmente hasta que el usuario confirme. */
     aisAlarmEnabled=false;localStorage.setItem('ihm-ais-alarm','0');
-    setTimeout(function(){
+    /* Rev604 (feedback Carlos: "popup AIS sale tras lift, no tiene sentido"):
+       guardamos el timer para poder cancelarlo en doLift si el usuario leva
+       antes de que pase el 5s. */
+    if (window._aisPopupTimer) { clearTimeout(window._aisPopupTimer); }
+    window._aisPopupTimer = setTimeout(function(){
+      window._aisPopupTimer = null;
+      /* Doble guard: si entretanto ya no estamos fondeados, ni preguntar. */
+      if(!anch) return;
       _askActivateAisAlarm();
     }, 5000);
     /* Deploy 3a v3 (2026-05-08): force-enable visor audio on drop. Safety
        feature — even if user had muted, fondear is the moment when alarms
        matter most. */
     if(typeof _autoEnableAudio==='function')_autoEnableAudio('drop');
-    /* Rev152: tras priming de audio, reproducir confirmación "Ancla fondeada"
-       en el browser. Pequeño retraso para que el audio context esté caliente.
-       Rev188 v2: dedupe 30s para evitar que esto + la copia SSE en otra ventana
-       produzcan repeticiones de "Ancla fondeada". */
+    /* Rev152: tras priming de audio, reproducir confirmación "Ancla fondeada".
+       Rev598 (feedback Carlos): dedupe bajado 30→5s — 30s era demasiado y
+       suprimía la voz en QA con drop/lift/drop rápidos. */
     setTimeout(function(){
       var _n = Date.now();
-      if (!window._lastAnchorDownVoiceMs || (_n - window._lastAnchorDownVoiceMs) > 30000){
+      if (!window._lastAnchorDownVoiceMs || (_n - window._lastAnchorDownVoiceMs) > 5000){
         window._lastAnchorDownVoiceMs = _n;
         try{ _speakAlarm('anchor_down'); }catch(_){}
       }
@@ -5940,7 +6291,33 @@ function doDrop(){if(anch||!bPos){if(!bPos)alert('Sin posición GPS');return;}
       }
     });
   }});}
-function doLift(){post('/anchor-watch/lift',{}).then(function(){anch=false;aPos=null;swUserOverride=false;chainDep=null;chainRec=0;swMax=0;_radiusBowNow=0;_alarmGarreoEnabled=false;localStorage.setItem('ihm-garreo-alarm','0');drag=false;_aisAckedMMSIs={};localStorage.removeItem('ihm-ais-acked');[anchorMk,swingC,alarmC,chainLine].forEach(function(l){if(map.hasLayer(l))map.removeLayer(l)});if(swingLblMk){try{map.removeLayer(swingLblMk);}catch(e){}}if(alarmLblMk){try{map.removeLayer(alarmLblMk);}catch(e){}}swingLblMk=null;alarmLblMk=null;
+function doLift(){
+/* Rev596 (feedback Carlos "menos es más"): eliminado check OWNER_REQUIRED.
+   Mantiene la verificación 401 (sin sesión PIN con capa ON) para abrir
+   modal PIN automáticamente. */
+fetch(A+'/anchor-watch/lift',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+  .then(function(r){return r.json().then(function(j){return {status:r.status,body:j};}).catch(function(){return {status:r.status,body:{}};});})
+  .then(function(res){
+    if(res.status === 401){
+      var msg2 = (typeof T==='function') ? T('access_readonly_title') : 'Modo solo lectura — introduce PIN';
+      try { if(typeof showAlert==='function') showAlert(msg2); else alert(msg2); } catch(_){ alert(msg2); }
+      if(typeof m_pinOpen==='function') m_pinOpen('check');
+      return;
+    }
+    if(!res.body || res.body.ok !== true){
+      try { alert('No se pudo levar el ancla. ' + (res.body && res.body.error ? res.body.error : '')); } catch(_){}
+      return;
+    }
+    /* OK — limpieza local del state. */
+    /* Rev604: marcar timestamp para guard anti-voz-espuria en
+       processPollData (SSE drop atrasado tras lift). */
+    window._lastLocalLiftMs = Date.now();
+    /* Rev604: cancelar timer de popup AIS pendiente — si el usuario leva
+       antes de que pasen los 5s del setTimeout, el popup ya no tiene sentido. */
+    if (window._aisPopupTimer) { clearTimeout(window._aisPopupTimer); window._aisPopupTimer = null; }
+    /* Rev604: si el modal AIS-noanchor está abierto, cerrarlo. */
+    try { var aisPop = document.getElementById('ais-noanchor-pop'); if(aisPop && aisPop.classList.contains('open')) closePopup('ais-noanchor-pop'); } catch(_){}
+    anch=false;aPos=null;swUserOverride=false;chainDep=null;chainRec=0;swMax=0;_radiusBowNow=0;_alarmGarreoEnabled=false;localStorage.setItem('ihm-garreo-alarm','0');drag=false;_aisAckedMMSIs={};localStorage.removeItem('ihm-ais-acked');[anchorMk,swingC,alarmC,chainLine].forEach(function(l){if(map.hasLayer(l))map.removeLayer(l)});if(swingLblMk){try{map.removeLayer(swingLblMk);}catch(e){}}if(alarmLblMk){try{map.removeLayer(alarmLblMk);}catch(e){}}swingLblMk=null;alarmLblMk=null;
   /* Deploy 3a v3 (2026-05-08): explicit cleanup since doLift sets anch=false
      synchronously, so the SSE-based transition detection in processPollData
      won't fire (both _prevAnch and anch are now false). Mirror what we do in
@@ -5969,7 +6346,9 @@ function doLift(){post('/anchor-watch/lift',{}).then(function(){anch=false;aPos=
   /* Rev81: al levar, limpiar flechas viento/ola del mapa para que no se
      queden "pilladas" al barco hasta el próximo fetch shelter. */
   try{if(typeof _wxMapMarkerUpdate==='function')_wxMapMarkerUpdate();}catch(e){}
-  refUI();});}
+  refUI();
+  }); /* end fetch.then */
+}
 function post(ep,body){return fetch(A+ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.ok?r.json():null}).catch(function(){return null});}
 
 /* Rev45 (2026-05-09): stale-state watchdog. If we don't receive a backend
@@ -6396,10 +6775,22 @@ function processPollData(s){
        1) _prevAnch DEBE haber sido inicializado (no undefined) — primer poll
           tras carga de página NO se considera transición.
        2) dedupe 30s usando window._lastAnchorDownVoiceMs. */
-    if (typeof _prevAnch !== 'undefined' && _prevAnch === false && anch === true && typeof _autoEnableAudio==='function'){
+    /* Rev600 (feedback Carlos: "si levo ancla me dice ancla fondeada"):
+       guard contra SSE drop atrasado que llega después del lift. Si el SSE
+       trae anchoredSinceMs muy antiguo (>60s) o ausente, NO es un drop
+       fresco — es un evento huérfano (probable carrera entre drop+lift en
+       el mismo segundo). Solo disparar voz si el drop es realmente reciente. */
+    var _dropFresh = (typeof s.anchoredSinceMs === 'number'
+                     && s.anchoredSinceMs > 0
+                     && (Date.now() - s.anchoredSinceMs) < 60000);
+    /* Rev604: guard adicional contra voz espuria — si acabamos de hacer
+       lift local en los últimos 5s, NO disparar anchor_down aunque el
+       state SSE diga anchored=true (es un evento drop atrasado en la cola). */
+    var _justLifted = (window._lastLocalLiftMs && (Date.now() - window._lastLocalLiftMs) < 5000);
+    if (typeof _prevAnch !== 'undefined' && _prevAnch === false && anch === true && _dropFresh && !_justLifted && typeof _autoEnableAudio==='function'){
       _autoEnableAudio('drop-sse');
       var _now = Date.now();
-      if (!window._lastAnchorDownVoiceMs || (_now - window._lastAnchorDownVoiceMs) > 30000){
+      if (!window._lastAnchorDownVoiceMs || (_now - window._lastAnchorDownVoiceMs) > 5000){
         window._lastAnchorDownVoiceMs = _now;
         /* Rev338 (fix QA Rev336 cross-device): drop desde otro device no tiene
            user gesture reciente aquí. _autoEnableAudio llama ctx.resume() async;
@@ -6810,6 +7201,17 @@ function processPollData(s){
     try{ if(typeof m_updateMoonBottom==='function') m_updateMoonBottom(); }catch(_){}
     /* Rev567: bloque gps del state SSE → widget bottom-bar Precisión GPS. */
     if(s.gps){ window._gpsBE = s.gps; try{ if(typeof m_updateGpsBottom==='function') m_updateGpsBottom(); }catch(_){} }
+    /* Rev578 (feedback Carlos): difundir estado del toggle de seguridad por SSE
+       — cuando lo cambian en otro dispositivo, este visor lo refleja en
+       tiempo real (no esperando al refresh manual). */
+    if(typeof s.securityLayerEnabled === 'boolean'){
+      if(_secLayerEnabled !== s.securityLayerEnabled){
+        _secLayerEnabled = s.securityLayerEnabled;
+        /* También refrescar contexto porque canControl depende del toggle. */
+        try { m_refreshAccessContext(); } catch(_){}
+        try { m_applyAccessState(); } catch(_){}
+      }
+    }
     if(s.wx6h){ window._wx6hBE = s.wx6h; try{ if(typeof m_updateWx6hBottom==='function') m_updateWx6hBottom(); }catch(_){} }
     /* Rev467: cache snapshot del motor wave nav y render celda Olas. */
     if(s.wave){ window._waveBE = s.wave; try{ if(typeof m_updateWaveBottom==='function') m_updateWaveBottom(); }catch(_){} }
@@ -9580,65 +9982,111 @@ _shelterRenderBar=function(){_wxOrigRender.apply(this,arguments);_wxMapMarkerUpd
      - On track-clear (length<2), tear down everything cleanly. */
 var _trkLastRenderedLen=0;
 var _trkLastFullRebuildMs=0;
+/* Rev608 (Bloque C, feedback Carlos): configuración de tracks propios.
+   - _trkOwnEnabled: mostrar/ocultar tracks propios.
+   - _trkLimitHours: descartar puntos más viejos que N horas.
+   - Grisado por edad: puntos con edad > 4h se pintan gris en lugar del
+     gradient rojo→verde. Evita el bug "track de ayer sigue verde". */
+var _trkOwnEnabled = (function(){ try { var v=localStorage.getItem('ihm-trk-own'); return v==='0' ? false : true; } catch(_){ return true; } })();
+var _trkLimitHours = (function(){ try { var v=parseInt(localStorage.getItem('ihm-trk-limit-hours'),10); return isFinite(v)&&v>0&&v<=168 ? v : 12; } catch(_){ return 12; } })();
+var _TRK_FRESH_HOURS = 4; /* < 4h = gradient normal; >= 4h = gris progresivo */
 function updateTrackGradient(force){
-  /* Rev552 (feedback Carlos: "sigo sin ver track"): pane custom de Leaflet con
-     zIndex alto (650) para garantizar que las polylines van ENCIMA de tiles
-     (default 200) y overlay (default 400). Si las polylines existían pero
-     quedaban tapadas por algún tile layer con z-index alterado, este pane lo
-     resuelve definitivamente. console.warn (no log) para que sea visible
-     incluso si Carlos filtra info en DevTools. */
+  /* Rev608 fix bug (screenshot Carlos: track encima del barco): trackPane
+     baja de zIndex 650 → 550. Leaflet markerPane vale 600, así el barco
+     y el ancla quedan ENCIMA del track. Sigue por encima de tilePane (200)
+     y overlayPane (400). */
   try {
     if (!map.getPane('trackPane')) {
       map.createPane('trackPane');
       var _p = map.getPane('trackPane');
-      if (_p) { _p.style.zIndex = '650'; _p.style.pointerEvents = 'none'; }
+      if (_p) { _p.style.zIndex = '550'; _p.style.pointerEvents = 'none'; }
+    } else {
+      var _pExist = map.getPane('trackPane');
+      if (_pExist && _pExist.style.zIndex !== '550') _pExist.style.zIndex = '550';
     }
   } catch(_){}
-  try { console.warn('[IHM-TRACK] trkPts=' + trkPts.length + ' rendered=' + ((window._trkGradLines && window._trkGradLines.length) || 0) + ' force=' + !!force); } catch(_){}
-  if(trkPts.length<2){
+  /* Rev608: si el usuario desactivó "Mis tracks", limpiar y salir. */
+  if(!_trkOwnEnabled){
+    if(window._trkGradLines){window._trkGradLines.forEach(function(l){if(map.hasLayer(l))map.removeLayer(l);});}
+    window._trkGradLines=[];
+    _trkLastRenderedLen=0; _trkLastFullRebuildMs=0;
+    return;
+  }
+  /* Rev608: filtrar puntos por antigüedad según _trkLimitHours. */
+  var nowMs=Date.now();
+  var cutoffMs = nowMs - _trkLimitHours * 3600000;
+  var freshCutoffMs = nowMs - _TRK_FRESH_HOURS * 3600000;
+  var pts = trkPts.filter(function(p){ return (typeof p.t !== 'number') || p.t >= cutoffMs; });
+  if(pts.length<2){
     if(window._trkGradLines){window._trkGradLines.forEach(function(l){if(map.hasLayer(l))map.removeLayer(l);});}
     window._trkGradLines=[];
     _trkLastRenderedLen=0;
     _trkLastFullRebuildMs=0;
     return;
   }
-  var now=Date.now();
-  var fullRebuildDue=force||(now-_trkLastFullRebuildMs>30000);
+  /* Rev608: siempre rebuild al filtrar por horas (evita mezclar cache viejo). */
+  var fullRebuildDue=force || pts.length !== _trkLastRenderedLen || (nowMs-_trkLastFullRebuildMs>30000);
   if(fullRebuildDue){
     if(window._trkGradLines){window._trkGradLines.forEach(function(l){if(map.hasLayer(l))map.removeLayer(l);});}
     window._trkGradLines=[];
-    var n=trkPts.length;
+    var n=pts.length;
     var segs=Math.min(40,Math.max(2,Math.floor(n/2)));
     var step=Math.max(1,Math.floor(n/segs));
     for(var i=0;i<segs;i++){
       var s=i*step,e=Math.min((i+1)*step+1,n);
-      var pts=[];for(var j=s;j<e;j++)pts.push(trkPts[j].ll);
-      if(pts.length<2)continue;
-      var frac=i/(segs-1||1);
-      // frac 0 = oldest = RED(220,50,50), frac 1 = newest = GREEN(30,220,50)
-      var r=Math.round(220*(1-frac)+30*frac);
-      var g=Math.round(50*(1-frac)+220*frac);
-      var col='rgb('+r+','+g+',50)';
-      /* Rev552: pane custom trackPane (zIndex 650) garantiza visibilidad por
-         encima de tiles y overlay. Weight 5, opacity 0.95. */
-      var ln=L.polyline(pts,{pane:'trackPane',color:col,weight:5,opacity:.95}).addTo(map);
+      var subPts=[];for(var j=s;j<e;j++)subPts.push(pts[j].ll);
+      if(subPts.length<2)continue;
+      /* Rev608: color por edad del segmento (usar el punto medio del segmento).
+         - Segmentos con puntos < 4h de antigüedad → gradient rojo→verde.
+         - Segmentos con puntos >= 4h → gris progresivo (más viejo = más
+           translúcido). */
+      var midT = (typeof pts[Math.floor((s+e)/2)].t === 'number') ? pts[Math.floor((s+e)/2)].t : nowMs;
+      var ageMs = nowMs - midT;
+      var col, op;
+      if(ageMs < _TRK_FRESH_HOURS*3600000){
+        var frac=i/(segs-1||1);
+        var r=Math.round(220*(1-frac)+30*frac);
+        var g=Math.round(50*(1-frac)+220*frac);
+        col='rgb('+r+','+g+',50)';
+        op=0.95;
+      } else {
+        /* Gris progresivo: 4h → gris claro; 24h+ → gris tenue. */
+        var ageFrac = Math.min(1, (ageMs - _TRK_FRESH_HOURS*3600000) / (20*3600000));
+        var lightness = Math.round(160 - 80*ageFrac);
+        col = 'rgb(' + lightness + ',' + lightness + ',' + lightness + ')';
+        op = 0.6 - 0.25*ageFrac;
+      }
+      var ln=L.polyline(subPts,{pane:'trackPane',color:col,weight:5,opacity:op}).addTo(map);
       window._trkGradLines.push(ln);
     }
-    _trkLastRenderedLen=trkPts.length;
-    _trkLastFullRebuildMs=now;
-  } else if(trkPts.length>_trkLastRenderedLen){
-    // Incremental: append one fresh-green segment for the new points.
-    // Bridge from the last rendered point so the line is continuous.
-    var startIdx=Math.max(0,_trkLastRenderedLen-1);
-    var newPts=[];
-    for(var k=startIdx;k<trkPts.length;k++)newPts.push(trkPts[k].ll);
-    if(newPts.length>=2){
-      var lnNew=L.polyline(newPts,{pane:'trackPane',color:'rgb(30,220,50)',weight:5,opacity:.95}).addTo(map);
-      window._trkGradLines.push(lnNew);
-    }
-    _trkLastRenderedLen=trkPts.length;
+    _trkLastRenderedLen=pts.length;
+    _trkLastFullRebuildMs=nowMs;
   }
   // else: no growth, no full-rebuild due → skip silently.
+}
+/* Rev608: setter público del slider "límite horas". Persistente en localStorage.
+   fullBuild=true fuerza rebuild inmediato del gradient. */
+function m_trkSetLimitHours(hours){
+  var h = parseInt(hours,10);
+  if(!isFinite(h) || h<=0) h=12;
+  if(h>168) h=168;
+  _trkLimitHours = h;
+  try { localStorage.setItem('ihm-trk-limit-hours', String(h)); } catch(_){}
+  updateTrackGradient(true);
+}
+function m_trkSetOwnEnabled(en){
+  _trkOwnEnabled = !!en;
+  try { localStorage.setItem('ihm-trk-own', _trkOwnEnabled ? '1' : '0'); } catch(_){}
+  updateTrackGradient(true);
+}
+/* Rev608: borrar el track del backend (endpoint DELETE ya existe). */
+function m_trkClearOwn(){
+  fetch('/signalk-mareas-ihm/api/anchor-watch/track',{method:'DELETE',credentials:'include',cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(){
+      trkPts=[];
+      updateTrackGradient(true);
+    });
 }
 
 /* ── AIS ── */
@@ -10771,11 +11219,18 @@ function setAlarm(type,on){
     }
     post('/anchor-watch/gps-lost-alarm-status',{enabled:on});
   }else if(type==='weather'){
-    /* Rev316: alarma meteo — frontend-only por ahora. Estado en localStorage
-       y check periódico contra _shelterCache.assessment.hours (próximas 6 h).
-       Si viento > 25 kt u ola > 1.5 m → setAlarmActive('weather', true). */
+    /* Rev316: alarma meteo local para evaluar próximas 6 h contra shelter.
+       Rev608 (BUG grave, feedback amigo Carlos): además propagar al BACKEND
+       para que la notification SK 'weatherAdvisory' se emita como 'warn'
+       solo si el usuario tiene la alarma ACTIVA. Antes seguía enviando warn
+       aunque el toggle estuviera OFF durante días. */
     _alarmWeatherEnabled = on;
     localStorage.setItem('ihm-weather-alarm', on?'1':'0');
+    fetch('/signalk-mareas-ihm/api/weather/advisory-enabled',{
+      method:'POST',credentials:'include',cache:'no-store',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({enabled:!!on}),
+    }).catch(function(){});
     var st = document.getElementById('alarm-weather-st');
     if (st) {
       st.textContent = on ? T('activa','activa') : T('desactivada','desactivada');
@@ -10792,6 +11247,29 @@ function setAlarm(type,on){
    Mira las próximas 6h de _shelterCache.assessment.hours buscando viento>25kt
    u ola>1.5m. Se invoca tras tocar el switch y cada 5 min mientras esté on. */
 var _alarmWeatherEnabled = (localStorage.getItem('ihm-weather-alarm')==='1');
+/* Rev608 (BUG grave): sincronizar el toggle con backend (fuente de verdad)
+   al arrancar. Si el backend está OFF, forzamos OFF local también, para
+   evitar deriva local↔backend que dejó el path 'warn' emitiéndose durante
+   días con el switch aparentemente apagado. */
+(function _syncWeatherToggleWithBackend(){
+  fetch('/signalk-mareas-ihm/api/weather/advisory-enabled',{cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(j){
+      if(!j || typeof j.enabled !== 'boolean') return;
+      _alarmWeatherEnabled = !!j.enabled;
+      try { localStorage.setItem('ihm-weather-alarm', _alarmWeatherEnabled?'1':'0'); } catch(_){}
+      try {
+        var chk = document.getElementById('chk-alarm-weather');
+        if(chk) chk.checked = _alarmWeatherEnabled;
+        var st = document.getElementById('alarm-weather-st');
+        if(st){
+          st.textContent = _alarmWeatherEnabled ? T('activa','activa') : T('desactivada','desactivada');
+          st.style.color = _alarmWeatherEnabled ? 'var(--grn)' : '#666';
+        }
+      } catch(_){}
+    })
+    .catch(function(){});
+})();
 function _checkWeatherAlarm(){
   if (!_alarmWeatherEnabled) return;
   /* Rev327 (feedback Pablo): la alarma meteo es para FONDEO. Si no estamos
@@ -12342,12 +12820,30 @@ function _mUninjectModalHeader(overlay){
    en cada slider. El sistema viejo se disparaba con input event (solo
    al mover) → causaba "dos niveles" de transparencia. */
 function m_onAnchorBtn(){
-  /* anch / bPos son globals del JS desktop; si anch existe (objeto fondeo) -> levar */
-  if (typeof anch !== 'undefined' && anch) {
-    if (typeof doLift === 'function') doLift();
-  } else {
-    if (typeof doDrop === 'function') doDrop();
-  }
+  /* Rev602 (feedback Carlos: "tap 1 dice 'ancla fondeada', tap 2 leva"):
+     refrescamos el state del backend ANTES de decidir drop vs lift, para
+     evitar que un anch local desincronizado dispare doDrop sobre algo que
+     ya está fondeado en otro dispositivo. */
+  fetch(A+'/anchor-watch/state',{cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(s){
+      var serverAnchored = !!(s && s.anchored);
+      /* Sincroniza anch local con la verdad del backend antes de actuar. */
+      anch = serverAnchored;
+      if(serverAnchored){
+        if (typeof doLift === 'function') doLift();
+      } else {
+        if (typeof doDrop === 'function') doDrop();
+      }
+    })
+    .catch(function(){
+      /* Si no hay red, cae al comportamiento anterior. */
+      if (typeof anch !== 'undefined' && anch) {
+        if (typeof doLift === 'function') doLift();
+      } else {
+        if (typeof doDrop === 'function') doDrop();
+      }
+    });
 }
 /* Rev171: abrir/cerrar el panel completo (con FONDEAR AQUÍ, status,
    marea, CAPAS + sliders, AIS list) como modal fullscreen.
@@ -12955,6 +13451,815 @@ function m_updateBuildTag(){
   } catch(e){}
 }
 setTimeout(m_updateBuildTag, 2000);
+
+/* ═════════════════════════════════════════════════════════════════════
+   Rev586 (refactor radical, feedback Carlos): seguridad por PIN únicamente.
+   Sin referencias a usuario SignalK. Modelo de 2 niveles:
+
+     - PIN MAESTRO: el primero creado. Gestiona la capa (ON/OFF) y otros PINs.
+     - PINs INVITADO: añadidos por el maestro. Solo desbloquean uso.
+
+   Backend autoritativo. Cookie HttpOnly `ihm_pin_session` TTL 30 min.
+   ════════════════════════════════════════════════════════════════════ */
+var _accessCtx = { securityEnabled:false, unlocked:false, isMaster:false, alias:null };
+var _secLayerEnabled = false;
+
+function m_refreshAccessContext(){
+  fetch('/signalk-mareas-ihm/api/access',{credentials:'include',cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(j){
+      if(!j) return;
+      _accessCtx = j;
+      _secLayerEnabled = !!j.securityEnabled;
+      m_applyAccessState();
+    }).catch(function(){});
+}
+/* Compat: el SSE solo trae securityLayerEnabled. */
+function m_refreshSecurityLayerStatus(){ m_refreshAccessContext(); }
+
+/* Cambio de toggle de la capa.
+   - Activar y no hay PINs: pide crear maestro primero (auto-unlock luego
+     activa capa).
+   - Activar y hay maestro: requiere cookie maestro (si no, pide PIN).
+   - Desactivar: requiere cookie maestro.
+   El backend rechaza con 403 MASTER_REQUIRED o 409 NO_MASTER si falta auth. */
+function _doToggleSecurityLayer(desired){
+  return fetch('/signalk-mareas-ihm/api/access/security-layer',{
+    method:'POST',credentials:'include',cache:'no-store',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({enabled:desired}),
+  }).then(function(r){
+    return r.json().then(function(j){ return { status:r.status, body:j }; });
+  }).then(function(res){
+    if(res.status === 200 && res.body && res.body.ok){
+      m_refreshAccessContext();
+      return { ok:true };
+    }
+    return { ok:false, error: (res.body && res.body.error) || ('HTTP'+res.status) };
+  });
+}
+
+function m_toggleSecurityLayer(){
+  var desired = !_secLayerEnabled;
+  if(desired){
+    /* Intentar activar primero — backend decide si hace falta crear maestro
+       o solicitar autenticación. */
+    _doToggleSecurityLayer(true).then(function(res){
+      if(res.ok) return;
+      if(res.error === 'NO_MASTER'){
+        /* No hay maestro: pedir crearlo. Tras crearlo el backend deja cookie
+           maestro lista, así que el siguiente intento de activar funcionará. */
+        m_pinOpen('create', function(){
+          _doToggleSecurityLayer(true);
+        });
+      } else if(res.error === 'MASTER_REQUIRED'){
+        /* Hay maestro pero no estamos autenticados como tal: pedir PIN maestro. */
+        m_pinOpen('check', function(){
+          _doToggleSecurityLayer(true);
+        }, { requireMaster:true });
+      } else {
+        alert('No se pudo activar la capa: ' + res.error);
+      }
+    });
+  } else {
+    /* Desactivar — siempre requiere maestro. */
+    _doToggleSecurityLayer(false).then(function(res){
+      if(res.ok) return;
+      if(res.error === 'MASTER_REQUIRED'){
+        m_pinOpen('check', function(){
+          _doToggleSecurityLayer(false);
+        }, { requireMaster:true });
+      } else {
+        alert('No se pudo desactivar la capa: ' + res.error);
+      }
+    });
+  }
+}
+
+/* Cerrar sesión PIN (limpia cookie en backend). */
+function m_pinLock(){
+  fetch('/signalk-mareas-ihm/api/access/pin-lock',{
+    method:'POST',credentials:'include',cache:'no-store',
+  }).then(function(){ m_refreshAccessContext(); });
+}
+
+/* ═══════════════ Modal PIN (Rev580: PIN pad sin input · Rev581: confirm) ═══════════════
+   Buffer interno en JS, sin <input> que el password manager pueda detectar.
+   Botones 0-9 + ⌫ + ✓. Display con puntos.
+   Rev581: modo 'create' es de 2 pasos — introduce + confirma. */
+var _pinMode = 'check';
+var _pinOnSuccess = null;
+var _pinBuffer = '';
+var _pinFirstAttempt = '';
+var _pinFirstAlias = ''; /* Rev583 multi-PIN. */
+var _pinStage = 1;
+function m_pinDisplayUpdate(){
+  var disp = document.getElementById('m-pin-display');
+  if(!disp) return;
+  var html = '';
+  for(var i = 0; i < 8; i++){
+    var filled = i < _pinBuffer.length;
+    html += '<span style="width:18px;height:18px;border-radius:50%;background:'
+         + (filled ? '#fff' : 'rgba(255,255,255,.18)')
+         + ';display:inline-block;border:1px solid rgba(255,255,255,.35)"></span>';
+  }
+  disp.innerHTML = html;
+}
+function m_pinPress(d){
+  if(_pinBuffer.length >= 8) return;
+  _pinBuffer += d;
+  m_pinDisplayUpdate();
+  var errEl = document.getElementById('m-pin-error');
+  if(errEl) errEl.style.display = 'none';
+}
+function m_pinBackspace(){
+  if(_pinBuffer.length === 0) return;
+  _pinBuffer = _pinBuffer.slice(0, -1);
+  m_pinDisplayUpdate();
+}
+var _pinRequireMaster = false; /* Rev586: si true, el unlock solo cuenta si es PIN maestro. */
+var _pinChangeAlias = null; /* Rev589: alias destino del cambio de PIN. */
+function m_pinOpen(mode, onSuccess, opts){
+  _pinMode = mode || 'check';
+  _pinOnSuccess = (typeof onSuccess === 'function') ? onSuccess : null;
+  _pinRequireMaster = !!(opts && opts.requireMaster);
+  _pinChangeAlias = (opts && opts.changeAlias) || null;
+  _pinBuffer = '';
+  _pinFirstAttempt = '';
+  _pinFirstAlias = '';
+  _pinStage = 1;
+  var aliasIn = document.getElementById('m-pin-alias');
+  if(aliasIn) aliasIn.value = '';
+  _pinShowStage();
+  m_pinDisplayUpdate();
+  openPopup('m-pin-pop');
+}
+/* Renderiza título + mensaje + alias-wrap según mode + stage. */
+function _pinShowStage(){
+  var titleEl = document.getElementById('m-pin-title');
+  var msgEl   = document.getElementById('m-pin-msg');
+  var errEl   = document.getElementById('m-pin-error');
+  var aliasW  = document.getElementById('m-pin-alias-wrap');
+  if(errEl){ errEl.style.display='none'; errEl.textContent=''; }
+  /* alias-wrap solo visible en mode create, paso 1. */
+  if(aliasW) aliasW.style.display = (_pinMode === 'create' && _pinStage === 1) ? 'block' : 'none';
+  if(_pinMode === 'create'){
+    if(_pinStage === 1){
+      if(titleEl) titleEl.textContent = T('pin_create_title');
+      if(msgEl)   msgEl.innerHTML = T('pin_create_msg') + '<br><br><b style="color:#ffeb3b">' + T('pin_create_step1') + '</b>';
+    } else {
+      if(titleEl) titleEl.textContent = T('pin_create_step2_title');
+      if(msgEl)   msgEl.textContent = T('pin_create_step2_msg');
+    }
+  } else if(_pinMode === 'unlock'){
+    if(titleEl) titleEl.textContent = T('pin_unlock_title');
+    if(msgEl)   msgEl.textContent   = '';
+  } else if(_pinMode === 'change-pwd'){
+    /* Rev589: cambio de PIN de un invitado. Step 1=nuevo PIN, Step 2=confirmar. */
+    if(titleEl) titleEl.textContent = '🔑 ' + (_pinChangeAlias || '');
+    if(msgEl) msgEl.textContent = (_pinStage === 1)
+      ? 'Nuevo PIN (4-8 dígitos)'
+      : 'Repite el nuevo PIN para confirmar';
+  } else {
+    if(titleEl) titleEl.textContent = T('pin_toggle_title');
+    if(msgEl)   msgEl.textContent   = '';
+  }
+}
+function m_pinClose(){
+  closePopup('m-pin-pop');
+  _pinOnSuccess = null;
+  _pinBuffer = '';
+  _pinFirstAttempt = '';
+  _pinFirstAlias = '';
+  _pinChangeAlias = null;
+  _pinStage = 1;
+}
+function _pinShowError(key){
+  var errEl = document.getElementById('m-pin-error');
+  if(!errEl) return;
+  errEl.textContent = T(key);
+  errEl.style.display = 'block';
+}
+function m_pinSubmit(){
+  var pin = _pinBuffer;
+  if(!/^\d{4,8}$/.test(pin)){
+    _pinShowError('pin_err_invalid'); return;
+  }
+  /* Rev589: cambio de PIN de un invitado (modo 'change-pwd'). */
+  if(_pinMode === 'change-pwd'){
+    if(_pinStage === 1){
+      _pinFirstAttempt = pin;
+      _pinStage = 2;
+      _pinBuffer = '';
+      _pinShowStage();
+      m_pinDisplayUpdate();
+      return;
+    }
+    if(pin !== _pinFirstAttempt){
+      _pinShowError('pin_err_no_match');
+      _pinBuffer = ''; _pinFirstAttempt = ''; _pinStage = 1;
+      m_pinDisplayUpdate(); _pinShowStage();
+      return;
+    }
+    fetch('/signalk-mareas-ihm/api/access/pin-change-pwd',{
+      method:'POST',credentials:'include',cache:'no-store',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({alias:_pinChangeAlias, newPin:pin}),
+    }).then(function(r){return r.json().then(function(j){return {status:r.status,body:j};});})
+      .then(function(res){
+        if(res.status === 200 && res.body && res.body.ok){
+          m_pinClose();
+          m_loadPinsList();
+          return;
+        }
+        var err = (res.body && res.body.error) || ('HTTP'+res.status);
+        var key = (err === 'PIN_DUPLICATE') ? 'pin_err_pin_dup' : 'pin_err_invalid';
+        _pinShowError(key);
+        _pinBuffer = ''; _pinFirstAttempt = ''; _pinStage = 1;
+        m_pinDisplayUpdate(); _pinShowStage();
+      });
+    return;
+  }
+  if(_pinMode === 'create'){
+    /* Rev586 multi-PIN con alias. Paso 1 pide alias + PIN; paso 2 confirma. */
+    if(_pinStage === 1){
+      var aliasIn = document.getElementById('m-pin-alias');
+      var alias = aliasIn ? String(aliasIn.value || '').trim() : '';
+      if(!alias){ _pinShowError('pin_alias_required'); return; }
+      if(alias.length > 24) alias = alias.slice(0,24);
+      _pinFirstAttempt = pin;
+      _pinFirstAlias = alias;
+      _pinStage = 2;
+      _pinBuffer = '';
+      _pinShowStage();
+      m_pinDisplayUpdate();
+      return;
+    }
+    /* _pinStage === 2: comparar con primer intento. */
+    if(pin !== _pinFirstAttempt){
+      _pinShowError('pin_err_no_match');
+      _pinBuffer = ''; _pinFirstAttempt = ''; _pinFirstAlias = '';
+      _pinStage = 1;
+      m_pinDisplayUpdate();
+      _pinShowStage();
+      return;
+    }
+    /* PIN coincide. Llamamos al backend (auto-unlock del maestro o invitado
+       a partir de cookie maestro existente). */
+    fetch('/signalk-mareas-ihm/api/access/pin-set',{
+      method:'POST',credentials:'include',cache:'no-store',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({pin:pin, alias:_pinFirstAlias}),
+    }).then(function(r){return r.json().then(function(j){return {status:r.status, body:j};});})
+      .then(function(res){
+        if(res.status === 200 && res.body && res.body.ok){
+          var cb = _pinOnSuccess;
+          /* Rev589: recordar alias creado para que el flujo de "añadir
+             invitado" pueda abrir el modal de edición tras la lista. */
+          _pinJustCreatedAlias = (res.body && res.body.alias) || _pinFirstAlias;
+          m_pinClose();
+          m_refreshAccessContext();
+          if(typeof m_loadPinsList==='function') m_loadPinsList();
+          if(cb) cb();
+          return;
+        }
+        var err = (res.body && res.body.error) || ('HTTP'+res.status);
+        var key = 'pin_err_invalid';
+        if(err === 'ALIAS_DUPLICATE') key = 'pin_err_alias_dup';
+        else if(err === 'PIN_DUPLICATE') key = 'pin_err_pin_dup';
+        else if(err === 'MASTER_REQUIRED') key = 'pin_err_master_required';
+        _pinShowError(key);
+        _pinBuffer = ''; _pinFirstAttempt = ''; _pinFirstAlias=''; _pinStage = 1;
+        m_pinDisplayUpdate();
+        _pinShowStage();
+      });
+    return;
+  }
+  /* check / unlock: verifica contra backend y obtiene cookie. */
+  fetch('/signalk-mareas-ihm/api/access/pin-unlock',{
+    method:'POST',credentials:'include',cache:'no-store',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pin:pin}),
+  }).then(function(r){return r.json().then(function(j){return {status:r.status,body:j};});})
+    .then(function(res){
+      var j = res.body || {};
+      if(!j.ok){
+        var key = (j.error === 'PIN_EXPIRED') ? 'pin_err_expired' : 'pin_err_mismatch';
+        _pinShowError(key);
+        _pinBuffer = ''; m_pinDisplayUpdate();
+        return;
+      }
+      /* Si se pidió maestro específicamente y este PIN es invitado → error. */
+      if(_pinRequireMaster && !j.isMaster){
+        _pinShowError('pin_err_master_required');
+        _pinBuffer = ''; m_pinDisplayUpdate();
+        return;
+      }
+      var cb = _pinOnSuccess;
+      var usedPin = pin;
+      m_pinClose();
+      m_refreshAccessContext();
+      if(cb) cb(usedPin);
+    });
+}
+
+/* Añadir nuevo PIN. Si no hay PINs → maestro (sin auto-edit). Si hay y somos
+   maestro → invitado y abre edit modal tras crear para fijar nivel/notas/
+   caducidad. Si hay y NO somos maestro → pide PIN maestro y luego invitado. */
+function m_pinAddNew(){
+  fetch('/signalk-mareas-ihm/api/access/pin-status',{credentials:'include',cache:'no-store'})
+    .then(function(r){return r.ok?r.json():{hasPin:false};})
+    .then(function(s){
+      if(!s.hasPin){
+        m_pinOpen('create'); /* maestro, no necesita edit */
+        return;
+      }
+      var openCreate = function(){
+        m_pinOpen('create', function(){
+          /* Tras crear invitado, abrir modal edit para que el maestro
+             rellene nivel/notas/caducidad sin recargar la lista. */
+          setTimeout(function(){
+            var created = _pinListCache.find(function(p){return !p.isMaster && p.alias === _pinJustCreatedAlias;});
+            if(created) m_pinEditOpen(created.alias);
+          }, 200);
+        });
+      };
+      if(_accessCtx.unlocked && _accessCtx.isMaster){
+        openCreate();
+      } else {
+        m_pinOpen('check', openCreate, { requireMaster:true });
+      }
+    });
+}
+var _pinJustCreatedAlias = null;
+
+/* Rev589 Bloque A: lista enriquecida con nivel, notas, caducidad + edición. */
+var _pinListCache = []; /* última lista cargada, usada por edit modal. */
+function m_loadPinsList(){
+  var host = document.getElementById('m-cfg-pins-list');
+  if(!host) return;
+  fetch('/signalk-mareas-ihm/api/access/pins',{
+    credentials:'include',cache:'no-store',
+  }).then(function(r){return r.ok?r.json():[];})
+    .then(function(j){
+      var pins = Array.isArray(j) ? j : (j && j.pins) || [];
+      _pinListCache = pins;
+      if(!pins.length){
+        host.innerHTML = '<div style="opacity:.7;font-style:italic;padding:8px 0" data-i18n="cfg_pins_empty">'
+                      + T('cfg_pins_empty') + '</div>';
+        return;
+      }
+      var nowMs = Date.now();
+      var html = '';
+      pins.forEach(function(p){
+        var alias = String(p.alias || '').replace(/[<>&"]/g,'');
+        var created = '';
+        if(p.createdMs){
+          try { var d = new Date(p.createdMs); created = d.toLocaleDateString(); } catch(_){}
+        }
+        var icon = p.isMaster ? '👑' : '👤';
+        var roleLabel = p.isMaster ? T('pin_role_master') : T('pin_role_guest');
+        /* Rev596: chip nivel eliminado — todos los invitados son full. */
+        var levelChip = '';
+        /* Chip caducidad. */
+        var expChip = '';
+        if(typeof p.expiresMs === 'number' && p.expiresMs > 0){
+          if(p.expiresMs < nowMs){
+            expChip = '<span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(229,57,53,.18);color:#ff8a80;border:1px solid #e53935;margin-left:6px">' + T('pin_expired_chip') + '</span>';
+          } else {
+            var days = Math.max(1, Math.round((p.expiresMs - nowMs)/86400000));
+            expChip = '<span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(255,178,63,.14);color:#ffb23f;border:1px solid #ffb23f;margin-left:6px">⏳ ' + days + 'd</span>';
+          }
+        }
+        var notesLine = '';
+        if(p.notes){
+          notesLine = '<div style="font-size:13px;color:#bbb;font-style:italic;margin-top:2px">' + String(p.notes).replace(/[<>&"]/g,'') + '</div>';
+        }
+        /* Botones por rol. */
+        var btns = '';
+        if(p.isMaster){
+          btns = '<span style="opacity:.5;font-size:12px" data-i18n="pin_master_protected">' + T('pin_master_protected') + '</span>';
+        } else {
+          var escAlias = alias.replace(/\'/g,"\\'");
+          btns = '<div style="display:flex;gap:6px">'
+               +   '<button onclick="m_pinEditOpen(\'' + escAlias + '\')" style="padding:8px 12px;background:rgba(154,170,221,.18);border:1px solid #9ad;color:#9ad;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px">✏️</button>'
+               +   '<button onclick="m_pinDeleteEntry(\'' + escAlias + '\')" style="padding:8px 12px;background:rgba(229,57,53,.18);border:1px solid #e53935;color:#ff8a80;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px">🗑</button>'
+               + '</div>';
+        }
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 6px;border-bottom:1px solid rgba(255,255,255,.08)">'
+              +   '<div style="flex:1;min-width:0">'
+              +     '<div style="font-weight:700;color:#fff;font-size:16px">' + icon + ' ' + alias + ' · ' + roleLabel + levelChip + expChip + '</div>'
+              +     (created ? '<div style="opacity:.6;font-size:13px;margin-top:2px">' + T('pin_edit_created') + ': ' + created + '</div>' : '')
+              +     notesLine
+              +   '</div>'
+              +   btns
+              + '</div>';
+      });
+      host.innerHTML = html;
+    });
+}
+
+/* Rev594: lista de sesiones PIN activas (solo maestro). */
+function m_loadSessionsList(){
+  var host = document.getElementById('m-cfg-sessions-list');
+  if(!host) return;
+  if(!(_accessCtx.unlocked && _accessCtx.isMaster)){ host.innerHTML=''; return; }
+  fetch('/signalk-mareas-ihm/api/access/sessions',{credentials:'include',cache:'no-store'})
+    .then(function(r){return r.ok?r.json():[];})
+    .then(function(arr){
+      if(!Array.isArray(arr) || !arr.length){
+        host.innerHTML = '<div style="opacity:.7;font-style:italic;padding:6px 0" data-i18n="cfg_sessions_empty">' + T('cfg_sessions_empty') + '</div>';
+        return;
+      }
+      var now = Date.now();
+      var html = '';
+      arr.forEach(function(s){
+        var alias = String(s.alias||'?').replace(/[<>&"]/g,'');
+        var device = String(s.device||'?').replace(/[<>&"]/g,'');
+        var ip = String(s.ip||'?').replace(/[<>&"]/g,'');
+        var icon = s.isMaster ? '👑' : '👤';
+        var meBadge = s.isMe ? '<span style="color:#3aa856;font-weight:700;margin-left:6px">' + T('cfg_sessions_me') + '</span>' : '';
+        /* Rev606 (feedback Carlos: "cómo me revoco a mí mismo siendo
+           maestro"): nunca mostrar botón Revocar para sesiones del maestro.
+           Sólo hay un alias maestro; revocar otra sesión maestro sería
+           revocarte a ti mismo. Las propias del maestro tampoco. */
+        var revokeBtn = (s.isMe || s.isMaster) ? ''
+          : '<button onclick="m_revokeSession(\'' + s.tokenShort + '\')" style="padding:6px 12px;background:rgba(229,57,53,.18);border:1px solid #e53935;color:#ff8a80;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px" data-i18n="cfg_sessions_revoke">Revocar</button>';
+        /* Rev604 (feedback Carlos "1427 min, dame horas"): formato
+           horas/minutos según duración:
+             > 180 días → "Sin caducidad"
+             > 24 h     → "N días"
+             > 1 h      → "N horas"
+             ≤ 1 h      → "N min" */
+        var ttlLine;
+        var msLeft = Math.max(0, s.expiresMs - now);
+        if(s.isMaster || msLeft > 180 * 86400000){
+          ttlLine = s.isMaster ? T('cfg_sessions_no_expiry') : T('cfg_sessions_no_expiry_guest');
+        } else if(msLeft > 86400000){
+          var daysLeft = Math.round(msLeft / 86400000);
+          ttlLine = T('cfg_sessions_days_left').replace('{N}', daysLeft);
+        } else if(msLeft >= 3600000){
+          var hLeft = Math.round(msLeft / 3600000);
+          ttlLine = T('cfg_sessions_hours_left').replace('{N}', hLeft);
+        } else {
+          var minLeft = Math.max(0, Math.round(msLeft / 60000));
+          ttlLine = T('cfg_sessions_min_left').replace('{N}', minLeft);
+        }
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.06)">'
+              +   '<div style="flex:1;min-width:0">'
+              +     '<div style="color:#fff;font-weight:700">' + icon + ' ' + alias + meBadge + '</div>'
+              +     '<div style="opacity:.7;font-size:12px;margin-top:2px">' + device + ' · ' + ip + '</div>'
+              +     '<div style="opacity:.6;font-size:12px">' + ttlLine + '</div>'
+              +   '</div>'
+              +   revokeBtn
+              + '</div>';
+      });
+      host.innerHTML = html;
+    });
+}
+function m_revokeSession(tokenShort){
+  if(!tokenShort) return;
+  fetch('/signalk-mareas-ihm/api/access/sessions/revoke',{
+    method:'POST',credentials:'include',cache:'no-store',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({tokenShort:tokenShort}),
+  }).then(function(r){return r.json();}).then(function(j){
+    if(j && j.ok){ m_loadSessionsList(); }
+    else { alert('No se pudo revocar: ' + ((j&&j.error)||'error')); }
+  });
+}
+
+/* ── Modal edición invitado ─────────────────────────────────────────── */
+var _pinEditingAlias = null;
+/* Rev596: estado interno simple para caducidad (sin date picker). */
+var _pinEditExpiryMs = null;
+function m_pinEditOpen(alias){
+  var p = _pinListCache.find(function(x){return x.alias === alias;});
+  if(!p) return;
+  if(p.isMaster) return;
+  _pinEditingAlias = alias;
+  var header = document.getElementById('m-pin-edit-header');
+  if(header) header.textContent = '👤 ' + alias;
+  /* Rev603: mostrar PIN actual si el backend lo envió (solo a sesión maestro). */
+  var wrap = document.getElementById('m-pin-edit-currentpin-wrap');
+  var pinEl = document.getElementById('m-pin-edit-currentpin');
+  var legacyEl = document.getElementById('m-pin-edit-currentpin-legacy');
+  if(wrap && pinEl && legacyEl){
+    wrap.style.display = 'block';
+    if(typeof p.pin === 'string' && p.pin){
+      pinEl.textContent = p.pin;
+      pinEl.style.opacity = '1';
+      legacyEl.style.display = 'none';
+    } else {
+      pinEl.textContent = '— — — —';
+      pinEl.style.opacity = '.5';
+      legacyEl.style.display = 'block';
+      legacyEl.textContent = T('pin_edit_current_pin_legacy');
+    }
+  }
+  var notesEl = document.getElementById('m-pin-edit-notes');
+  if(notesEl) notesEl.value = p.notes || '';
+  _pinEditExpiryMs = (typeof p.expiresMs === 'number' && p.expiresMs > Date.now()) ? p.expiresMs : null;
+  m_pinEditExpiryUpdateStatus();
+  openPopup('m-pin-edit-pop');
+}
+function m_pinEditExpiryClear(){ _pinEditExpiryMs = null; m_pinEditExpiryUpdateStatus(); }
+function m_pinEditExpiryQuick(days){
+  _pinEditExpiryMs = Date.now() + days * 86400000;
+  m_pinEditExpiryUpdateStatus();
+}
+function m_pinEditExpiryUpdateStatus(){
+  var status = document.getElementById('m-pin-edit-expiry-status');
+  if(!status) return;
+  if(!_pinEditExpiryMs){ status.textContent = T('pin_expiry_never'); status.style.color='#9ad'; return; }
+  var days = Math.max(1, Math.round((_pinEditExpiryMs - Date.now()) / 86400000));
+  var dateStr = '';
+  try { dateStr = new Date(_pinEditExpiryMs).toLocaleDateString(); } catch(_){}
+  status.textContent = T('pin_expiry_days').replace('{N}', days) + (dateStr ? ' · ' + dateStr : '');
+  status.style.color = '#9ad';
+}
+function m_pinEditSave(){
+  if(!_pinEditingAlias) return;
+  var notes = (document.getElementById('m-pin-edit-notes') || {}).value || '';
+  var expiresMs = _pinEditExpiryMs;
+  fetch('/signalk-mareas-ihm/api/access/pin-update',{
+    method:'POST',credentials:'include',cache:'no-store',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({alias:_pinEditingAlias, notes:notes, expiresMs:expiresMs}),
+  }).then(function(r){return r.json();}).then(function(j){
+    if(j && j.ok){
+      closePopup('m-pin-edit-pop');
+      _pinEditingAlias = null;
+      m_loadPinsList();
+    } else {
+      alert('No se pudo guardar: ' + ((j && j.error) || 'error'));
+    }
+  });
+}
+/* Cambiar PIN numérico — abre dialer en modo 'change-pwd' que reusa
+   _pinFirstAttempt para confirmar antes de POST. */
+function m_pinEditChangePwd(){
+  if(!_pinEditingAlias) return;
+  var alias = _pinEditingAlias;
+  closePopup('m-pin-edit-pop');
+  m_pinOpen('change-pwd', null, { changeAlias:alias });
+}
+
+/* Borrar PIN invitado. Requiere sesión maestro. */
+function m_pinDeleteEntry(alias){
+  if(!alias) return;
+  if(!confirm(T('pin_delete_confirm'))) return;
+  function doDelete(){
+    fetch('/signalk-mareas-ihm/api/access/pin-delete',{
+      method:'POST',credentials:'include',cache:'no-store',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({alias:alias}),
+    }).then(function(r){return r.json().then(function(j){return {status:r.status,body:j};});})
+      .then(function(res){
+        if(res.status===200 && res.body && res.body.ok){ m_loadPinsList(); return; }
+        alert('No se pudo borrar: ' + ((res.body&&res.body.error)||'error'));
+      });
+  }
+  if(_accessCtx.unlocked && _accessCtx.isMaster){ doDelete(); return; }
+  m_pinOpen('check', doDelete, { requireMaster:true });
+}
+
+/* Rev586: canMutate simplificado — capa OFF o cookie PIN válida. */
+function m_canMutate(){
+  if(!_secLayerEnabled) return true;
+  return !!(_accessCtx && _accessCtx.unlocked);
+}
+
+/* Wrapper central. Si no puede mutar, abre modal PIN en vez de error. */
+function runProtectedAction(action){
+  if(!_secLayerEnabled || (_accessCtx && _accessCtx.unlocked)){
+    try { return action(); } catch(e){ console.error('[IHM-ACCESS] action error',e); }
+    return;
+  }
+  /* Capa ON y bloqueado: abrir modal PIN, ejecutar acción tras desbloquear. */
+  m_pinOpen('check', function(){
+    try { action(); } catch(e){ console.error('[IHM-ACCESS] action error',e); }
+  });
+}
+window.runProtectedAction = runProtectedAction;
+
+/* Aplica estado visual: candado sidebar, banner, switch config. */
+function m_applyAccessState(){
+  var en = (typeof _lang!=='undefined' && _lang==='en');
+  /* 1. Botón candado sidebar.
+     Rev595 (feedback Carlos): "visualmente insignificante" — añado fondo
+     de color y borde según estado para que destaque entre los demás botones. */
+  var btn = document.getElementById('m-sb-access');
+  var ico = document.getElementById('m-sb-access-ico');
+  var lbl = document.getElementById('m-sb-access-lbl');
+  if(btn && ico && lbl){
+    if(!_secLayerEnabled){
+      /* Capa OFF: discreto, gris. */
+      ico.textContent = '🔓';
+      lbl.textContent = 'OFF';
+      btn.style.color = '#888';
+      btn.style.background = '';
+      btn.style.borderColor = '';
+      btn.style.boxShadow = '';
+    } else if(!_accessCtx.unlocked){
+      /* Capa ON sin sesión: NARANJA llamativo + pulse. */
+      ico.textContent = '🔒';
+      lbl.textContent = 'PIN';
+      btn.style.color = '#ffb23f';
+      btn.style.background = 'rgba(255,178,63,.22)';
+      btn.style.borderColor = '#ffb23f';
+      btn.style.boxShadow = '0 0 12px rgba(255,178,63,.55)';
+    } else if(_accessCtx.isMaster) {
+      /* Maestro autenticado: AMARILLO con corona. */
+      ico.textContent = '👑';
+      lbl.textContent = (_accessCtx.alias || 'OK').substr(0,6);
+      btn.style.color = '#ffd54f';
+      btn.style.background = 'rgba(255,213,79,.18)';
+      btn.style.borderColor = '#ffd54f';
+      btn.style.boxShadow = '0 0 8px rgba(255,213,79,.35)';
+    } else {
+      /* Invitado autenticado: VERDE. */
+      ico.textContent = '🔓';
+      lbl.textContent = (_accessCtx.alias || 'OK').substr(0,6);
+      btn.style.color = '#3aa856';
+      btn.style.background = 'rgba(58,168,86,.15)';
+      btn.style.borderColor = '#3aa856';
+      btn.style.boxShadow = '0 0 6px rgba(58,168,86,.30)';
+    }
+  }
+  /* 2. Banner solo-lectura */
+  var banner = document.getElementById('m-access-banner');
+  if(banner){
+    banner.style.display = (_secLayerEnabled && !_accessCtx.unlocked) ? 'block' : 'none';
+  }
+  /* 3. Switch Configuración */
+  var cfgBtn = document.getElementById('m-cfg-access-toggle');
+  var cfgSt  = document.getElementById('m-cfg-access-state');
+  if(cfgBtn){
+    /* Rev599: masculino "Activado/Desactivado" — es el CONTROL, no la CAPA. */
+    if(_secLayerEnabled){
+      cfgBtn.textContent = en ? '🔒 Enabled' : '🔒 Activado';
+      cfgBtn.style.background = 'rgba(58,168,86,.25)';
+      cfgBtn.style.borderColor = '#3aa856';
+      cfgBtn.style.color = '#3aa856';
+    } else {
+      cfgBtn.textContent = en ? '🔓 Disabled' : '🔓 Desactivado';
+      cfgBtn.style.background = 'rgba(0,0,0,.35)';
+      cfgBtn.style.borderColor = 'rgba(255,255,255,.25)';
+      cfgBtn.style.color = '#ccc';
+    }
+  }
+  if(cfgSt){
+    var line;
+    if(!_secLayerEnabled){
+      line = en
+        ? 'Control OFF · all actions open to anyone on the network.'
+        : 'Control OFF · todas las acciones abiertas para cualquiera en la red.';
+    } else if(_accessCtx.unlocked){
+      var roleEs = _accessCtx.isMaster ? 'maestro' : 'invitado';
+      var roleEn = _accessCtx.isMaster ? 'master'  : 'guest';
+      line = en
+        ? ('Unlocked as ' + (_accessCtx.alias || '?') + ' · ' + roleEn)
+        : ('Desbloqueado como ' + (_accessCtx.alias || '?') + ' · ' + roleEs);
+    } else {
+      line = en
+        ? 'Locked · enter a PIN to unlock.'
+        : 'Bloqueado · introduce un PIN para desbloquear.';
+    }
+    cfgSt.textContent = line;
+  }
+  /* 4. Botón "Cerrar sesión PIN" (visible solo si unlocked) */
+  var logoutBtn = document.getElementById('m-cfg-pin-logout');
+  if(logoutBtn) logoutBtn.style.display = _accessCtx.unlocked ? 'inline-block' : 'none';
+  /* 5. Rev593: bloque PIN de control con 3 estados internos.
+     - Bloque entero: visible salvo si soy INVITADO autenticado (no necesita
+       gestión; sale por "Mi sesión PIN").
+     - admin (toggle + lista + añadir): visible solo si soy MAESTRO o no hay
+       PINs (escenario primera instalación).
+     - loginprompt (botón "Introducir PIN"): visible si hay PINs y NO estoy
+       autenticado — punto de entrada que ANTES faltaba (bug Carlos QA). */
+  var accessBlock = document.getElementById('m-cfg-access-block');
+  var accessAdmin = document.getElementById('m-cfg-access-admin');
+  var accessLogin = document.getElementById('m-cfg-access-loginprompt');
+  var iAmGuest = _accessCtx.unlocked && !_accessCtx.isMaster;
+  var iAmMaster = _accessCtx.unlocked && _accessCtx.isMaster;
+  var noPins = !_accessCtx.hasPins;
+  if(accessBlock) accessBlock.style.display = iAmGuest ? 'none' : 'block';
+  if(accessAdmin) accessAdmin.style.display = (iAmMaster || noPins) ? 'block' : 'none';
+  if(accessLogin) accessLogin.style.display = (_accessCtx.hasPins && !_accessCtx.unlocked) ? 'block' : 'none';
+  /* 6. Rev588/591: sección "Mi sesión PIN" siempre visible si unlocked
+     (incluso invitados). Muestra caducidad para que el invitado sepa cuándo
+     pierde el acceso. */
+  var sessionBlock = document.getElementById('m-cfg-session-block');
+  if(sessionBlock){
+    if(_accessCtx.unlocked){
+      sessionBlock.style.display = 'block';
+      var icon = document.getElementById('m-cfg-session-icon');
+      if(icon) icon.textContent = _accessCtx.isMaster ? '👑' : '🔓';
+      var info = document.getElementById('m-cfg-session-info');
+      if(info){
+        var tpl = _accessCtx.isMaster ? T('cfg_session_master') : T('cfg_session_guest');
+        info.textContent = tpl.replace('{ALIAS}', _accessCtx.alias || '?');
+      }
+      /* Rev606: tiempo restante de sesión cookie (puede ser distinto de la
+         caducidad del PIN). Se oculta al maestro (su sesión es persistente
+         a efectos prácticos — 1 año). */
+      var ckEl = document.getElementById('m-cfg-session-cookie-ttl');
+      if(ckEl){
+        var sms = _accessCtx.sessionExpiresMs;
+        if(_accessCtx.isMaster || typeof sms !== 'number' || sms <= 0){
+          ckEl.style.display = 'none';
+        } else {
+          var msLeft = Math.max(0, sms - Date.now());
+          var txt;
+          if(msLeft > 180 * 86400000){
+            txt = T('cfg_session_cookie_persistent');
+          } else if(msLeft > 86400000){
+            txt = T('cfg_session_cookie_days').replace('{N}', Math.round(msLeft/86400000));
+          } else if(msLeft >= 3600000){
+            txt = T('cfg_session_cookie_hours').replace('{N}', Math.round(msLeft/3600000));
+          } else {
+            txt = T('cfg_session_cookie_min').replace('{N}', Math.max(0, Math.round(msLeft/60000)));
+          }
+          ckEl.textContent = txt;
+          ckEl.style.display = 'block';
+        }
+      }
+      /* Rev591: línea de caducidad. */
+      var expEl = document.getElementById('m-cfg-session-expiry');
+      if(expEl){
+        var ms = _accessCtx.expiresMs;
+        if(typeof ms !== 'number' || ms <= 0){
+          /* Sin caducidad: solo informativo, sin marco llamativo. */
+          expEl.style.display = 'block';
+          expEl.style.background = 'rgba(58,168,86,.10)';
+          expEl.style.border = '1px solid rgba(58,168,86,.35)';
+          expEl.style.color = '#9c9';
+          expEl.textContent = T('cfg_session_expiry_never');
+        } else {
+          var now = Date.now();
+          var days = Math.floor((ms - now) / 86400000);
+          var dateStr = '';
+          try { dateStr = new Date(ms).toLocaleDateString(); } catch(_){ dateStr = String(ms); }
+          expEl.style.display = 'block';
+          if(days <= 0){
+            expEl.style.background = 'rgba(229,57,53,.18)';
+            expEl.style.border = '1.5px solid #e53935';
+            expEl.style.color = '#ff8a80';
+            expEl.textContent = T('cfg_session_expiry_today');
+          } else if(days <= 3){
+            expEl.style.background = 'rgba(255,178,63,.18)';
+            expEl.style.border = '1.5px solid #ffb23f';
+            expEl.style.color = '#ffb23f';
+            expEl.textContent = T('cfg_session_expiry_soon').replace('{DATE}', dateStr).replace('{N}', days);
+          } else {
+            expEl.style.background = 'rgba(154,170,221,.10)';
+            expEl.style.border = '1px solid rgba(154,170,221,.4)';
+            expEl.style.color = '#9ad';
+            expEl.textContent = T('cfg_session_expiry_on').replace('{DATE}', dateStr).replace('{N}', days);
+          }
+        }
+      }
+    } else {
+      sessionBlock.style.display = 'none';
+    }
+  }
+}
+
+/* Click corto en candado: si bloqueado → PIN; si OK → Config. */
+(function(){
+  function attach(){
+    var btn = document.getElementById('m-sb-access');
+    if(!btn) return;
+    btn.addEventListener('click', function(){
+      /* Rev593: si hay PINs y no estoy autenticado, abrir directamente el
+         modal PIN (sin importar si la capa está ON u OFF). Antes solo se
+         abría si la capa estaba ON, lo que dejaba al usuario sin entrada
+         cuando había PINs pero capa OFF. */
+      if(_accessCtx.hasPins && !_accessCtx.unlocked){
+        m_pinOpen('check');
+      } else if(typeof m_openConfig === 'function'){
+        m_openConfig();
+        setTimeout(function(){
+          var sec = document.querySelector('[data-i18n="cfg_access"]');
+          if(sec && sec.scrollIntoView) sec.scrollIntoView({behavior:'smooth',block:'start'});
+        }, 150);
+      }
+    });
+  }
+  if(document.readyState === 'complete' || document.readyState === 'interactive') attach();
+  else document.addEventListener('DOMContentLoaded', attach);
+})();
+
+/* Refresh al volver al foco. */
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible') m_refreshAccessContext();
+});
+
+/* Boot. */
+setTimeout(function(){ m_refreshAccessContext(); }, 500);
+setInterval(m_refreshAccessContext, 60000);
+
 /* Rev173: m_toggleAisList — muestra el panel de AIS del desktop
    (#ais-alarm-panel) como modal fullscreen mobile en lugar del
    popup vacío del desktop. Reutiliza la lista que ya renderiza el JS desktop. */

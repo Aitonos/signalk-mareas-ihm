@@ -22,6 +22,7 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import https from "https";
+import crypto from "crypto";
 import { execFile, type ChildProcess } from "child_process";
 import { Socket } from "net";
 import { fileURLToPath } from "url";
@@ -41,7 +42,6 @@ import FileCache from "./cache.js";
 import {
   setSecurityLayerEnabled,
   getSecurityLayerEnabled,
-  resolveAccessContext,
   requireControlAccess,
 } from "./access.js";
 import createSources from "./sources/index.js";
@@ -79,7 +79,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev576";
+const PLUGIN_REVISION = "Rev609";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1951,40 +1951,589 @@ try {
     });
 
     // Rev575 (feedback Carlos 2026-06-26): F1 capa acceso opcional.
-    // GET /api/access devuelve el AccessContext resuelto del request actual.
-    // Si securityLayerEnabled === false, devuelve {securityEnabled:false,
-    // canControl:true, level:"security-disabled"} (comportamiento heredado
-    // para usuarios que no quieren la capa). Si está ON, consulta vía self-
-    // loop a /skServer/loginStatus con la cookie del request.
-    // Frontend usa este endpoint para pintar el candado y decidir UI.
+    // Rev586 (refactor radical, feedback Carlos): SIN SK auth.
+    //
+    // GET /api/access devuelve { securityEnabled, unlocked, isMaster, alias,
+    // hasPins }. Frontend usa esto para pintar candado / banner / botones y
+    // decidir qué partes de Config son visibles para invitados.
     expressApp.get("/signalk-mareas-ihm/api/access", async (req: any, res: any) => {
       res.set("Cache-Control", "no-store");
+      const session = getPinSessionFromReq(req);
+      let hasPins = false;
+      let expiresMs: number | null = null;
+      let notes: string = "";
+      // Rev606 (feedback Carlos: "invitado no ve tiempo restante en config"):
+      // exponemos también sessionExpiresMs (cookie TTL).
+      let sessionExpiresMs: number | null = null;
       try {
-        const ctx = await resolveAccessContext(req);
-        res.json(ctx);
-      } catch (e: any) {
-        res.status(500).json({
-          ok: false,
-          error: "ACCESS_RESOLVER_ERROR",
-          message: e?.message ?? "unknown",
-        });
-      }
+        const pins = await loadPins();
+        hasPins = pins.length > 0;
+        if (session.valid && session.alias) {
+          const me = pins.find(p => p.alias === session.alias);
+          if (me) {
+            expiresMs = me.expiresMs;
+            notes = me.notes || "";
+          }
+          // Tomar expiresMs de la cookie actual desde el Map.
+          const ch = req.headers.cookie as string | undefined;
+          if (ch) {
+            const m = /(?:^|; )ihm_pin_session=([a-f0-9]+)/.exec(ch);
+            if (m) {
+              const s = _pinSessions.get(m[1]);
+              if (s) sessionExpiresMs = s.expiresMs;
+            }
+          }
+        }
+      } catch {}
+      res.json({
+        securityEnabled: getSecurityLayerEnabled(),
+        unlocked: !!session.valid,
+        isMaster: !!session.isMaster,
+        alias: session.alias || null,
+        level: session.level || null,
+        hasPins: hasPins,
+        expiresMs: expiresMs,
+        notes: notes,
+        sessionExpiresMs: sessionExpiresMs,
+      });
     });
-    // GET del estado del toggle (qué dice el plugin). Público — no expone
-    // ningún secreto, solo si la capa está activa o no.
+    // GET del estado del toggle de la capa. Público.
     expressApp.get("/signalk-mareas-ihm/api/access/security-layer", (_req: any, res: any) => {
       res.set("Cache-Control", "no-store");
       res.json({ enabled: getSecurityLayerEnabled() });
     });
-    // POST para cambiar el toggle. F1 deliberadamente sin protección — F3
-    // moverá esta protección al frontend (switch en Config). El propietario
-    // del Pi siempre puede tocarlo via curl en localhost de cualquier modo.
+    // POST para cambiar el toggle.
+    //   - Activar primera vez sin maestro creado → 409 NO_MASTER (UI debe
+    //     pedir crear el maestro primero).
+    //   - Activar con maestro creado → SOLO maestro autenticado.
+    //   - Desactivar con capa ON → SOLO maestro autenticado.
+    //   - Desactivar con capa ya OFF → no-op público (idempotente).
     expressApp.post("/signalk-mareas-ihm/api/access/security-layer", async (req: any, res: any) => {
       const body = req.body || {};
       const desired = body.enabled === true || body.enabled === "true";
-      setSecurityLayerEnabled(desired);
-      try { await ihmCache.set("securityLayerEnabled", desired); } catch {}
-      res.json({ ok: true, enabled: getSecurityLayerEnabled() });
+      const current = getSecurityLayerEnabled();
+      if (desired === current) { res.json({ ok: true, enabled: current }); return; }
+      try {
+        const pins = await loadPins();
+        // Si no hay maestro creado, no se puede activar la capa.
+        if (desired && pins.length === 0) {
+          res.status(409).json({ ok: false, error: "NO_MASTER", enabled: current });
+          return;
+        }
+        // Si ya hay maestro, cambiar el toggle requiere cookie de maestro.
+        if (pins.length > 0) {
+          const session = getPinSessionFromReq(req);
+          if (!session.valid || !session.isMaster) {
+            res.status(403).json({ ok: false, error: "MASTER_REQUIRED", enabled: current });
+            return;
+          }
+        }
+        setSecurityLayerEnabled(desired);
+        try { await ihmCache.set("securityLayerEnabled", desired); } catch {}
+        res.json({ ok: true, enabled: getSecurityLayerEnabled() });
+      } catch (e: any) {
+        res.status(500).json({ ok: false, error: "TOGGLE_ERROR", message: e?.message ?? "unknown" });
+      }
+    });
+
+    // Rev586 (refactor radical, feedback Carlos):
+    //
+    // Modelo de seguridad de DOS niveles, SIN SignalK auth en juego:
+    //
+    //   - PIN MAESTRO: el primer PIN que se crea. Sirve para:
+    //       · activar / desactivar la capa de seguridad,
+    //       · añadir o borrar otros PINs,
+    //       · y también como PIN de uso normal (desbloquea el barco).
+    //
+    //   - PINs INVITADO: los que añade el maestro. Solo desbloquean uso;
+    //       NO pueden tocar la capa ni gestionar PINs.
+    //
+    // Storage: ihmCache `securityPins` = Array<{alias, hash, createdMs, isMaster}>.
+    // El maestro se identifica con `isMaster:true` (el primero creado).
+    // Migración: si existe `securityPinHash` (string Rev578-582), migra como
+    // maestro y borra la entrada vieja.
+    //
+    // Cookie `ihm_pin_session=<token>` HttpOnly TTL 30 min, almacena el alias
+    // y si es maestro. El middleware requireControlAccess SOLO acepta cookie
+    // PIN (cualquier nivel). NO consulta SignalK loginStatus.
+    // Rev589 (feedback Carlos): PIN avanzado.
+    //   level: 'master' | 'full' | 'self'
+    //     - master: el primer PIN, gestiona todo.
+    //     - full: invitado con permisos plenos de uso (puede levar el ancla
+    //       de quien sea, igual que el maestro).
+    //     - self: invitado con permisos limitados; SOLO puede actuar sobre
+    //       las acciones que él mismo inició (p.ej. levar el ancla que él
+    //       fondeó). El maestro siempre puede actuar sobre las acciones de
+    //       sus invitados.
+    //   notes: texto libre (≤120 caracteres). Descripción del PIN.
+    //   expiresMs: epoch ms tras el cual el PIN deja de ser válido. null
+    //     = sin caducidad.
+    // Rev596 (feedback Carlos "menos es más"): eliminado nivel "self" y
+    // ownership del ancla. Ahora solo hay 2 roles: master (gestiona) y full
+    // (usa todo igual que el maestro). Nivel se conserva en el modelo por
+    // si en el futuro se reintroducen niveles; siempre vale "master"|"full".
+    interface SecurityPin {
+      alias: string;
+      hash: string;
+      // Rev603 (feedback Carlos: "no es tan crítico, no es el PIN del banco"):
+      // guardamos también el PIN en plano para que el maestro pueda
+      // consultarlo desde la ficha del invitado. SOLO se devuelve a sesiones
+      // maestro. Aceptable porque el fichero vive en el Pi local del
+      // armador, sin exposición pública.
+      pin?: string;
+      createdMs: number;
+      isMaster: boolean;
+      level: "master" | "full";
+      notes: string;
+      expiresMs: number | null;
+    }
+    const PIN_SALT = "ihm-mareas-2026-local";
+    const PIN_SESSION_TTL_MS = 30 * 60 * 1000;
+    // Rev596 (feedback Carlos: "el master con 30 min de sesión no tiene sentido"):
+    // el maestro mantiene sesión de larga duración (1 año). Los invitados
+    // siguen con TTL corto (30 min). Si el maestro quiere salir → botón
+    // explícito "Cerrar sesión PIN".
+    const PIN_SESSION_MASTER_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+    function hashPin(pin: string): string {
+      return crypto.createHash("sha256").update(String(pin) + PIN_SALT).digest("hex");
+    }
+    async function loadPins(): Promise<SecurityPin[]> {
+      try {
+        const legacy = await ihmCache.get("securityPinHash") as string | null;
+        const arr = await ihmCache.get("securityPins") as any[] | null;
+        const out: SecurityPin[] = Array.isArray(arr)
+          ? arr.filter(p => p && typeof p.hash === "string").map((p, i) => {
+              const isMaster = i === 0 ? true : !!p.isMaster;
+              return {
+                alias: String(p.alias || "PIN"),
+                hash: String(p.hash),
+                pin: typeof p.pin === "string" ? p.pin : undefined,
+                createdMs: Number(p.createdMs) || Date.now(),
+                isMaster,
+                // Rev596: nivel simplificado a master/full. Migra "self" → "full".
+                level: isMaster ? "master" : "full",
+                notes: typeof p.notes === "string" ? p.notes : "",
+                expiresMs: typeof p.expiresMs === "number" ? p.expiresMs : null,
+              } as SecurityPin;
+            })
+          : [];
+        if (typeof legacy === "string" && legacy.length === 64 && !out.some(p => p.hash === legacy)) {
+          out.push({
+            alias: "Maestro", hash: legacy, createdMs: Date.now(),
+            isMaster: true, level: "master", notes: "", expiresMs: null,
+          });
+          await ihmCache.set("securityPins", out);
+          await ihmCache.set("securityPinHash", null);
+        }
+        // Garantía: si hay PINs, exactamente uno es maestro (el primero).
+        if (out.length > 0) {
+          out.forEach((p, i) => {
+            p.isMaster = (i === 0);
+            if (p.isMaster) p.level = "master";
+            else if (p.level === "master") p.level = "full";
+          });
+        }
+        return out;
+      } catch { return []; }
+    }
+    async function savePins(arr: SecurityPin[]): Promise<void> {
+      await ihmCache.set("securityPins", arr);
+    }
+    // Cookie sesión PIN.
+    // Rev594 (feedback Carlos: "no queda claro quien tiene el PIN metido ni
+    // con qué dispositivo"): cada sesión guarda además IP y user-agent
+    // resumido. El maestro puede listar todas las sesiones activas y
+    // revocarlas selectivamente.
+    interface PinSession {
+      alias: string;
+      isMaster: boolean;
+      level: SecurityPin["level"];
+      createdMs: number;
+      expiresMs: number;
+      ip: string;
+      device: string;
+    }
+    const _pinSessions = new Map<string, PinSession>();
+    function _shortDevice(ua: string): string {
+      const s = String(ua || "").slice(0, 400);
+      if (!s) return "?";
+      // Rev607 (feedback Carlos: "Lucia usa Opera Mobile pero sale como
+      // Linux · Chrome"): Opera Mobile en Android manda UA que contiene TODO:
+      // "Linux; Android; ...; Chrome/...; OPR/...". Regex con | coge la primera
+      // coincidencia por posición, no por especificidad → OS=Linux, browser=Chrome.
+      // Fix: comprobar en orden de especificidad, más específico primero.
+      // OS: Android antes que Linux; iPhone/iPad antes que Macintosh.
+      let os = "?";
+      if      (/iPhone/i.test(s))    os = "iPhone";
+      else if (/iPad/i.test(s))      os = "iPad";
+      else if (/Android/i.test(s))   os = "Android";
+      else if (/Windows/i.test(s))   os = "Windows";
+      else if (/Macintosh|Mac OS X/i.test(s)) os = "Mac";
+      else if (/CrOS/i.test(s))      os = "ChromeOS";
+      else if (/Linux/i.test(s))     os = "Linux";
+      // Browser: OPR/Opera antes que Chrome (Opera se camufla como Chrome);
+      // Edge antes que Chrome; Safari solo si no hay Chrome ni Firefox.
+      let br = "?";
+      if      (/OPR\/|Opera/i.test(s))     br = "Opera";
+      else if (/EdgA?\/|Edge/i.test(s))    br = "Edge";
+      else if (/Firefox|FxiOS/i.test(s))   br = "Firefox";
+      else if (/SamsungBrowser/i.test(s))  br = "Samsung";
+      else if (/CriOS|Chrome/i.test(s))    br = "Chrome";
+      else if (/Safari/i.test(s))          br = "Safari";
+      return `${os} · ${br}`;
+    }
+    function _resolveClientIp(req: any): string {
+      const xf = req.headers?.["x-forwarded-for"];
+      if (typeof xf === "string" && xf.length > 0) return xf.split(",")[0].trim();
+      return String(req.socket?.remoteAddress || req.ip || "?").replace(/^::ffff:/, "");
+    }
+    function newPinSession(alias: string, isMaster: boolean, level: SecurityPin["level"], req?: any, pinExpiresMs?: number | null): string {
+      const tok = crypto.randomBytes(24).toString("hex");
+      const ip = req ? _resolveClientIp(req) : "?";
+      const device = req ? _shortDevice(String(req.headers?.["user-agent"] || "")) : "?";
+      // Rev600 (feedback Carlos: "lista dice 1D pero sesión dice 30 min"):
+      // coherencia total caducidad PIN ↔ cookie sesión.
+      //   - Maestro: persistente (1 año).
+      //   - Invitado con PIN sin caducidad → cookie persistente (1 año).
+      //   - Invitado con PIN con caducidad → cookie hasta esa caducidad.
+      //     Sin tope de 30 min (Rev598 lo tenía, era confuso para charters).
+      let ttl: number;
+      if (isMaster) {
+        ttl = PIN_SESSION_MASTER_TTL_MS;
+      } else if (pinExpiresMs == null) {
+        ttl = PIN_SESSION_MASTER_TTL_MS;
+      } else {
+        const remaining = pinExpiresMs - Date.now();
+        ttl = Math.max(0, remaining);
+      }
+      _pinSessions.set(tok, {
+        alias, isMaster, level,
+        createdMs: Date.now(),
+        expiresMs: Date.now() + ttl,
+        ip, device,
+      });
+      return tok;
+    }
+    function getPinSessionFromReq(req: any): { valid: boolean; alias?: string; isMaster?: boolean; level?: SecurityPin["level"] } {
+      const cookieHeader = req.headers.cookie as string | undefined;
+      if (!cookieHeader) return { valid: false };
+      const m = /(?:^|; )ihm_pin_session=([a-f0-9]+)/.exec(cookieHeader);
+      if (!m) return { valid: false };
+      const s = _pinSessions.get(m[1]);
+      if (!s) return { valid: false };
+      if (s.expiresMs < Date.now()) { _pinSessions.delete(m[1]); return { valid: false }; }
+      return { valid: true, alias: s.alias, isMaster: s.isMaster, level: s.level };
+    }
+    // Exportar para que el middleware pueda usarlo desde access.ts.
+    (global as any)._ihmPinSessionCheck = getPinSessionFromReq;
+
+    expressApp.get("/signalk-mareas-ihm/api/access/pin-status", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const pins = await loadPins();
+      res.json({ hasPin: pins.length > 0, count: pins.length, hasMaster: pins.some(p => p.isMaster) });
+    });
+    expressApp.get("/signalk-mareas-ihm/api/access/pins", async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const pins = await loadPins();
+      // Rev603: solo el maestro recibe el PIN en plano. Resto: omitir campo.
+      const session = getPinSessionFromReq(req);
+      const callerIsMaster = !!(session.valid && session.isMaster);
+      res.json(pins.map(p => {
+        const base: any = {
+          alias: p.alias,
+          createdMs: p.createdMs,
+          isMaster: p.isMaster,
+          level: p.level,
+          notes: p.notes,
+          expiresMs: p.expiresMs,
+          expired: typeof p.expiresMs === "number" && p.expiresMs < Date.now(),
+        };
+        // NUNCA exponer el pin del maestro a nadie (ni a sí mismo via lista —
+        // si el maestro lo olvida, lo cambia. El expone es solo para
+        // gestionar invitados).
+        if (callerIsMaster && !p.isMaster && typeof p.pin === "string") {
+          base.pin = p.pin;
+        }
+        return base;
+      }));
+    });
+    // POST /api/access/pin-set
+    //   body: {pin, alias, level?, notes?, expiresMs?}
+    //   - Si NO hay PINs → crea el maestro. No requiere cookie. Ignora level
+    //     (será 'master').
+    //   - Si SÍ hay PINs → requiere cookie de maestro. Crea un PIN invitado.
+    expressApp.post("/signalk-mareas-ihm/api/access/pin-set", async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const body = req.body || {};
+      const pin = String(body.pin || "");
+      const alias = String(body.alias || "").trim() || "PIN";
+      const notes = String(body.notes || "").slice(0, 120);
+      const expiresMsRaw = body.expiresMs;
+      const expiresMs = (typeof expiresMsRaw === "number" && expiresMsRaw > 0) ? expiresMsRaw : null;
+      // Rev596: nivel siempre "full" para invitados (eliminado "self").
+      const guestLevel: SecurityPin["level"] = "full";
+      if (!/^\d{4,8}$/.test(pin)) {
+        res.status(400).json({ ok: false, error: "PIN_INVALID" });
+        return;
+      }
+      try {
+        const pins = await loadPins();
+        if (pins.length === 0) {
+          const created: SecurityPin = {
+            alias, hash: hashPin(pin), pin: pin, createdMs: Date.now(),
+            isMaster: true, level: "master", notes: "", expiresMs: null,
+          };
+          pins.push(created);
+          await savePins(pins);
+          const tok = newPinSession(created.alias, true, "master", req, null);
+          const maxAgeSec = Math.floor(PIN_SESSION_TTL_MS / 1000);
+          res.setHeader("Set-Cookie", `ihm_pin_session=${tok}; Path=/signalk-mareas-ihm; HttpOnly; Max-Age=${maxAgeSec}; SameSite=Lax`);
+          res.json({ ok: true, alias, isMaster: true, level: "master", autoUnlock: true });
+          return;
+        }
+        const session = getPinSessionFromReq(req);
+        if (!session.valid || !session.isMaster) {
+          res.status(403).json({ ok: false, error: "MASTER_REQUIRED" });
+          return;
+        }
+        if (pins.some(p => p.alias === alias)) {
+          res.status(409).json({ ok: false, error: "ALIAS_DUPLICATE" });
+          return;
+        }
+        const h = hashPin(pin);
+        if (pins.some(p => p.hash === h)) {
+          res.status(409).json({ ok: false, error: "PIN_DUPLICATE" });
+          return;
+        }
+        pins.push({
+          alias, hash: h, pin: pin, createdMs: Date.now(),
+          isMaster: false, level: guestLevel, notes, expiresMs,
+        });
+        await savePins(pins);
+        res.json({ ok: true, alias, isMaster: false, level: guestLevel });
+      } catch (e: any) {
+        res.status(500).json({ ok: false, error: "PIN_SET_ERROR", message: e?.message ?? "unknown" });
+      }
+    });
+    // POST /api/access/pin-update {alias, level?, notes?, expiresMs?}
+    //   Solo maestro. No cambia PIN ni alias. expiresMs=null para quitar caducidad.
+    expressApp.post("/signalk-mareas-ihm/api/access/pin-update", async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const body = req.body || {};
+      const alias = String(body.alias || "").trim();
+      try {
+        const session = getPinSessionFromReq(req);
+        if (!session.valid || !session.isMaster) {
+          res.status(403).json({ ok: false, error: "MASTER_REQUIRED" });
+          return;
+        }
+        const pins = await loadPins();
+        const target = pins.find(p => p.alias === alias);
+        if (!target) { res.status(404).json({ ok: false, error: "ALIAS_NOT_FOUND" }); return; }
+        if (target.isMaster) {
+          res.status(400).json({ ok: false, error: "CANNOT_EDIT_MASTER" });
+          return;
+        }
+        if (typeof body.notes === "string") target.notes = body.notes.slice(0, 120);
+        let expiresChanged = false;
+        if (Object.prototype.hasOwnProperty.call(body, "expiresMs")) {
+          const newExp = (typeof body.expiresMs === "number" && body.expiresMs > 0) ? body.expiresMs : null;
+          expiresChanged = (newExp !== target.expiresMs);
+          target.expiresMs = newExp;
+        }
+        // Rev596: nivel ya no es editable — todos los invitados son "full".
+        await savePins(pins);
+        // Rev605 (feedback Carlos: "cambio 1d→30d y la sesión no se actualiza"):
+        // si cambió la caducidad del PIN, propagar el nuevo TTL a las
+        // sesiones activas del mismo alias. Sin esto, la cookie viva mantiene
+        // el TTL original hasta el siguiente login.
+        if (expiresChanged) {
+          const now = Date.now();
+          const newSessionExpires = target.expiresMs == null
+            ? now + PIN_SESSION_MASTER_TTL_MS
+            : Math.max(0, target.expiresMs - now) + now;
+          for (const [tok, s] of _pinSessions.entries()) {
+            if (s.alias === target.alias && !s.isMaster) {
+              s.expiresMs = newSessionExpires;
+              _pinSessions.set(tok, s);
+            }
+          }
+        }
+        res.json({ ok: true, alias: target.alias, level: target.level, notes: target.notes, expiresMs: target.expiresMs });
+      } catch (e: any) {
+        res.status(500).json({ ok: false, error: "PIN_UPDATE_ERROR", message: e?.message ?? "unknown" });
+      }
+    });
+    // POST /api/access/pin-change-pwd {alias, newPin}
+    //   Solo maestro. Cambia el PIN numérico de un invitado (no del maestro:
+    //   para eso el maestro debe borrarse a sí mismo... pero no se puede,
+    //   así que pin-change-pwd para el maestro está admitido aquí también
+    //   PERO requiere la cookie maestro vigente).
+    expressApp.post("/signalk-mareas-ihm/api/access/pin-change-pwd", async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const body = req.body || {};
+      const alias = String(body.alias || "").trim();
+      const newPin = String(body.newPin || "");
+      if (!/^\d{4,8}$/.test(newPin)) {
+        res.status(400).json({ ok: false, error: "PIN_INVALID" });
+        return;
+      }
+      try {
+        const session = getPinSessionFromReq(req);
+        if (!session.valid || !session.isMaster) {
+          res.status(403).json({ ok: false, error: "MASTER_REQUIRED" });
+          return;
+        }
+        const pins = await loadPins();
+        const target = pins.find(p => p.alias === alias);
+        if (!target) { res.status(404).json({ ok: false, error: "ALIAS_NOT_FOUND" }); return; }
+        const newHash = hashPin(newPin);
+        if (pins.some(p => p.alias !== alias && p.hash === newHash)) {
+          res.status(409).json({ ok: false, error: "PIN_DUPLICATE" });
+          return;
+        }
+        target.hash = newHash;
+        target.pin = newPin; // Rev603: actualizar pin plano también.
+        await savePins(pins);
+        res.json({ ok: true, alias: target.alias });
+      } catch (e: any) {
+        res.status(500).json({ ok: false, error: "PIN_CHANGE_PWD_ERROR", message: e?.message ?? "unknown" });
+      }
+    });
+    // POST /api/access/pin-unlock
+    //   body: {pin}
+    //   - Verifica contra TODOS los PINs (maestro o invitado). Cookie HttpOnly.
+    expressApp.post("/signalk-mareas-ihm/api/access/pin-unlock", async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const body = req.body || {};
+      const pin = String(body.pin || "");
+      try {
+        const pins = await loadPins();
+        if (pins.length === 0) { res.json({ ok: false, error: "NO_PIN_SET" }); return; }
+        const h = hashPin(pin);
+        const match = pins.find(p => p.hash === h);
+        if (!match) { res.status(403).json({ ok: false, error: "PIN_MISMATCH" }); return; }
+        // Rev589: caducidad.
+        if (typeof match.expiresMs === "number" && match.expiresMs < Date.now()) {
+          res.status(403).json({ ok: false, error: "PIN_EXPIRED" });
+          return;
+        }
+        // Rev606 (feedback Carlos: "salen DOS sesiones maestro y puedo
+        // revocarme a mí mismo"): limpiar sesiones previas del mismo
+        // alias en el mismo IP+device antes de crear la nueva. Evita
+        // duplicados al hacer pin-unlock varias veces en la misma máquina.
+        const myIp = _resolveClientIp(req);
+        const myDev = _shortDevice(String(req.headers?.["user-agent"] || ""));
+        for (const [oldTok, oldSession] of Array.from(_pinSessions.entries())) {
+          if (oldSession.alias === match.alias && oldSession.ip === myIp && oldSession.device === myDev) {
+            _pinSessions.delete(oldTok);
+          }
+        }
+        const tok = newPinSession(match.alias, !!match.isMaster, match.level, req, match.expiresMs ?? null);
+        const maxAgeSec = Math.floor(PIN_SESSION_TTL_MS / 1000);
+        res.setHeader("Set-Cookie", `ihm_pin_session=${tok}; Path=/signalk-mareas-ihm; HttpOnly; Max-Age=${maxAgeSec}; SameSite=Lax`);
+        res.json({ ok: true, alias: match.alias, isMaster: !!match.isMaster, level: match.level, ttlMs: PIN_SESSION_TTL_MS });
+      } catch (e: any) {
+        res.status(500).json({ ok: false, error: "PIN_UNLOCK_ERROR", message: e?.message ?? "unknown" });
+      }
+    });
+    // Rev594: GET /api/access/sessions — solo maestro. Lista sesiones PIN
+    // activas con alias / dispositivo / IP / hora alta / minutos restantes.
+    // Permite al maestro saber quién tiene PIN abierto en qué dispositivo
+    // y revocar sesiones ajenas si conviene.
+    expressApp.get("/signalk-mareas-ihm/api/access/sessions", (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const session = getPinSessionFromReq(req);
+      if (!session.valid || !session.isMaster) {
+        res.status(403).json({ ok: false, error: "MASTER_REQUIRED" });
+        return;
+      }
+      const now = Date.now();
+      const cookieMyTok = (() => {
+        const ch = req.headers.cookie as string | undefined;
+        if (!ch) return null;
+        const m = /(?:^|; )ihm_pin_session=([a-f0-9]+)/.exec(ch);
+        return m ? m[1] : null;
+      })();
+      const out: any[] = [];
+      for (const [tok, s] of _pinSessions.entries()) {
+        if (s.expiresMs < now) continue;
+        out.push({
+          tokenShort: tok.slice(0, 8),
+          alias: s.alias,
+          isMaster: s.isMaster,
+          level: s.level,
+          ip: s.ip,
+          device: s.device,
+          createdMs: s.createdMs,
+          expiresMs: s.expiresMs,
+          isMe: cookieMyTok === tok,
+        });
+      }
+      out.sort((a, b) => b.createdMs - a.createdMs);
+      res.json(out);
+    });
+    // POST /api/access/sessions/revoke {tokenShort} — solo maestro.
+    expressApp.post("/signalk-mareas-ihm/api/access/sessions/revoke", (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const session = getPinSessionFromReq(req);
+      if (!session.valid || !session.isMaster) {
+        res.status(403).json({ ok: false, error: "MASTER_REQUIRED" });
+        return;
+      }
+      const short = String(req.body?.tokenShort || "");
+      if (!/^[a-f0-9]{8}$/.test(short)) {
+        res.status(400).json({ ok: false, error: "BAD_TOKEN" });
+        return;
+      }
+      let removed = 0;
+      for (const tok of Array.from(_pinSessions.keys())) {
+        if (tok.startsWith(short)) {
+          const s = _pinSessions.get(tok);
+          // Rev606: el maestro NO puede revocar otra sesión maestro (sólo
+          // hay un alias maestro; revocar sería revocarse a sí mismo).
+          if (s && s.isMaster) continue;
+          _pinSessions.delete(tok);
+          removed++;
+        }
+      }
+      res.json({ ok: true, removed });
+    });
+    // POST /api/access/pin-lock
+    //   Cierra la sesión PIN actual (borra cookie).
+    expressApp.post("/signalk-mareas-ihm/api/access/pin-lock", (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const cookieHeader = req.headers.cookie as string | undefined;
+      if (cookieHeader) {
+        const m = /(?:^|; )ihm_pin_session=([a-f0-9]+)/.exec(cookieHeader);
+        if (m) _pinSessions.delete(m[1]);
+      }
+      res.setHeader("Set-Cookie", `ihm_pin_session=; Path=/signalk-mareas-ihm; HttpOnly; Max-Age=0; SameSite=Lax`);
+      res.json({ ok: true });
+    });
+    // POST /api/access/pin-delete {alias}
+    //   - Requiere cookie de maestro.
+    //   - No se puede borrar al maestro.
+    expressApp.post("/signalk-mareas-ihm/api/access/pin-delete", async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const body = req.body || {};
+      const alias = String(body.alias || "").trim();
+      try {
+        const session = getPinSessionFromReq(req);
+        if (!session.valid || !session.isMaster) {
+          res.status(403).json({ ok: false, error: "MASTER_REQUIRED" });
+          return;
+        }
+        const pins = await loadPins();
+        const target = pins.find(p => p.alias === alias);
+        if (!target) { res.status(404).json({ ok: false, error: "ALIAS_NOT_FOUND" }); return; }
+        if (target.isMaster) { res.status(400).json({ ok: false, error: "CANNOT_DELETE_MASTER" }); return; }
+        const filtered = pins.filter(p => p.alias !== alias);
+        await savePins(filtered);
+        res.json({ ok: true, remaining: filtered.length });
+      } catch (e: any) {
+        res.status(500).json({ ok: false, error: "PIN_DELETE_ERROR", message: e?.message ?? "unknown" });
+      }
     });
 
     expressApp.get("/signalk-mareas-ihm/api/stations", async (_req: any, res: any) => {
@@ -2703,6 +3252,14 @@ interface AnchorWatchState {
   // its AudioContext, but the GLOBAL audioEnabled is what gates Pi alarms and
   // tells all visors "go silent now".
   audioEnabled: boolean;
+  // Rev592 (Bloque B, feedback Carlos): ownership del ancla. Cuando la capa
+  // de seguridad está ON y un INVITADO de nivel 'self' fondea, queda
+  // registrado el alias del fondeador. Solo el maestro, los invitados 'full'
+  // o el propio fondeador pueden levar el ancla. Cuando la capa está OFF
+  // (o no hay PINs), owner = null y cualquiera puede levar (comportamiento
+  // pre-Rev592). Se persiste en cache para sobrevivir reinicios.
+  anchorOwnerAlias?: string | null;
+  anchorOwnerSetAtMs?: number | null;
 }
 const AIS_ACK_PENDING_TTL_MS = 2 * 60 * 1000;   // 2 minutes after lift
 const AIS_ACK_PENDING_MAX_DIST_M = 5;            // 5 metres of anchor displacement
@@ -3518,6 +4075,8 @@ async function _autoLiftAnchorIntentional(sogKt: number) {
   _saveAisAckPending();
   _setAnchored(false);
   anchorWatch.anchorPosition = null;
+  anchorWatch.anchorOwnerAlias = null;       // Rev592
+  anchorWatch.anchorOwnerSetAtMs = null;     // Rev592
   anchorWatch.swingRadiusOverride = null;
   anchorWatch.chainDeployed = null;
   anchorWatch.aisAlarmEnabled = false;
@@ -4223,6 +4782,16 @@ const WEATHER_INITIAL_DELAY_MS = 8000; // wait for GNSS to settle on plugin star
 let _lastWeatherFetchMs = 0;
 let _lastWeather: WeatherForecast | null = null;
 let _lastAdvisory: WeatherAdvisory | null = null;
+// Rev608 (BUG grave reportado por amigo de Carlos y por él mismo: "recibo
+// mensajes weatherAdvisory con state=warn incluso con el interruptor de Mala
+// condición climática apagado desde hace días, susto de muerte al cargar SK").
+// Causa raíz: el toggle de alarma weather vivía SOLO en localStorage del
+// frontend; el backend emitía _emitWeatherAdvisory con state=warn cada poll
+// sin comprobar nada. Ahora el estado se persiste en el backend y el emit
+// respeta el flag: si el usuario lo tiene desactivado, el path se sigue
+// publicando pero con state=normal + method=[] (no dispara alarma en SK ni
+// en Notifications viewer). Default: ON (compat con instalaciones previas).
+let _weatherAdvisoryEnabled = true;
 let _lastShelter: ShelterAssessment | null = null;
 const _weatherThresholds: AdvisoryThresholds = { ...DEFAULT_ADVISORY_THRESHOLDS };
 // Rev68: auto-detected shelter mask + provenance, so we can later compare it
@@ -4279,13 +4848,18 @@ function _emitWeatherDeltas(fc: WeatherForecast) {
 
 function _emitWeatherAdvisory(adv: WeatherAdvisory) {
   try {
+    // Rev608 (BUG grave, feedback Carlos + amigo Abraio): si el usuario
+    // desactivó "Mala condición climática", NUNCA emitir state=warn ni
+    // method=[visual] — se seguiría publicando el path pero con state=normal
+    // para que las apps SK muestren el dato SIN dispararlo como notificación.
+    const wantWarn = adv.level === "warn" && _weatherAdvisoryEnabled;
     const delta: Delta = {
       context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
         path: "notifications.signalk-mareas-ihm.weatherAdvisory" as any,
         value: {
-          state: adv.level === "warn" ? "warn" : "normal",
-          method: adv.level === "warn" ? ["visual"] as string[] : [] as string[],
+          state: wantWarn ? "warn" : "normal",
+          method: wantWarn ? ["visual"] as string[] : [] as string[],
           message: adv.message,
         },
       }] as any }],
@@ -4450,6 +5024,26 @@ function _recomputeShelter() {
       if (typeof saved.waveWarnM === "number" && saved.waveWarnM > 0) _weatherThresholds.waveWarnM = saved.waveWarnM;
       if (typeof saved.pressureDropWarnHpa3h === "number" && saved.pressureDropWarnHpa3h > 0)
         _weatherThresholds.pressureDropWarnHpa3h = saved.pressureDropWarnHpa3h;
+    }
+    // Rev608: persistir estado del toggle "Mala condición climática".
+    const advOn = await ihmCache.get("weatherAdvisoryEnabled");
+    if (advOn === false) _weatherAdvisoryEnabled = false;
+    else if (advOn === true) _weatherAdvisoryEnabled = true;
+    // Rev608: si el toggle está OFF al arrancar, publicar YA una notification
+    // en state=normal para blanquear cualquier "warn" que hubiese quedado
+    // publicada desde antes del reinicio. Sin esto, el amigo de Carlos ve
+    // "rachas 37kt @ 22h" en amarillo al abrir SK aunque el toggle esté OFF.
+    if (!_weatherAdvisoryEnabled) {
+      try {
+        const clearDelta: Delta = {
+          context: ("vessels." + app.selfId) as Context,
+          updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
+            path: "notifications.signalk-mareas-ihm.weatherAdvisory" as any,
+            value: { state: "normal", method: [] as string[], message: "Advisory disabled by user" },
+          }] as any }],
+        };
+        app.handleMessage(plugin.id, clearDelta);
+      } catch { /* non-critical */ }
     }
   } catch { /* defaults already loaded */ }
 })();
@@ -5348,6 +5942,10 @@ function getAnchorWatchState() {
     tideStationName: (lastForecast && lastForecast.station && lastForecast.station.name)
       ? String(lastForecast.station.name) : "",
     predictiveSwing: _lastPredictiveSwing,
+    /* Rev578 (feedback Carlos): difundir estado del toggle por SSE para que
+       cuando se active/desactive desde un dispositivo, los otros visores
+       vean el cambio en tiempo real sin esperar al refresh manual. */
+    securityLayerEnabled: getSecurityLayerEnabled(),
     /* Rev567/568 (feedback Carlos): bloque gps con HDOP + nº satélites +
        fixQuality string (Fix / DFix / No fix) para el widget bottom-bar
        "GPS". Frontend muestra precisión en metros (HDOP × σUERE 5m) + Fix
@@ -7732,6 +8330,39 @@ expressApp.post("/signalk-mareas-ihm/api/weather/thresholds", requireControlAcce
   res.json({ ok: true, thresholds: _weatherThresholds });
 });
 
+// Rev608 (BUG grave): endpoint para activar/desactivar la emisión de
+// weatherAdvisory como notification 'warn'. Persistido en cache.
+// - GET  → devuelve estado actual.
+// - POST body: { enabled: bool } → cambia y re-emite advisory con el nuevo
+//   estado (limpia el 'warn' anterior si se desactiva).
+expressApp.get("/signalk-mareas-ihm/api/weather/advisory-enabled", (_req: any, res: any) => {
+  res.set("Cache-Control", "no-store");
+  res.json({ enabled: _weatherAdvisoryEnabled });
+});
+expressApp.post("/signalk-mareas-ihm/api/weather/advisory-enabled", requireControlAccess, async (req: any, res: any) => {
+  const desired = req?.body?.enabled === true || req?.body?.enabled === "true";
+  _weatherAdvisoryEnabled = desired;
+  try { await ihmCache.set("weatherAdvisoryEnabled", desired); } catch {}
+  // Re-emit con el nuevo flag: si se desactiva → estado 'normal' se propaga
+  // y limpia el 'warn' viejo que quedó en SK/KIP tras el último poll.
+  if (_lastAdvisory) {
+    _emitWeatherAdvisory(_lastAdvisory);
+  } else {
+    // No hay advisory calculado aún: publica delta vacío en 'normal'.
+    try {
+      const clearDelta: Delta = {
+        context: ("vessels." + app.selfId) as Context,
+        updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
+          path: "notifications.signalk-mareas-ihm.weatherAdvisory" as any,
+          value: { state: "normal", method: [] as string[], message: desired ? "Advisory enabled" : "Advisory disabled by user" },
+        }] as any }],
+      };
+      app.handleMessage(plugin.id, clearDelta);
+    } catch { /* non-critical */ }
+  }
+  res.json({ ok: true, enabled: _weatherAdvisoryEnabled });
+});
+
 // Track points (Bug 1 + 10, Deploy 2). Backend is source of truth — all
 // devices get the same boat history.
 expressApp.get("/signalk-mareas-ihm/api/anchor-watch/track", (_req: any, res: any) => {
@@ -8542,13 +9173,16 @@ _piAlarmStopAll = function () {
 // Confirmation voice on anchor drop — nice UX cue, language-aware.
 // Rev101: routes via _piPlayVoiceForKind so OGG ("anchor_down_<lang>.ogg")
 // is played when present, espeak fallback otherwise.
-// Rev188: deduplicate dentro de 30s para evitar "ANCLA FONDEADA" repetido
-// cuando KIP/SK re-envían el comando drop o el estado se redibuja en rápida
-// sucesión (causa del falso positivo reportado por el usuario).
+// Rev188: deduplicate dentro de 5s (era 30s) para evitar "ANCLA FONDEADA"
+// repetido cuando KIP/SK re-envían el comando drop o el estado se redibuja en
+// rápida sucesión. Rev598 (feedback Carlos QA Rev596): bajado 30→5s. 30s era
+// demasiado agresivo y suprimía voces legítimas cuando se hacían drop/lift/
+// drop rápidos en testing.
+const _ANCHOR_DROP_VOICE_DEDUPE_MS = 5_000;
 let _piAnchorDropLastMs = 0;
 function _piAnchorDropConfirm() {
   const now = Date.now();
-  if (now - _piAnchorDropLastMs < 30_000) {
+  if (now - _piAnchorDropLastMs < _ANCHOR_DROP_VOICE_DEDUPE_MS) {
     app.debug(`[IHM-PI-AUDIO] suppressed duplicate anchor_down voice (last ${now - _piAnchorDropLastMs}ms ago)`);
     return;
   }
@@ -9002,9 +9636,24 @@ async function _withAnchorLock(name: string, res: any, fn: () => Promise<void>):
   }
 }
 
+// Rev596 (feedback Carlos "menos es más"): eliminados _checkLiftPermission y
+// _resolveAnchorOwnerFromReq. Sin nivel "self" no hay ownership: cualquier
+// PIN válido (maestro o invitado full) puede levar el ancla. El middleware
+// requireControlAccess basta para bloquear a no autenticados.
+
 // Drop anchor — accepts {lat,lng} or empty body (uses current GPS bow position)
 expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", requireControlAccess, async (req: any, res: any) => {
   await _withAnchorLock("drop", res, async () => {
+  // Rev602 (feedback Carlos: "dispositivo B con estado desincronizado pulsa
+  // levar → primer tap = doDrop → backend re-fondea → voz "ancla fondeada"
+  // espuria; segundo tap leva bien"): si ya está fondeado, devuelve el
+  // state actual sin re-disparar voz ni SSE drop. Hace el endpoint
+  // idempotente y elimina el bug raíz.
+  if (anchorWatch.anchored && anchorWatch.anchorPosition) {
+    app.debug(`[IHM] /drop ignored — already anchored at ${anchorWatch.anchorPosition.lat}, ${anchorWatch.anchorPosition.lng}`);
+    res.json({ ok: true, alreadyAnchored: true, ...anchorWatch });
+    return;
+  }
   let lat = Number(req?.body?.lat);
   let lng = Number(req?.body?.lng);
   // v1.3.1 Sprint E: If no coordinates provided, use current GPS + bow offset
@@ -9030,6 +9679,9 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", requireControlAcces
   if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: "no position available — provide {lat,lng} or ensure GPS is active" });
   _setAnchored(true); // Rev331 item 13: registra anchoredSinceMs
   anchorWatch.anchorPosition = { lat, lng };
+  // Rev596: ownership eliminado.
+  anchorWatch.anchorOwnerAlias = null;
+  anchorWatch.anchorOwnerSetAtMs = null;
   _restartAnchorWatchTimer(); // Rev331 perf: reactivar 2s tick mientras está fondeado
   _restartGustTimer();        // Rev331 perf: subir gust sample a 1Hz
   // Rev161: garreo SIEMPRE on (alarma de seguridad fundamental). AIS es
@@ -9084,6 +9736,8 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", requireControlAcces
   _saveAisAckPending();
   _setAnchored(false); // Rev331 item 13: limpia anchoredSinceMs
   anchorWatch.anchorPosition = null;
+  anchorWatch.anchorOwnerAlias = null;
+  anchorWatch.anchorOwnerSetAtMs = null;
   anchorWatch.swingRadiusOverride = null;
   anchorWatch.chainDeployed = null;
   anchorWatch.aisAlarmEnabled = false;
@@ -9135,6 +9789,8 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/toggle", requireControlAcc
     _saveAisAckPending();
     _setAnchored(false); // Rev331 item 13
     anchorWatch.anchorPosition = null;
+    anchorWatch.anchorOwnerAlias = null;
+    anchorWatch.anchorOwnerSetAtMs = null;
     anchorWatch.swingRadiusOverride = null;
     anchorWatch.chainDeployed = null;
     anchorWatch.aisAlarmEnabled = false;
@@ -9169,6 +9825,8 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/toggle", requireControlAcc
     if (lat == null || lng == null) return res.status(400).json({ error: "no GPS position available" });
     _setAnchored(true); // Rev331 item 13
     anchorWatch.anchorPosition = { lat, lng };
+    anchorWatch.anchorOwnerAlias = null;
+    anchorWatch.anchorOwnerSetAtMs = null;
     anchorWatch.aisAlarmEnabled = true;
     anchorWatch.garreoAlarmEnabled = true;
     _anchorDroppedAt = Date.now();
@@ -9289,6 +9947,10 @@ try {
         if (lat != null && lng != null) {
           _setAnchored(true); // Rev331 item 13
           anchorWatch.anchorPosition = { lat, lng };
+          // Rev592: el PUT KIP no lleva cookie PIN → owner queda null
+          // (asunción: KIP/home-automation actúa como "sistema", no owner).
+          anchorWatch.anchorOwnerAlias = null;
+          anchorWatch.anchorOwnerSetAtMs = null;
           anchorWatch.aisAlarmEnabled = true;
           anchorWatch.garreoAlarmEnabled = true;
           _anchorDroppedAt = Date.now();
@@ -9325,6 +9987,8 @@ try {
         _saveAisAckPending();
         _setAnchored(false); // Rev331 item 13
         anchorWatch.anchorPosition = null;
+        anchorWatch.anchorOwnerAlias = null;       // Rev592
+        anchorWatch.anchorOwnerSetAtMs = null;     // Rev592
         anchorWatch.swingRadiusOverride = null;
         anchorWatch.chainDeployed = null;
         anchorWatch.aisAlarmEnabled = false;
