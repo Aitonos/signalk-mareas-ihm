@@ -79,7 +79,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev627";
+const PLUGIN_REVISION = "Rev636";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -355,7 +355,11 @@ const MAX_SIDE_BUTTONS_PER_SIDE = 5;
    no se pudieran reactivar tras desactivarlas en config. */
 /* Rev556 (feedback Carlos #9c): añadido t_fondeo. Rev566: moon.
    Rev567 (feedback Carlos): gps_acc — widget precisión GPS (HDOP + sats). */
-const BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","t_fondeo","sunrise","moon","gps_acc","wx_6h","wave"] as const;
+// Rev635 (feedback Carlos "6 no se activa, 7 no se activa" — la nueva celda
+// sonda_sup no persistía porque sanitizeBBOrder la filtraba fuera del
+// whitelist backend). Añadida entre "sonda" y "dif_lw" para que aparezca
+// contigua al widget de bajo quilla.
+const BB_CELL_KEYS = ["sog","heading","wind","sonda","sonda_sup","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","t_fondeo","sunrise","moon","gps_acc","wx_6h","wave"] as const;
 type BBCellKey = typeof BB_CELL_KEYS[number];
 /* Rev535 (B-25, feedback Carlos 2026-06-24): nuevo default snapshot del orden
    que Carlos tiene activo en Tunatunes. Sustituye al antiguo default que
@@ -7478,7 +7482,7 @@ function _computeWaveNav(): WaveNavResult {
   confidence = Math.max(0, Math.min(1, confidence));
   confidenceDirection = Math.max(0, Math.min(1, confidence * confidenceDirection));
   // Outputs
-  const motionBand = stats.intensity;
+  let motionBand: string | null = stats.intensity;
   const motionRmsDeg = stats.rmsDeg;
   let periodEncountered: number | null = stats.periodSec;
   const relativeAxisDeg = axisDegBoat;
@@ -7489,6 +7493,20 @@ function _computeWaveNav(): WaveNavResult {
     periodEncountered = null;
   }
   if (noSignificantMotion) {
+    confidenceDirection = 0;
+  }
+  // Rev632 (bug report Pablo: F por olas del IMU con viento 0 kn y meteo plato):
+  // Su IMU en puerto reporta rmsRoll=14.76° y rmsPitch=9.73° con periodSec=34s
+  // (fuera de rango de olas reales) → algoritmo etiquetaba motionBand="fuerte"
+  // aunque el periodo se descartara. Un movimiento con periodo NO válido no
+  // debe reportarse como olas; probablemente es vibración, ruido de sensor,
+  // pantalán o mala calibración. Degradamos motionBand a null cuando:
+  //   - periodEncountered no plausible (periodOutOfRange), o
+  //   - no hay periodo válido y RMS alto (ruido puro).
+  // Nota: el frontend interpreta motionBand=null como "sin dato de olas".
+  const periodNotUsable = periodOutOfRange || noSignificantMotion;
+  if (periodNotUsable) {
+    motionBand = null;
     confidenceDirection = 0;
   }
   const relativeAxisAmbiguous = noSignificantMotion || confidenceDirection < 0.6;
@@ -7527,7 +7545,7 @@ function _computeWaveNav(): WaveNavResult {
     confidence,
     confidenceDirection,
     confidencePeriodTrue,
-    rejectionReason: null,
+    rejectionReason: periodOutOfRange ? "periodOutOfRange" : (noSignificantMotion ? "noMotion" : null),
     dopplerReason,
     disclaimer: "motion-derived, not certified",
     diagnostics: {

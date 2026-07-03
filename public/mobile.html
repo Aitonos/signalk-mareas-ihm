@@ -1627,6 +1627,93 @@ body.mobile-ui #ais-pop #ais-pop-actions button{
   text-overflow:ellipsis!important;
 }
 body.mobile-ui #ais-pop #ais-pop-actions{gap:4px!important}
+/* Rev633 (feedback Carlos "hace scroll y textos ridículamente pequeños"):
+   popup drop-confirm compacto. Overlay transparente para no tapar el mapa,
+   caja pequeña flotante ANCLADA arriba-centro (no abajo — bottom-bar molesta),
+   sin scroll interno (height:auto). Textos y toggles grandes pero contenido
+   mínimo: header con timer inline, banner Garreo mini, 4 filas de ~44 px y
+   botón OK grande. No usa zoom heredado del body.mobile-ui. */
+body.mobile-ui #m-drop-confirm-pop,
+#m-drop-confirm-pop{
+  background:transparent!important;
+  pointer-events:none!important;
+  zoom:1!important;
+}
+body.mobile-ui #m-drop-confirm-pop .popup-box,
+#m-drop-confirm-pop .popup-box{
+  position:fixed!important;
+  inset:auto!important;
+  left:50%!important;right:auto!important;
+  top:70px!important;bottom:auto!important;
+  transform:translateX(-50%)!important;
+  width:min(96vw,460px)!important;max-width:460px!important;
+  height:auto!important;max-height:none!important;
+  border-radius:16px!important;
+  padding:14px 16px 12px!important;
+  background:rgba(10,25,45,.96)!important;
+  box-shadow:0 10px 40px rgba(0,0,0,.7)!important;
+  border:1px solid rgba(255,255,255,.18)!important;
+  overflow:visible!important;
+  pointer-events:auto!important;
+  display:flex!important;flex-direction:column!important;gap:6px!important;
+}
+#m-drop-confirm-pop .m-drop-x{
+  position:absolute!important;top:6px!important;right:8px!important;
+  width:36px!important;height:36px!important;font-size:22px!important;
+  background:none!important;border:none!important;color:#aaa!important;
+  cursor:pointer!important;line-height:1!important;padding:0!important;
+}
+#m-drop-confirm-pop .m-drop-hdr{
+  display:flex!important;align-items:center!important;justify-content:space-between!important;
+  gap:12px!important;margin:0 32px 0 0!important;
+}
+#m-drop-confirm-pop .m-drop-hdr h4{
+  margin:0!important;font-size:19px!important;line-height:1.15!important;flex:1!important;
+}
+#m-drop-confirm-pop .m-drop-timer{
+  font-weight:900!important;font-size:18px!important;color:var(--org)!important;
+  flex-shrink:0!important;
+}
+#m-drop-confirm-pop .m-drop-row{
+  padding:8px 4px!important;min-height:44px!important;
+  display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;
+  border-bottom:1px solid rgba(255,255,255,.06)!important;
+}
+#m-drop-confirm-pop .m-drop-row:last-of-type{border-bottom:none!important;}
+/* Rev635 (feedback Carlos): títulos de todas las alarmas del popup en el
+   mismo estilo neutro (blanco), sin colorines por alarma — cumple guía
+   de estilos del resto de UI. Emoji ya da la pista visual. */
+#m-drop-confirm-pop .m-drop-row .alarm-info b{
+  font-size:17px!important;font-weight:800!important;color:#fff!important;
+}
+#m-drop-confirm-pop .m-drop-row .alarm-sw{flex:0 0 auto!important;}
+/* Rev635: fila Garreo bloqueada — slider gris/apagado, marcado ON, sin
+   click. Comunica "activa, no negociable" sin banner aparte. */
+#m-drop-confirm-pop .m-drop-row-locked{cursor:not-allowed!important;opacity:1!important;}
+#m-drop-confirm-pop .m-drop-row-locked .alarm-info b{color:#cfd8dc!important;}
+#m-drop-confirm-pop .m-drop-locked label{
+  filter:grayscale(1) brightness(.75)!important;
+  cursor:not-allowed!important;
+}
+#m-drop-confirm-pop .m-drop-locked input{cursor:not-allowed!important;}
+#m-drop-confirm-pop .m-drop-ok{
+  width:100%!important;background:var(--org)!important;color:#0a1929!important;
+  font-size:17px!important;padding:12px!important;font-weight:900!important;
+  border-radius:10px!important;border:none!important;cursor:pointer!important;
+  margin-top:4px!important;min-height:48px!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;gap:8px!important;
+}
+/* Rev635 (feedback Carlos "el timer debe ser naranja y no se ve"):
+   sobreescribimos el color del span dentro del botón (el botón tiene
+   color #0a1929 azul oscuro; sin este override el timer también salía
+   azul oscuro invisible sobre naranja). */
+#m-drop-confirm-pop .m-drop-ok #drop-confirm-timer,
+#m-drop-confirm-pop .m-drop-ok .m-drop-timer{
+  color:#0a1929!important;font-weight:900!important;
+  background:rgba(255,255,255,.28)!important;
+  padding:2px 10px!important;border-radius:8px!important;
+  font-size:15px!important;
+}
 /* Rev325 v2: SOLO neutralizar la inflación global button:not(.m-back) DENTRO
    de las filas de _histRow / showFav (heart, 📍, ✕, input). NO tocar padding
    del popup-box — el auto-inject crea su m-modal-hdr sticky y el padding:96px
@@ -2257,7 +2344,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 <div id="m-bottom-bar">
   <div class="it" data-bb-cell="sog" data-i18n-title="bb_velocidad_tip" title="Velocidad sobre fondo"><span class="lb" data-i18n="bb_velocidad">SOG</span><span class="vl" id="m-bb-sog">—</span></div>
   <!-- Sprint F (Rev454): Heading (rumbo de proa). Datos: variable global "heading" (rad). -->
-  <div class="it" data-bb-cell="heading" data-i18n-title="bb_heading_tip" title="Rumbo de la proa (heading)"><span class="lb" data-i18n="bb_heading">Heading</span><span class="vl" id="m-bb-heading">—</span></div>
+  <div class="it" data-bb-cell="heading" data-i18n-title="bb_heading_tip" title="Rumbo de la proa (heading)"><span class="lb" data-i18n="bb_heading">Rumbo</span><span class="vl" id="m-bb-heading">—</span></div>
   <div class="it m-bb-wind" data-bb-cell="wind" data-i18n-title="bb_viento_tip" title="Viento real (veleta) · flecha apunta hacia DONDE VA (TO)" onclick="toggleMeteo&&toggleMeteo()">
     <span class="lb" data-i18n="bb_viento">Viento</span>
     <!-- Rev295: alineación correcta con el resto de .vl. El SVG con margin
@@ -2275,7 +2362,13 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <span id="m-bb-wind-gust" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
   </div>
   <!-- Rev564 (feedback Carlos): click Sonda → Curvas (no a sonda-pop). -->
-  <div class="it" data-bb-cell="sonda" data-i18n-title="bb_sonda_tip" title="Profundidad bajo quilla · Sonda" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()"><span class="lb" data-i18n="bb_sonda">Sonda</span><span class="vl" id="m-bb-sonda">—</span><span id="m-bb-sonda-status" style="display:none;font-size:9px;font-weight:800;margin-top:2px;text-align:center;line-height:1.1"></span></div>
+  <div class="it" data-bb-cell="sonda" data-i18n-title="bb_sonda_tip" title="Profundidad bajo quilla · Sonda" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()"><span class="lb" data-i18n="bb_sonda">Sonda B. Quilla</span><span class="vl" id="m-bb-sonda">—</span><span id="m-bb-sonda-status" style="display:none;font-size:9px;font-weight:800;margin-top:2px;text-align:center;line-height:1.1"></span></div>
+  <!-- Rev635 (feedback Carlos): nueva celda "Sonda superf" = profundidad
+       desde SUPERFICIE del agua (belowSurface = quilla + calado). Y su
+       sublabel muestra la profundidad esperada en la próxima bajamar
+       también referida a superficie. Muy útil para navegar con carta
+       (las cartas marcan profundidad desde superficie, no desde quilla). -->
+  <div class="it" data-bb-cell="sonda_sup" data-i18n-title="bb_sonda_sup_tip" title="Profundidad bajo superficie · Sonda + calado" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()"><span class="lb" data-i18n="bb_sonda_sup">Sonda B. Superf</span><span class="vl" id="m-bb-sonda-sup">—</span><span id="m-bb-sonda-sup-status" style="display:none;font-size:9px;font-weight:800;margin-top:2px;text-align:center;line-height:1.1"></span></div>
   <!-- Sprint C (Rev452): status de marea en bottom-bar. Triangulo ▲/▼ + % entre
        extremos + label del proximo extremo (PM/BM HH:MM). Click abre Curvas. -->
   <div class="it" id="m-bb-tide-cell" data-bb-cell="tide" data-i18n-title="bb_marea_tip" title="Estado marea · subida o bajada" onclick="openPopup&&openPopup('curvas-pop');typeof fetchCurvas==='function'&&fetchCurvas()">
@@ -2299,8 +2392,8 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <span id="m-bb-prof-min-when" style="display:block;font-size:10px;font-weight:800;margin-top:1px;line-height:1;color:#cde">—</span>
   </div>
   <!-- Rev564 (feedback Carlos): Cad rec + Dist ancla → Cálculo Fondeo (fondeo-pop). -->
-  <div class="it" data-bb-cell="cad_rec" data-i18n-title="bb_cadena_tip" title="Cadena recomendada" onclick="openPopup&&openPopup('fondeo-pop');typeof fetchFondeoData==='function'&&fetchFondeoData()"><span class="lb" data-i18n="bb_cadena_rec">Cadena rec.</span><span class="vl" id="m-bb-cad">—</span></div>
-  <div class="it" data-bb-cell="dist_ancla" data-i18n-title="bb_dist_tip" title="Distancia al ancla" onclick="openPopup&&openPopup('fondeo-pop');typeof fetchFondeoData==='function'&&fetchFondeoData()"><span class="lb" data-i18n="bb_dist_ancla">Dist. ancla</span><span class="vl" id="m-bb-dist">—</span></div>
+  <div class="it" data-bb-cell="cad_rec" data-i18n-title="bb_cadena_tip" title="Cadena recomendada" onclick="m_openCalc()"><span class="lb" data-i18n="bb_cadena_rec">Cadena rec.</span><span class="vl" id="m-bb-cad">—</span></div>
+  <div class="it" data-bb-cell="dist_ancla" data-i18n-title="bb_dist_tip" title="Distancia al ancla" onclick="m_openCalc()"><span class="lb" data-i18n="bb_dist_ancla">Dist. ancla</span><span class="vl" id="m-bb-dist">—</span></div>
   <!-- Rev331 (item 13): HORA del fondeo. Rev564: click → Hist Olas. -->
   <div class="it" id="m-bb-anchored-since-cell" data-bb-cell="h_fondeo" data-i18n-title="bb_anchored_since_tip" title="Hora del fondeo" onclick="openPopup&&openPopup('wave-hist-info-pop');typeof _renderWaveHistInfo==='function'&&_renderWaveHistInfo()"><span class="lb" data-i18n="bb_anchored_since">H. fondeo</span><span class="vl" id="m-bb-anchored-since">—</span></div>
   <!-- Rev556: T. fondeo (duración desde drop). Rev564: click → Hist Olas. -->
@@ -2397,8 +2490,8 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
          Rev450: eliminados del menu "Ultimas posiciones", "Fondeos favoritos"
          (accesibles desde modal ❤ unificado) y "Prevision Meteo" (ya esta
          en la sidebar derecha). Orden final del menu reordenado por feedback. -->
-    <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');openPopup('sonda-pop');fetchSondaData&&fetchSondaData()"><span class="ico">📐</span><span data-i18n="menu_calc_sonda">Cálculo Sonda</span></button>
-    <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');openPopup('fondeo-pop');fetchFondeoData&&fetchFondeoData()"><span class="ico">⛓️</span><span data-i18n="menu_calc_fondeo">Cálculo Fondeo</span></button>
+    <!-- Rev628: una sola entrada de menú "Cálculo (Sonda + Fondeo)". -->
+    <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openCalc()"><span class="ico">🧮</span><span data-i18n="menu_calc_unified">Cálculo Sonda y Fondeo</span></button>
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');toggleWindy&&toggleWindy()"><span class="ico">🌀</span><span>Windy</span></button>
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');window.open('https://windregatta.com','_blank','noopener,noreferrer')">
       <!-- Rev186: logo Windregatta inline SVG estilo iOS icon (vela sobre fondo azul gradiente).
@@ -2913,8 +3006,8 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 </div>
 <button class="btn-float btn-ais-alarm" id="btn-ais-alarm" onclick="toggleAlarmPanel()"data-i18n="btn_alarmas">🔔 Alarmas</button>
 <div class="btn-top-center" id="btn-top-row">
-  <button class="btn-tc" onclick="openPopup('sonda-pop');fetchSondaData()"data-i18n="btn_sonda">📐 Calc. Sonda</button>
-  <button class="btn-tc" onclick="openPopup('fondeo-pop');fetchFondeoData()"data-i18n="btn_fondeo">⚓ Calc. Fondeo</button>
+  <!-- Rev628: los dos botones Sonda / Fondeo se unifican en uno. -->
+  <button class="btn-tc" onclick="m_openCalc()" data-i18n="btn_calc_unified">🧮 Calc. Sonda + Fondeo</button>
   <button class="btn-tc" onclick="openPopup('curvas-pop');fetchCurvas()"data-i18n="btn_curvas">📈 Curvas</button>
 </div>
 <button class="btn-float btn-anchor-center" id="btn-anchor-center" onclick="centerOnAnchor()"><svg viewBox="0 0 44 44" width="36" height="36"><circle cx="22" cy="22" r="18" fill="none" stroke="#f44336" stroke-width="2.5" stroke-dasharray="4 3"/><line x1="22" y1="0" x2="22" y2="44" stroke="#f44336" stroke-width="1.5"/><line x1="0" y1="22" x2="44" y2="22" stroke="#f44336" stroke-width="1.5"/><circle cx="22" cy="22" r="3" fill="#f44336"/><text x="22" y="27" text-anchor="middle" font-size="20" fill="#fff" style="filter:drop-shadow(0 0 2px #000)">⚓</text></svg></button>
@@ -2930,6 +3023,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <div style="padding:4px 0"><button class="p-back" style="width:100%;text-align:center" onclick="location.href='/signalk-mareas-ihm/mareas'"data-i18n="btn_mareas">IR A MAREAS</button></div>
     <div class="ps">
       <div class="ps-t" data-i18n="estado_fondeo">Estado Fondeo</div>
+      <!-- Rev630: fondeo directo, popup con toggles sale a los 5s con timer. -->
       <button class="btn btn-drop" id="btn-drop" onclick="doDrop()"data-i18n="btn_drop">⚓ FONDEAR AQUÍ</button>
       <button class="btn btn-lift" id="btn-lift" onclick="doLift()" style="display:none"data-i18n="btn_lift">⬆ LEVAR ANCLA</button>
       <div class="pr"><span data-i18n="estado_garreo">Estado garreo</span><span class="pv" id="v-state">–</span></div>
@@ -3055,8 +3149,48 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <p style="font-size:15px;margin:12px 0" data-i18n-html="ais_noanchor_preg">Esta alarma solo funciona cuando estás fondeado.<br>¿Quieres echar el ancla aquí?</p>
     <div style="display:flex;gap:10px;margin-top:12px">
       <button class="popup-close" style="flex:1;background:rgba(255,255,255,.1)" onclick="closePopup('ais-noanchor-pop')" data-i18n="cancelar">Cancelar</button>
+      <!-- Rev630: drop directo; popup drop-confirm sale a los 5s con timer. -->
       <button class="popup-close" style="flex:1;background:#ff9800;color:#fff;font-weight:700" onclick="closePopup('ais-noanchor-pop');doDrop()" data-i18n="si_fondear">Sí, fondear aquí</button>
     </div>
+  </div>
+</div>
+<!-- Rev633 (feedback Carlos "el popup hace scroll y textos ridículamente
+     pequeños"): reescrito compacto. Header (título + timer) en una fila,
+     banner Garreo mini, 4 filas compactas y botón OK. Sin scroll: se
+     dimensiona al contenido con height:auto y max-height suave. El CSS
+     de #m-drop-confirm-pop en el bloque mobile-ui override es quien
+     gobierna posición/tamaños; aquí sólo estructura y contenido mínimo. -->
+<div class="popup-overlay" id="m-drop-confirm-pop" onclick="closePopup('m-drop-confirm-pop')">
+  <div class="popup-box" onclick="event.stopPropagation()">
+    <button class="m-drop-x" onclick="m_dropConfirmClose()">✕</button>
+    <div class="m-drop-hdr">
+      <h4 data-i18n="drop_confirm_title">⚓ Fondeo activo — Alarmas</h4>
+    </div>
+    <!-- Rev635 (feedback Carlos "que manía con no cumplir los estilos"):
+         Garreo pasa a fila normal con slider gris deshabilitado (marcado ON,
+         no editable). Coherente con el resto de filas. -->
+    <div class="alarm-row m-drop-row m-drop-row-locked" id="ar-drop-garreo">
+      <div class="alarm-info"><b data-i18n="drop_confirm_alarma_garreo">⚓ Alarma Garreo</b></div>
+      <div class="alarm-sw m-drop-locked"><input type="checkbox" id="chk-drop-garreo" checked disabled><label for="chk-drop-garreo"></label></div>
+    </div>
+    <div class="alarm-row m-drop-row" id="ar-drop-ais" onclick="var c=document.getElementById('chk-drop-ais');c.checked=!c.checked;m_dropToggle('ais',c.checked)">
+      <div class="alarm-info"><b data-i18n="alarma_ais">🚢 Alarma AIS</b></div>
+      <div class="alarm-sw"><input type="checkbox" id="chk-drop-ais" checked onclick="event.stopPropagation();m_dropToggle('ais',this.checked)"><label for="chk-drop-ais" onclick="event.stopPropagation()"></label></div>
+    </div>
+    <div class="alarm-row m-drop-row" id="ar-drop-sonda" onclick="var c=document.getElementById('chk-drop-sonda');c.checked=!c.checked;m_dropToggle('sonda',c.checked)">
+      <div class="alarm-info"><b data-i18n="alarma_sonda">🌊 Alarma Sonda</b></div>
+      <div class="alarm-sw"><input type="checkbox" id="chk-drop-sonda" checked onclick="event.stopPropagation();m_dropToggle('sonda',this.checked)"><label for="chk-drop-sonda" onclick="event.stopPropagation()"></label></div>
+    </div>
+    <div class="alarm-row m-drop-row" id="ar-drop-gps" onclick="var c=document.getElementById('chk-drop-gps');c.checked=!c.checked;m_dropToggle('gps',c.checked)">
+      <div class="alarm-info"><b data-i18n="alarma_gps">📡 Pérdida GPS</b></div>
+      <div class="alarm-sw"><input type="checkbox" id="chk-drop-gps" checked onclick="event.stopPropagation();m_dropToggle('gps',this.checked)"><label for="chk-drop-gps" onclick="event.stopPropagation()"></label></div>
+    </div>
+    <div class="alarm-row m-drop-row" id="ar-drop-weather" onclick="var c=document.getElementById('chk-drop-weather');c.checked=!c.checked;m_dropToggle('weather',c.checked)">
+      <div class="alarm-info"><b data-i18n="drop_confirm_alarma_meteo_short">⛈️ Alarma Meteo</b></div>
+      <div class="alarm-sw"><input type="checkbox" id="chk-drop-weather" checked onclick="event.stopPropagation();m_dropToggle('weather',this.checked)"><label for="chk-drop-weather" onclick="event.stopPropagation()"></label></div>
+    </div>
+    <!-- Rev634-635: timer dentro del botón OK, en naranja visible. -->
+    <button class="m-drop-ok" onclick="m_dropConfirmClose()"><span data-i18n="drop_confirm_ok_short">OK</span> <span id="drop-confirm-timer" class="m-drop-timer">(60 s)</span></button>
   </div>
 </div>
 <div class="popup-overlay" id="alarm-panel-pop" onclick="closePopup('alarm-panel-pop')">
@@ -3231,25 +3365,32 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 <!-- Rev322: ais-pop sin botón pequeño de collapse — DOBLE CLICK en el título
      para colapsar/expandir el body. Más intuitivo y elimina UI clutter. -->
 <div class="popup-overlay" id="ais-pop" onclick="closePopup('ais-pop')" style="background:transparent;pointer-events:none"><div class="popup-box" onclick="event.stopPropagation()" style="position:fixed;bottom:80px;left:10px;pointer-events:auto;width:321px;max-height:445px;overflow-y:auto;z-index:2001;padding:10px 12px;box-sizing:border-box"><button onclick="closePopup('ais-pop')" style="position:absolute;top:6px;right:8px;background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;padding:2px 6px;line-height:1">✕</button><h4 id="ais-pop-title" ondblclick="m_aisToggleCollapse()" style="margin:0 30px 8px 0;cursor:move" title="Doble click para colapsar / Arrastra para mover">🚢 Target AIS</h4><div id="ais-pop-actions" style="display:flex;justify-content:center;margin-bottom:8px"></div><div id="ais-pop-body"></div></div></div>
-<div class="popup-overlay" id="sonda-pop" onclick="closePopup('sonda-pop')">
-  <div class="popup-box" onclick="event.stopPropagation()" style="width:520px;max-width:94vw;max-height:85vh;overflow-y:auto">
-    <button onclick="closePopup('sonda-pop')" style="position:absolute;top:6px;right:10px;background:none;border:none;color:#aaa;font-size:22px;cursor:pointer;line-height:1">✕</button>
-    <h4 style="font-size:18px" data-i18n="calc_sonda_title">📐 Cálculo de Sonda</h4>
-    <div id="sonda-content" style="margin-top:10px"><div style="text-align:center;padding:20px;opacity:.5" data-i18n="m_cargando">Cargando…</div></div>
-  </div>
-</div>
-<div class="popup-overlay" id="fondeo-pop" onclick="closePopup('fondeo-pop')">
-  <div class="popup-box" onclick="event.stopPropagation()" style="width:540px;max-width:94vw;height:85vh;display:flex;flex-direction:column;padding:0;overflow:hidden">
-    <div style="padding:10px 14px;flex-shrink:0;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,.1)">
-      <h4 style="font-size:18px;margin:0" data-i18n="calc_fondeo_title">⚓ Cálculo de Fondeo</h4>
-      <!-- Rev85: cerrar sin Guardar descarta el preview (no aplica al estado global) -->
-      <button onclick="_lastFondeoCalc=null;closePopup('fondeo-pop')" style="background:none;border:none;color:#aaa;font-size:22px;cursor:pointer;line-height:1">✕</button>
+<!-- Rev628 (feedback Carlos "unir Cálculo Sonda + Cálculo Fondeo en una sola
+     configuración"): los dos modales viejos (sonda-pop, fondeo-pop) se
+     reemplazan por este único modal calc-pop con dos secciones apiladas.
+     Los IDs internos #sonda-content y #fondeo-content se mantienen así las
+     funciones fetchSondaData() / fetchFondeoData() siguen funcionando sin
+     cambios; el usuario ve todo en una sola vista. -->
+<div class="popup-overlay" id="calc-pop" onclick="closePopup('calc-pop')">
+  <div class="popup-box" onclick="event.stopPropagation()" style="width:560px;max-width:96vw;height:88vh;display:flex;flex-direction:column;padding:0;overflow:hidden">
+    <div style="padding:12px 16px;flex-shrink:0;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,.1)">
+      <h4 style="font-size:20px;margin:0" data-i18n="calc_unified_title">🧮 Cálculo de Sonda y Fondeo</h4>
+      <button onclick="_lastFondeoCalc=null;closePopup('calc-pop')" style="background:none;border:none;color:#aaa;font-size:24px;cursor:pointer;line-height:1">✕</button>
     </div>
-    <div id="fondeo-content" style="flex:1;overflow-y:auto;padding:10px 14px"><div style="text-align:center;padding:20px;opacity:.5">Cargando...</div></div>
-    <div id="fondeo-result" style="flex-shrink:0;padding:8px 14px;border-top:1px solid rgba(255,255,255,.1)"></div>
-    <div style="flex-shrink:0;display:flex;gap:10px;padding:8px 14px 12px">
-      <!-- Rev186: Calcular ELIMINADO (es dinámico). Solo botón Guardar
-           renombrado a "Guardar cálculo actual de fondeo". -->
+    <div style="flex:1;overflow-y:auto;padding:0">
+      <!-- Sección Sonda -->
+      <div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.12)">
+        <div style="font-size:16px;font-weight:900;color:var(--org);margin-bottom:8px;letter-spacing:.5px" data-i18n="calc_sonda_title">📐 Cálculo de Sonda</div>
+        <div id="sonda-content"><div style="text-align:center;padding:16px;opacity:.5" data-i18n="m_cargando">Cargando…</div></div>
+      </div>
+      <!-- Sección Fondeo -->
+      <div style="padding:14px 16px">
+        <div style="font-size:16px;font-weight:900;color:var(--org);margin-bottom:8px;letter-spacing:.5px" data-i18n="calc_fondeo_title">⚓ Cálculo de Fondeo</div>
+        <div id="fondeo-content"><div style="text-align:center;padding:16px;opacity:.5">Cargando...</div></div>
+      </div>
+    </div>
+    <div id="fondeo-result" style="flex-shrink:0;padding:8px 16px;border-top:1px solid rgba(255,255,255,.1)"></div>
+    <div style="flex-shrink:0;display:flex;gap:10px;padding:10px 16px 14px">
       <button class="btn btn-drop" id="m-btn-calc-legacy" style="flex:1;font-size:18px;padding:14px;display:none" onclick="calcFondeo()" data-i18n="calcular">🔄 Calcular</button>
       <button class="btn" id="m-btn-save-fondeo" style="flex:1;background:var(--org);color:#0a1929;font-size:20px;padding:18px;font-weight:900;border-radius:12px" onclick="m_saveFondeoCurrent()" data-i18n="m_guardar_fondeo">💾 Guardar cálculo actual de fondeo</button>
     </div>
@@ -3384,7 +3525,9 @@ var _unitsSystem = localStorage.getItem('ihm-visor-units') || 'metric_nautical';
    próxima bajamar) y "prof_min" (sonda esperada en esa bajamar). Vicente
    pidió ambas para fondear con margen. */
 /* Rev556: añadido t_fondeo. Rev566: añadido moon. Rev567: añadido gps_acc. */
-window._BB_CELL_KEYS = ["sog","heading","wind","sonda","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","t_fondeo","sunrise","moon","gps_acc","wx_6h","wave"];
+/* Rev635: sonda_sup = profundidad desde superficie (sonda + calado) — nueva
+   celda propuesta por Carlos para complementar la Sonda bajo quilla. */
+window._BB_CELL_KEYS = ["sog","heading","wind","sonda","sonda_sup","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","t_fondeo","sunrise","moon","gps_acc","wx_6h","wave"];
 /* Rev535 (B-25): default snapshot del orden de Carlos (Tunatunes). MISMO que
    DEFAULT_BB_ORDER de src/index.ts L352. Si cambia ahí, cambiar aquí.
    Rev556: añadido t_fondeo (tiempo desde drop) tras h_fondeo. */
@@ -3615,6 +3758,14 @@ function m_openUserControl(){
   try{ if(typeof m_loadPinsList==='function') m_loadPinsList(); }catch(_){}
   try{ if(typeof m_loadSessionsList==='function') m_loadSessionsList(); }catch(_){}
   openPopup('m-user-control-pop');
+  try{ if(typeof translateAll === 'function') translateAll(); }catch(_){}
+}
+/* Rev628: modal unificado Sonda + Fondeo (menos es más).
+   Abre calc-pop y carga las dos secciones en paralelo. */
+function m_openCalc(){
+  openPopup('calc-pop');
+  try{ if(typeof fetchSondaData === 'function') fetchSondaData(); }catch(_){}
+  try{ if(typeof fetchFondeoData === 'function') fetchFondeoData(); }catch(_){}
   try{ if(typeof translateAll === 'function') translateAll(); }catch(_){}
 }
 /* Modal Configuracion handlers */
@@ -3851,7 +4002,8 @@ function _bbCellName(key){
     case 'sog':         return 'SOG';
     case 'heading':     return en ? 'Heading' : 'Rumbo';
     case 'wind':        return en ? 'Wind' : 'Viento';
-    case 'sonda':       return en ? 'Depth' : 'Sonda';
+    case 'sonda':       return en ? 'Depth b. keel' : 'Sonda B. Quilla';
+    case 'sonda_sup':   return en ? 'Depth b. surface' : 'Sonda B. Superf';
     case 'tide':        return en ? 'Tide' : 'Marea';
     case 'dif_lw':      return en ? 'Drop until Low Water' : 'Bajada hasta Bajamar';
     case 'prof_min':    return en ? 'Min depth at Low Water' : 'Profundidad mínima en Bajamar';
@@ -4494,7 +4646,11 @@ var _i18n={
   /* Rev310: bottom bar labels */
   bb_velocidad:{es:'SOG',en:'SOG'},
   bb_viento:{es:'Viento',en:'Wind'},
-  bb_sonda:{es:'Sonda',en:'Depth'},
+  /* Rev635 (feedback Carlos): la Sonda del bottom-bar es SIEMPRE bajo quilla;
+     etiqueta explícita para no confundir con la desde superficie. */
+  bb_sonda:{es:'Sonda B. Quilla',en:'Depth b. keel'},
+  bb_sonda_sup:{es:'Sonda B. Superf',en:'Depth b. surface'},
+  bb_sonda_sup_tip:{es:'Profundidad desde la superficie del agua\n(sonda + calado; sub-label = esperada en próxima bajamar desde superficie)',en:'Depth from water surface\n(sounder + draft; sub-label = expected at next low water from surface)'},
   /* Sprint C (Rev452): celda marea bottom-bar. */
   bb_marea:{es:'Marea',en:'Tide'},
   /* Rev573 (feedback Carlos): hover en 2 líneas — principal \n (auxiliar).
@@ -4511,7 +4667,9 @@ var _i18n={
   tide_pm_short:{es:'PM',en:'HW'},
   tide_bm_short:{es:'BM',en:'LW'},
   /* Sprint F (Rev454): nueva celda Heading + motor bottom-bar configurable. */
-  bb_heading:{es:'Heading',en:'Heading'},
+  /* Rev635 (feedback Carlos): "Heading" es inglés; en ES la celda del
+     bottom-bar debe leer "Rumbo". */
+  bb_heading:{es:'Rumbo',en:'Heading'},
   bb_heading_tip:{es:'Rumbo de la proa\n(heading magnético o verdadero según fuente SK)',en:'Bow heading\n(magnetic or true depending on SK source)'},
   /* Rev572 (feedback Carlos): título sección config widgets bottom-bar. */
   cfg_bbar:{es:'📊 Widgets del bottom bar',en:'📊 Bottom-bar widgets'},
@@ -4686,6 +4844,8 @@ var _i18n={
   menu_fav:{es:'Fondeos favoritos',en:'Favorite anchorages'},
   menu_calc_sonda:{es:'Cálculo Sonda',en:'Depth calculator'},
   menu_calc_fondeo:{es:'Cálculo Fondeo',en:'Anchor calculator'},
+  /* Rev628: entrada unificada Sonda + Fondeo. */
+  menu_calc_unified:{es:'Cálculo Sonda y Fondeo',en:'Depth & Anchor calculator'},
   menu_config:{es:'Configuración',en:'Settings'},
   cfg_title:{es:'⚙️ Configuración',en:'⚙️ Settings'},
   cfg_units:{es:'📏 Unidades',en:'📏 Units'},
@@ -4893,6 +5053,8 @@ var _i18n={
   btn_alarmas:{es:'🔔 Alarmas',en:'🔔 Alarms'},
   btn_sonda:{es:'📐 Calc. Sonda',en:'📐 Depth Calc.'},
   btn_fondeo:{es:'⚓ Calc. Fondeo',en:'⚓ Anchor Calc.'},
+  /* Rev628: botón unificado en la banda del top de mareas. */
+  btn_calc_unified:{es:'🧮 Calc. Sonda + Fondeo',en:'🧮 Depth + Anchor calc.'},
   btn_curvas:{es:'📈 Curvas',en:'📈 Curves'},
   /* Dynamic states */
   dentro_radio:{es:'✓ Dentro del radio',en:'✓ Within radius'},
@@ -4929,6 +5091,13 @@ var _i18n={
   ais_noanchor_preg:{es:'Esta alarma solo funciona cuando estás fondeado.<br>¿Quieres echar el ancla aquí?',en:'This alarm only works when anchored.<br>Do you want to drop anchor here?'},
   cancelar:{es:'Cancelar',en:'Cancel'},
   si_fondear:{es:'Sí, fondear aquí',en:'Yes, anchor here'},
+  /* Rev630-Rev634: popup drop-confirm pequeño post-drop con timer 60s. */
+  drop_confirm_title:{es:'⚓ Fondeo activo — Alarmas',en:'⚓ Anchored — Alarms'},
+  drop_confirm_garreo_compact:{es:'⚓ Garreo SIEMPRE activa (seguridad base)',en:'⚓ Drag alarm ALWAYS on (base safety)'},
+  drop_confirm_alarma_garreo:{es:'⚓ Alarma Garreo',en:'⚓ Drag alarm'},
+  drop_confirm_alarma_meteo_short:{es:'⛈️ Alarma Meteo',en:'⛈️ Weather alarm'},
+  drop_confirm_ok_short:{es:'OK',en:'OK'},
+  alarma_meteo_desc_pop:{es:'Aviso si previsión 6 h supera viento 25 kn u ola 1.5 m',en:'Alert if 6h forecast exceeds 25 kn wind or 1.5 m wave'},
   /* AIS popup */
   en_zona_borneo:{es:'⚠ EN ZONA BORNEO',en:'⚠ IN SWING ZONE'},
   ack_controlado:{es:'✓ ACK — controlado',en:'✓ ACK — controlled'},
@@ -5015,6 +5184,8 @@ var _i18n={
   windy_title:{es:'🌀 Windy — Previsión de viento',en:'🌀 Windy — Wind Forecast'},
   calc_sonda_title:{es:'📐 Cálculo de Sonda',en:'📐 Depth Calculation'},
   calc_fondeo_title:{es:'⚓ Cálculo de Fondeo',en:'⚓ Anchor Calculation'},
+  /* Rev628: título del modal unificado. */
+  calc_unified_title:{es:'🧮 Cálculo de Sonda y Fondeo',en:'🧮 Depth & Anchor Calculation'},
   calc_curvas_title:{es:'📈 Curvas de Marea',en:'📈 Tide Curves'},
   cargando:{es:'Cargando...',en:'Loading...'},
   calado_barco:{es:'Calado del barco',en:'Boat draft'},
@@ -5236,6 +5407,11 @@ function _setAisRadius(v){
   }
 }
 var _aisBorneoRings=null; /* layer group for persistent red rings on borneo targets */
+/* Rev630 (feedback Carlos "seleccionar target AIS no muestra su ancla estimada"):
+   layerGroup dedicado para el fondeo estimado del target AIS seleccionado
+   (icono ⚓ + círculo de borneo P90). Se crea perezosamente y se limpia al
+   cerrar el popup o cambiar de target. */
+var _aisSelectedAnchorLayer=null;
 var _selectedAisMmsi=null; /* clean MMSI of currently selected target (popup open) */
 var _selectedAisDisappearedAt=null; /* ms timestamp when selected target dropped out of feed; null while visible */
 /* Pending ACK/un-ACK operations: keep optimistic local state for ~5s so a stale
@@ -6125,7 +6301,20 @@ function cyclePanelMode(){
   btn.textContent='\u25bc';
   btn.classList.toggle('rotated',panelMode===2);
 }
-function closePopup(id){document.getElementById(id).classList.remove('open');}
+function closePopup(id){
+  document.getElementById(id).classList.remove('open');
+  /* Rev630: al cerrar el popup individual de AIS, limpiar la capa del
+     fondeo estimado del target seleccionado.
+     Rev631 (feedback Carlos: "al cerrar el popup queda el rojo de estar
+     seleccionado"): limpiamos también el highlight (aro rojo/naranja) —
+     el usuario cerró el popup, no debe quedar aro persistente. */
+  if(id==='ais-pop'){
+    try{ _clearAisSelectedAnchor(); }catch(_){}
+    try{ if(typeof _clearAisHighlight==='function') _clearAisHighlight(); }catch(_){}
+    _selectedAisMmsi=null;
+    _selectedAisDisappearedAt=null;
+  }
+}
 function openPopup(id){document.getElementById(id).classList.add('open');}
 
 function onZoom(){
@@ -6297,7 +6486,17 @@ function onAlSlider(v){
     post('/anchor-watch/alarm-extra',{alarmRadiusExtra:aExtra});
   },80);
 }
-function doDrop(){if(anch||!bPos){if(!bPos)alert('Sin posición GPS');return;}
+/* Rev630 (feedback Carlos): doDrop activa TODAS las alarmas de fondeo por
+   defecto (AIS + Weather + Sonda + GPS). A los 5s abre un popup pequeño con
+   los 4 toggles marcados y un timer 60s por si el usuario quiere apagar
+   alguna. Sin acción → todo queda ON. Garreo siempre ON: alarma base.
+   Se puede llamar con opts explícitos para override (retrocompat). */
+function doDrop(opts){if(anch||!bPos){if(!bPos)alert('Sin posición GPS');return;}
+  var _optsProvided = !!opts && typeof opts === 'object';
+  var _optAis     = _optsProvided ? !!opts.ais     : true;
+  var _optWeather = _optsProvided ? !!opts.weather : true;
+  var _optSonda   = _optsProvided ? !!opts.sonda   : true;
+  var _optGps     = _optsProvided ? !!opts.gps     : true;
   /* Rev154 fix: desbloquear AudioContext DENTRO del gesto del click, ANTES
      del fetch async. Si lo hacemos dentro del .then() (post-fetch), Firefox
      considera que ya no es user-gesture y el AudioContext queda permanently
@@ -6317,20 +6516,31 @@ function doDrop(){if(anch||!bPos){if(!bPos)alert('Sin posición GPS');return;}
      el backend ponía aisAlarmEnabled=true y el siguiente tick SSE pisaba
      nuestro intento local de dejarlo en false. */
   post('/anchor-watch/drop',{lat:bowLat,lng:bowLng,deferAisAlarm:true}).then(function(r){if(r&&r.ok!==false){anch=true;aPos={lat:bowLat,lng:bowLng};
-    /* Garreo siempre on (alarma de seguridad fundamental). AIS pendiente
-       de confirmación del usuario — popup tras 5s. */
+    /* Rev635 (bug report Carlos "Mauritania — Tailscale, ping alto: titubeos,
+       ancla activa/desactiva, doble aviso ancla fondeada"): marcar timestamp
+       del drop local para blindar el state durante ~15s frente a ticks SSE
+       atrasados que puedan traer anchored=false o dispararlo de nuevo con
+       eco tardío del propio drop. */
+    window._lastLocalDropMs = Date.now();
+    window._lastAnchorDownVoiceMs = window._lastLocalDropMs;
+    /* Garreo siempre ON — alarma base de seguridad del fondeo (Rev629: sigue
+       siendo obligatoria; el popup de confirmación pre-drop no la muestra). */
     _alarmGarreoEnabled=true;localStorage.setItem('ihm-garreo-alarm','1');
-    /* AIS OFF localmente hasta que el usuario confirme. */
-    aisAlarmEnabled=false;localStorage.setItem('ihm-ais-alarm','0');
-    /* Rev604 (feedback Carlos: "popup AIS sale tras lift, no tiene sentido"):
-       guardamos el timer para poder cancelarlo en doLift si el usuario leva
-       antes de que pase el 5s. */
-    if (window._aisPopupTimer) { clearTimeout(window._aisPopupTimer); }
-    window._aisPopupTimer = setTimeout(function(){
-      window._aisPopupTimer = null;
-      /* Doble guard: si entretanto ya no estamos fondeados, ni preguntar. */
+    /* Rev630: aplicar AIS según opt (default ON). */
+    aisAlarmEnabled = _optAis;
+    localStorage.setItem('ihm-ais-alarm', _optAis?'1':'0');
+    if (window._aisPopupTimer) { clearTimeout(window._aisPopupTimer); window._aisPopupTimer=null; }
+    try { if (typeof setAlarm === 'function') setAlarm('ais', _optAis); } catch(_){}
+    /* Rev630: popup drop-confirm pequeño a los 5s con las 4 alarmas marcadas
+       (todas ON) y timer 60s. Sin acción se cierra manteniendo todo ON.
+       Rev631: durante 60s (5s de espera + 55s de popup ~= 60s total) NO se
+       auto-abrirá ningún ais-pop. El usuario primero decide sus alarmas. */
+    _aisAutoPopupSuppressedUntil = Date.now() + 60000;
+    if (window._dropConfirmTimeout) { clearTimeout(window._dropConfirmTimeout); }
+    window._dropConfirmTimeout = setTimeout(function(){
+      window._dropConfirmTimeout = null;
       if(!anch) return;
-      _askActivateAisAlarm();
+      if(typeof m_dropConfirmOpen === 'function') m_dropConfirmOpen();
     }, 5000);
     /* Deploy 3a v3 (2026-05-08): force-enable visor audio on drop. Safety
        feature — even if user had muted, fondear is the moment when alarms
@@ -6341,26 +6551,31 @@ function doDrop(){if(anch||!bPos){if(!bPos)alert('Sin posición GPS');return;}
        suprimía la voz en QA con drop/lift/drop rápidos. */
     setTimeout(function(){
       var _n = Date.now();
-      if (!window._lastAnchorDownVoiceMs || (_n - window._lastAnchorDownVoiceMs) > 5000){
+      /* Rev635: dedupe voz "ancla fondeada" 5→30s. Con Tailscale/4G la eco
+         SSE puede espaciarse 5-20s y disparaba dos veces la voz. */
+      if (!window._lastAnchorDownVoiceMs || (_n - window._lastAnchorDownVoiceMs) > 30000){
         window._lastAnchorDownVoiceMs = _n;
         try{ _speakAlarm('anchor_down'); }catch(_){}
       }
     }, 300);
-    /* Sync toggle checkboxes immediately. Rev161: AIS queda DESMARCADO
-       hasta que el usuario confirme con el popup. El botón btn-ais-alarm
-       sigue 'active' porque garreo también lo activa (lógica OR). */
+    /* Rev630: sincronizar checkboxes del panel Alarmas + activar backend
+       para las 4 alarmas configurables. Garreo va aparte (siempre ON). */
     try{document.getElementById('chk-alarm-garreo').checked=true;}catch(e){}
-    try{document.getElementById('chk-alarm-ais').checked=false;}catch(e){}
-    /* Rev323: alarma WEATHER se auto-activa al fondear (SIN preguntar). Solo
-       AIS pide confirmación. La auto-activación weather no rompe el popup
-       AIS porque setAlarm('weather') no toca aisAlarmEnabled — el problema
-       de Rev321 era otro (probablemente el _askActivateAisAlarm fallaba por
-       el orden de evaluación). Aquí weather=true es independiente.
-       Se desactiva en doLift(). */
+    try{document.getElementById('chk-alarm-ais').checked = _optAis;}catch(e){}
     try {
       var chkW = document.getElementById('chk-alarm-weather');
-      if (chkW) chkW.checked = true;
-      if (typeof setAlarm === 'function') setAlarm('weather', true);
+      if (chkW) chkW.checked = _optWeather;
+      if (typeof setAlarm === 'function') setAlarm('weather', _optWeather);
+    } catch(_){}
+    try {
+      var chkS = document.getElementById('chk-alarm-sonda');
+      if (chkS) chkS.checked = _optSonda;
+      if (typeof setAlarm === 'function') setAlarm('sonda', _optSonda);
+    } catch(_){}
+    try {
+      var chkG = document.getElementById('chk-alarm-gps');
+      if (chkG) chkG.checked = _optGps;
+      if (typeof setAlarm === 'function') setAlarm('gps', _optGps);
     } catch(_){}
     document.getElementById('btn-ais-alarm').classList.add('active');
     refUI();updC();updChainLine();
@@ -6410,9 +6625,26 @@ fetch(A+'/anchor-watch/lift',{method:'POST',headers:{'Content-Type':'application
     /* Rev604: cancelar timer de popup AIS pendiente — si el usuario leva
        antes de que pasen los 5s del setTimeout, el popup ya no tiene sentido. */
     if (window._aisPopupTimer) { clearTimeout(window._aisPopupTimer); window._aisPopupTimer = null; }
+    /* Rev630: cancelar timer del popup drop-confirm (Rev630) por lo mismo. */
+    if (window._dropConfirmTimeout) { clearTimeout(window._dropConfirmTimeout); window._dropConfirmTimeout = null; }
+    try { if(typeof m_dropConfirmClose==='function') m_dropConfirmClose(); }catch(_){}
     /* Rev604: si el modal AIS-noanchor está abierto, cerrarlo. */
     try { var aisPop = document.getElementById('ais-noanchor-pop'); if(aisPop && aisPop.classList.contains('open')) closePopup('ais-noanchor-pop'); } catch(_){}
     anch=false;aPos=null;swUserOverride=false;chainDep=null;chainRec=0;swMax=0;_radiusBowNow=0;_alarmGarreoEnabled=false;localStorage.setItem('ihm-garreo-alarm','0');drag=false;_aisAckedMMSIs={};localStorage.removeItem('ihm-ais-acked');[anchorMk,swingC,alarmC,chainLine].forEach(function(l){if(map.hasLayer(l))map.removeLayer(l)});if(swingLblMk){try{map.removeLayer(swingLblMk);}catch(e){}}if(alarmLblMk){try{map.removeLayer(alarmLblMk);}catch(e){}}swingLblMk=null;alarmLblMk=null;
+    /* Rev630 (bug report Carlos: "tras levar, un target AIS se queda rojo y no
+       se autodeselecciona"): limpiar counters drag, contador de estado, y
+       forzar rerender del panel AIS con anch=false → todos los alerts pierden
+       inBorneo=true y salen del rojo. También limpiar rings y ais-pop. */
+    try{ _aisDraggingCounter = {}; }catch(_){}
+    try{ if(_aisBorneoRings && _aisBorneoRings.clearLayers) _aisBorneoRings.clearLayers(); }catch(_){}
+    try{ _clearAisSelectedAnchor(); }catch(_){}
+    /* Rev631 (feedback Carlos: "tras levar un target AIS se queda rojo"):
+       limpiar highlight seleccionado y estado de selección para que la lista
+       lateral y el mapa pierdan cualquier decoración de alarma AIS previa. */
+    try{ if(typeof _clearAisHighlight==='function') _clearAisHighlight(); }catch(_){}
+    _selectedAisMmsi=null;
+    _selectedAisDisappearedAt=null;
+    try{ if(typeof checkAisBorneoAlarm==='function' && aisTargets) checkAisBorneoAlarm(aisTargets); }catch(_){}
   /* Deploy 3a v3 (2026-05-08): explicit cleanup since doLift sets anch=false
      synchronously, so the SSE-based transition detection in processPollData
      won't fire (both _prevAnch and anch are now false). Mirror what we do in
@@ -6513,29 +6745,78 @@ function _ihmShowBanner(msg, kind){
 }
 function _ihmHideBanner(){ if (_ihmBannerEl) _ihmBannerEl.style.display = 'none'; }
 /* Rev487: log solo si age > 10s para no saturar consola. Watchdog validado
-   en barco real (Rev486 — corte WiFi laptop confirmo disparo del banner). */
+   en barco real (Rev486 — corte WiFi laptop confirmo disparo del banner).
+   Rev632 (feedback Carlos "en localhost el banner sale con apagones hasta
+   24s"): el watchdog basaba la decisión SOLO en Date.now() vs último state,
+   pero eso da falsos positivos cuando:
+     (a) la pestaña estuvo en background y Chromium pausó timers y poll
+         (al volver, Date.now() dice 24s pero el backend nunca fue
+         preguntado durante ese rato);
+     (b) hubo un pico de CPU en Chromium/Pi (Leaflet renderizando,
+         listado AIS grande, rerender pesado) — event loop bloqueado, al
+         desbloquearse el age ya está inflado.
+   Ahora: (1) al volver la pestaña a visible reseteamos _lastStateRecvMs
+   para no falsear el age con el tiempo en background; (2) si el age
+   supera el umbral, antes de mostrar banner hacemos un ping activo al
+   endpoint /state: si contesta OK, el backend estaba vivo (era pico
+   local), reseteamos silenciosamente sin banner. Umbral subido 15→20s
+   para dar más margen a Pi con CPU cargada. */
+try {
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'visible') {
+      _lastStateRecvMs = Date.now();
+    }
+  });
+} catch(_){}
+var _ihmWatchdogPingInFlight = false;
 function _ihmWatchdogTick(){
   var age = Date.now() - _lastStateRecvMs;
-  try { if (age > 10000) console.log('[IHM-WATCHDOG] tick age=' + age + 'ms threshold=15000ms banner=' + (_ihmBannerEl ? _ihmBannerEl.style.display : 'null')); } catch(_){}
-  if (age > 15000) {
-    var sec = Math.round(age / 1000);
-    /* Rev480: banner explicito — solo nuestro plugin esta mudo; SignalK base
-       puede seguir sirviendo viento/GPS/sonda directamente al visor por otros
-       canales. El usuario debe saber que lo que NO esta al dia es lo nuestro
-       (fondeo, varada, AIS) — NO debe asumir que el barco esta sin telemetria. */
-    var lang = (typeof _lang === 'string') ? _lang : 'es';
-    /* Rev487: texto mas contundente. La causa puede ser muchas (WiFi caido,
-       4G perdido, plugin caido, SK parado, Pi apagado). El usuario debe saber
-       que NO debe fiarse de los datos visibles para tomar decisiones criticas
-       de navegacion / fondeo. */
-    var msg = (lang === 'en')
-      ? ('DATA UNRELIABLE (' + sec + 's no connection). Check WiFi, plugin or boat link before making decisions.')
-      : ('DATOS NO FIABLES (' + sec + 's sin conexion). Verifica WiFi, plugin o conexion con el barco antes de tomar decisiones.');
-    _ihmShowBanner(msg, 'disconnect');
+  try { if (age > 10000) console.log('[IHM-WATCHDOG] tick age=' + age + 'ms threshold=20000ms banner=' + (_ihmBannerEl ? _ihmBannerEl.style.display : 'null')); } catch(_){}
+  if (age > 20000) {
+    /* Antes de disparar banner: ping activo al backend. Si contesta el
+       age era un artefacto local (pestaña o CPU), no una desconexión. */
+    if (!_ihmWatchdogPingInFlight) {
+      _ihmWatchdogPingInFlight = true;
+      try {
+        fetch(A + '/anchor-watch/state', { cache: 'no-store' })
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(s){
+            _ihmWatchdogPingInFlight = false;
+            if (s) {
+              _lastStateRecvMs = Date.now();
+              try { if (_ihmBannerEl && _ihmBannerEl.dataset.kind === 'disconnect') _ihmHideBanner(); } catch(_){}
+              /* Aprovecha el state para refrescar UI. */
+              try { processPollData(s); } catch(_){}
+            } else {
+              _ihmShowWatchdogBanner();
+            }
+          })
+          .catch(function(){
+            _ihmWatchdogPingInFlight = false;
+            _ihmShowWatchdogBanner();
+          });
+      } catch(_){ _ihmWatchdogPingInFlight = false; _ihmShowWatchdogBanner(); }
+    }
+    return;
   } else if (_ihmBannerEl && _ihmBannerEl.style.display !== 'none'
              && _ihmBannerEl.dataset.kind !== 'reload') {
     _ihmHideBanner();
   }
+}
+function _ihmShowWatchdogBanner(){
+  var age = Date.now() - _lastStateRecvMs;
+  var sec = Math.round(age / 1000);
+  /* Rev480: banner explicito — solo nuestro plugin esta mudo; SignalK base
+     puede seguir sirviendo viento/GPS/sonda directamente al visor por otros
+     canales. El usuario debe saber que lo que NO esta al dia es lo nuestro
+     (fondeo, varada, AIS) — NO debe asumir que el barco esta sin telemetria.
+     Rev487: texto contundente — muchas causas posibles (WiFi caido, 4G
+     perdido, plugin caido, SK parado, Pi apagado). */
+  var lang = (typeof _lang === 'string') ? _lang : 'es';
+  var msg = (lang === 'en')
+    ? ('DATA UNRELIABLE (' + sec + 's no connection). Check WiFi, plugin or boat link before making decisions.')
+    : ('DATOS NO FIABLES (' + sec + 's sin conexion). Verifica WiFi, plugin o conexion con el barco antes de tomar decisiones.');
+  _ihmShowBanner(msg, 'disconnect');
 }
 setInterval(_ihmWatchdogTick, 5000);
 /* Primera ejecucion a los 3s del load para confirmar inmediatamente que el
@@ -6834,7 +7115,21 @@ function processPollData(s){
       chainDep=s.chainDeployed||null;
     }
     var _prevAnch=anch;
-    anch=s.anchored||false;
+    /* Rev635 (bug report Carlos "titubeos por latencia alta"): guard optimista.
+       Si acabamos de hacer drop LOCAL <15s, no permitir que un tick SSE en vuelo
+       (con backend aún sin propagar) pise anch=true → anch=false. Y viceversa
+       para lift local. Con latencia alta (400-800ms Mauritania) el eco tarda
+       en llegar y la UI titubeaba. */
+    var _dropRecent = window._lastLocalDropMs && (Date.now() - window._lastLocalDropMs < 15000);
+    var _liftRecent = window._lastLocalLiftMs && (Date.now() - window._lastLocalLiftMs < 15000);
+    var _serverAnch = !!s.anchored;
+    if (_dropRecent && !_serverAnch) {
+      /* server aún dice no anclado, pero acabamos de hacer drop local — creemos al local. */
+    } else if (_liftRecent && _serverAnch) {
+      /* server aún dice anclado, pero acabamos de levar — creemos al local. */
+    } else {
+      anch = _serverAnch;
+    }
     if(s.anchorPosition&&s.anchorPosition.lat)aPos=s.anchorPosition;
     /* Rev331 (item 13): timestamp ms del drop activo. Null si no fondeado. */
     _anchoredSinceMs = (typeof s.anchoredSinceMs==='number') ? s.anchoredSinceMs : null;
@@ -6888,7 +7183,7 @@ function processPollData(s){
     if (typeof _prevAnch !== 'undefined' && _prevAnch === false && anch === true && _dropFresh && !_justLifted && typeof _autoEnableAudio==='function'){
       _autoEnableAudio('drop-sse');
       var _now = Date.now();
-      if (!window._lastAnchorDownVoiceMs || (_now - window._lastAnchorDownVoiceMs) > 5000){
+      if (!window._lastAnchorDownVoiceMs || (_now - window._lastAnchorDownVoiceMs) > 30000){
         window._lastAnchorDownVoiceMs = _now;
         /* Rev338 (fix QA Rev336 cross-device): drop desde otro device no tiene
            user gesture reciente aquí. _autoEnableAudio llama ctx.resume() async;
@@ -10160,17 +10455,28 @@ function updateTrackGradient(force){
       var p = pts[best];
       var when = (typeof p.t === 'number') ? new Date(p.t) : null;
       var ageMinutes = when ? Math.round((Date.now()-p.t)/60000) : null;
-      var whenStr = when ? when.toLocaleString() : '?';
+      /* Rev628: toLocaleString respeta el idioma UI (es-ES / en-GB) para
+         que el formato de fecha del popup coincida con el idioma escogido. */
+      var _dtLoc = (_lang==='en') ? 'en-GB' : 'es-ES';
+      var whenStr = when ? when.toLocaleString(_dtLoc) : '?';
       var ageStr = '';
       if(ageMinutes!=null){
-        if(ageMinutes<1) ageStr = 'ahora mismo';
-        else if(ageMinutes<60) ageStr = 'hace '+ageMinutes+' min';
-        else if(ageMinutes<1440) ageStr = 'hace '+Math.round(ageMinutes/60)+' h';
-        else ageStr = 'hace '+Math.round(ageMinutes/1440)+' d';
+        if(_lang==='en'){
+          if(ageMinutes<1) ageStr = 'just now';
+          else if(ageMinutes<60) ageStr = ageMinutes+' min ago';
+          else if(ageMinutes<1440) ageStr = Math.round(ageMinutes/60)+' h ago';
+          else ageStr = Math.round(ageMinutes/1440)+' d ago';
+        } else {
+          if(ageMinutes<1) ageStr = 'ahora mismo';
+          else if(ageMinutes<60) ageStr = 'hace '+ageMinutes+' min';
+          else if(ageMinutes<1440) ageStr = 'hace '+Math.round(ageMinutes/60)+' h';
+          else ageStr = 'hace '+Math.round(ageMinutes/1440)+' d';
+        }
       }
+      var _titleTxt = (_lang==='en') ? '📍 Track point' : '📍 Punto del track';
       L.popup({className:'trk-pt-popup',closeButton:true,autoClose:true})
        .setLatLng([p.ll[0],p.ll[1]])
-       .setContent('<div style="font-size:14px;color:#222;line-height:1.4"><b style="color:#000">📍 Punto del track</b><br><span style="color:#444">'+whenStr+'</span><br><span style="color:#666">'+ageStr+'</span></div>')
+       .setContent('<div style="font-size:14px;color:#222;line-height:1.4"><b style="color:#000">'+_titleTxt+'</b><br><span style="color:#444">'+whenStr+'</span><br><span style="color:#666">'+ageStr+'</span></div>')
        .openOn(map);
     }
     /* Segmentos consecutivos con color según edad. */
@@ -10745,6 +11051,9 @@ function showAisPopup(t,isBorneo){
      porque lo vio en el mapa; si quiere centrarlo explicito, usa el boton
      F3 (Locate) en el header del popup. */
   _addAisHighlight(t.lat,t.lng,isBorneo,isAcked,t.sog,t.isStatic);
+  /* Rev630 (feedback Carlos): pintar fondeo estimado del target seleccionado
+     — ⚓ + círculo de borneo P90. Se limpia al cerrar el popup. */
+  try{ _showAisSelectedAnchor(t); }catch(_){}
   setTimeout(function(){
     document.getElementById('ais-pop').classList.add('open');
     /* Rev320: drag handle = el header INYECTADO por _mInjectModalHeader
@@ -10868,6 +11177,49 @@ function getClosingRate(mmsi, ownSogKt, targetSogKt){
        inflar el radio con un único outlier GPS.
      - Rechaza radios > 300 m como no plausibles.
    Devuelve {lat, lng, radius, points, esloraM, swingObservedM, sourceSogKt}. */
+/* Rev631 (feedback Carlos: "las ventanas de target para hacer ACK salen
+   demasiado rápido, ni siquiera hemos confirmado que sea alarma AIS"):
+   timestamp hasta el que se SUPRIME el auto-popup AIS post-drop. Coincide
+   con el timer del drop-confirm popup (60s) — el usuario primero decide
+   qué alarmas quiere. Los clicks manuales en marker/lista sí funcionan;
+   solo se bloquea la auto-apertura del ais-pop tras un tick del SSE. */
+var _aisAutoPopupSuppressedUntil = 0;
+/* Rev630: helpers para el fondeo estimado del target AIS seleccionado.
+   Se dibuja un icono ⚓ en el centroide + círculo de borneo estimado. La
+   capa vive hasta que se cierre el popup, se cambie de target o se leve
+   el ancla propia (limpieza en doLift). */
+function _clearAisSelectedAnchor(){
+  try{
+    if(_aisSelectedAnchorLayer){
+      if(typeof map!=='undefined' && map && map.hasLayer(_aisSelectedAnchorLayer)) map.removeLayer(_aisSelectedAnchorLayer);
+      _aisSelectedAnchorLayer=null;
+    }
+  }catch(_){}
+}
+function _showAisSelectedAnchor(t){
+  _clearAisSelectedAnchor();
+  if(!t || typeof map==='undefined' || !map) return;
+  var est=estimateAnchor(t);
+  if(!est) return;
+  var grp=L.layerGroup();
+  /* Círculo de borneo estimado (radio P90 + eslora + margen). */
+  grp.addLayer(L.circle([est.lat,est.lng],{radius:est.radius,color:'#ff9800',fillColor:'#ff9800',fillOpacity:0.06,weight:2,dashArray:'8,4'}));
+  /* Icono ancla en la posición estimada. divIcon con emoji para que el color
+     visual sea consistente aunque el sistema no traiga font emoji. */
+  var anchorIcon=L.divIcon({
+    className:'ais-est-anchor-ico',
+    html:'<div style="font-size:26px;line-height:1;filter:drop-shadow(0 0 4px rgba(0,0,0,.9)) drop-shadow(0 0 3px rgba(255,152,0,.9));color:#ff9800;text-align:center">⚓</div>',
+    iconSize:[28,28], iconAnchor:[14,14]
+  });
+  /* Rev631 (feedback Carlos: "el ancla no se ve porque el barco sale encima"):
+     zIndexOffset alto para que el ⚓ quede pintado por ENCIMA del marker AIS
+     del target, aunque coincidan casi en la misma posición. */
+  grp.addLayer(L.marker([est.lat,est.lng],{icon:anchorIcon,interactive:false,zIndexOffset:1500}));
+  /* Punto pequeño en el centro para marcar exactitud del centroide. */
+  grp.addLayer(L.circleMarker([est.lat,est.lng],{radius:3,color:'#ff9800',fillColor:'#ff9800',fillOpacity:1,weight:0}));
+  grp.addTo(map);
+  _aisSelectedAnchorLayer=grp;
+}
 function estimateAnchor(t){
   if(!t) return null;
   var cleanMmsi = (t.mmsi||'').replace(/^urn:mrn:imo:mmsi:/,'').replace(/^urn:mrn:signalk:uuid:/,'');
@@ -10910,6 +11262,10 @@ function estimateAnchor(t){
   };
 }
 function showNextBorneoTarget(){
+  /* Rev629 (bug report Carlos): si la alarma AIS está desactivada, no auto-abrir
+     nunca ningún popup de target — solo el usuario debe poder abrirlo con click
+     explícito en el marker o en la lista lateral. */
+  if(!aisAlarmEnabled)return;
   if(!aisTargets||!aisTargets.length||!anch||!aPos)return;
   var baseAlR=(swMax||30)+aExtra;
   var borneo=[];
@@ -11078,14 +11434,18 @@ function checkAisBorneoAlarm(targets){
          Anti-jitter: requiere _AIS_DRAGGING_CONSEC ticks consecutivos cumpliendo. */
       var trulyStatic=t.isStatic||(targetSogKt!==null&&targetSogKt<0.5);
       var nowMoving=targetSogKt!==null && targetSogKt>=0.5;
-      var draggingCondition = acked && closing!==null && closing>5 &&
+      /* Rev629 (bug report Carlos): con alarma AIS OFF NUNCA marcar targets
+         como "GARREANDO" — evita banner rojo "¡GARREANDO!" persistente sin
+         botón ACK cuando el usuario tiene la alarma desactivada. La detección
+         drag AIS solo tiene sentido con la vigilancia activa. */
+      var draggingCondition = aisAlarmEnabled && acked && closing!==null && closing>5 &&
                               (trulyStatic || nowMoving);
       if(draggingCondition){
         _aisDraggingCounter[cleanMmsi]=(_aisDraggingCounter[cleanMmsi]||0)+1;
       } else {
         delete _aisDraggingCounter[cleanMmsi];
       }
-      var isDragging = (_aisDraggingCounter[cleanMmsi]||0) >= _AIS_DRAGGING_CONSEC;
+      var isDragging = aisAlarmEnabled && (_aisDraggingCounter[cleanMmsi]||0) >= _AIS_DRAGGING_CONSEC;
       if(isDragging){
         acked=false;
         delete _aisAckedMMSIs[cleanMmsi];
@@ -11240,7 +11600,8 @@ function checkAisBorneoAlarm(targets){
         aisEl.innerHTML='<span style="color:var(--org)">'+ackedCount+' ACK</span>, '+nearbyOnly+' cercanos';aisEl.className='pv';
       }else{aisEl.textContent=alerts.length+T('ais_cercanos');aisEl.className='pv safe';}
     }
-    if(borneoUnacked.length>0&&aisAlarmEnabled&&!document.getElementById('ais-pop').classList.contains('open')){
+    if(borneoUnacked.length>0&&aisAlarmEnabled&&!document.getElementById('ais-pop').classList.contains('open')
+       && Date.now() >= _aisAutoPopupSuppressedUntil){
       showAisPopup(borneoUnacked[0].target,true);
     }
   }else{panel.classList.remove('open');panel.classList.remove('borneo-alert');if(_aisBorneoRings)_aisBorneoRings.clearLayers();var aisEl2=document.getElementById('v-ais-status');if(aisEl2){aisEl2.textContent=T('sin_targets');aisEl2.className='pv';}}
@@ -11416,12 +11777,19 @@ function setAlarm(type,on){
       /* Close any open borneo popup + clear borneo rings */
       if(document.getElementById('ais-pop').classList.contains('open'))closePopup('ais-pop');
       if(_aisBorneoRings)_aisBorneoRings.clearLayers();
+      /* Rev629 (bug report Carlos "target AIS salta sin botón ACK con alarma
+         OFF"): al apagar la alarma limpiar contadores drag + cerrar cualquier
+         popup/banner AIS pendiente para que no quede nada persistente.
+         setAlarmActive('ais',false) silencia audio. */
+      try{ _aisDraggingCounter = {}; }catch(_){}
+      try{ if(typeof setAlarmActive==='function') setAlarmActive('ais', false); }catch(_){}
+      try{ var _apop=document.getElementById('ais-noanchor-pop'); if(_apop && _apop.classList.contains('open')) closePopup('ais-noanchor-pop'); }catch(_){}
     }
     else{
-      /* Re-enable: clear all ACKs so all targets re-alert fresh */
-      _aisAckedMMSIs={};
-      localStorage.removeItem('ihm-ais-acked');
-      post('/anchor-watch/ais-ack-clear',{});
+      /* Rev631 (feedback Carlos: "sin persistencia, ojo"): al reactivar
+         la alarma AIS NO borramos los ACKs previos. El usuario espera que
+         un target al que ya dio ACK siga silenciado. Los ACKs se limpian
+         al levar ancla (doLift) o cuando cada uno caduca por TTL (15 min). */
       aisSt.textContent=T('activa');aisSt.style.color='var(--grn)';
     }
     post('/anchor-watch/ais-alarm-status',{enabled:on});
@@ -12976,7 +13344,7 @@ function _mInjectModalHeader(overlay){
      Antes no recibian el header naranja con BACK; quedaban con un X pequena
      arriba derecha que el usuario reportaba "no hay back". Ahora reciben el
      header inyectado igual que el resto (con BACK grande). */
-  var noHeaderIds = ['levar-confirm-pop','ais-noanchor-pop','ais-confirm','ais-pop'];
+  var noHeaderIds = ['levar-confirm-pop','ais-noanchor-pop','ais-confirm','ais-pop','m-drop-confirm-pop'];
   if (noHeaderIds.indexOf(overlay.id) >= 0) return;
   /* Detectar título: usa el primer h3/h4/h5 dentro del popup */
   var titleEl = box.querySelector('h4,h3,h5');
@@ -13070,15 +13438,13 @@ function _mUninjectModalHeader(overlay){
    en cada slider. El sistema viejo se disparaba con input event (solo
    al mover) → causaba "dos niveles" de transparencia. */
 function m_onAnchorBtn(){
-  /* Rev602 (feedback Carlos: "tap 1 dice 'ancla fondeada', tap 2 leva"):
-     refrescamos el state del backend ANTES de decidir drop vs lift, para
-     evitar que un anch local desincronizado dispare doDrop sobre algo que
-     ya está fondeado en otro dispositivo. */
+  /* Rev602: refrescar state del backend antes de decidir drop vs lift.
+     Rev630 (feedback Carlos): en drop llamamos doDrop() directo. El popup
+     de confirmación de alarmas sale a los 5s DESPUÉS del drop, no antes. */
   fetch(A+'/anchor-watch/state',{cache:'no-store'})
     .then(function(r){return r.ok?r.json():null;})
     .then(function(s){
       var serverAnchored = !!(s && s.anchored);
-      /* Sincroniza anch local con la verdad del backend antes de actuar. */
       anch = serverAnchored;
       if(serverAnchored){
         if (typeof doLift === 'function') doLift();
@@ -13087,13 +13453,53 @@ function m_onAnchorBtn(){
       }
     })
     .catch(function(){
-      /* Si no hay red, cae al comportamiento anterior. */
       if (typeof anch !== 'undefined' && anch) {
         if (typeof doLift === 'function') doLift();
       } else {
         if (typeof doDrop === 'function') doDrop();
       }
     });
+}
+/* Rev630: timer del popup drop-confirm. Al llegar a 0 se cierra manteniendo
+   todas las alarmas como estén. Si el usuario interactúa (toggle o "OK"),
+   se cancela para no cerrar solo. */
+var _dropConfirmTimerId = null;
+var _dropConfirmSecs = 60;
+function m_dropConfirmOpen(){
+  if(!anch) return; /* sanity: solo mientras fondeado */
+  /* Sync toggles con estado real actual (todo ON por defecto post-drop). */
+  try{ document.getElementById('chk-drop-ais').checked     = !!aisAlarmEnabled; }catch(_){}
+  try{ document.getElementById('chk-drop-sonda').checked   = !!(document.getElementById('chk-alarm-sonda')||{}).checked; }catch(_){}
+  try{ document.getElementById('chk-drop-gps').checked     = !!(document.getElementById('chk-alarm-gps')||{}).checked; }catch(_){}
+  try{ document.getElementById('chk-drop-weather').checked = !!(document.getElementById('chk-alarm-weather')||{}).checked; }catch(_){}
+  openPopup('m-drop-confirm-pop');
+  try{ if(typeof translateAll==='function') translateAll(); }catch(_){}
+  /* Arrancar countdown 60s. Rev634: timer se muestra dentro del botón OK
+     como "(N s)" — más compacto y visible en la acción principal. */
+  _dropConfirmSecs = 60;
+  var tEl = document.getElementById('drop-confirm-timer');
+  if(tEl) tEl.textContent = '('+_dropConfirmSecs+' s)';
+  if(_dropConfirmTimerId) clearInterval(_dropConfirmTimerId);
+  _dropConfirmTimerId = setInterval(function(){
+    _dropConfirmSecs--;
+    var tt = document.getElementById('drop-confirm-timer');
+    if(tt) tt.textContent = '('+Math.max(0,_dropConfirmSecs)+' s)';
+    if(_dropConfirmSecs<=0){
+      m_dropConfirmClose();
+    }
+  }, 1000);
+}
+function m_dropConfirmClose(){
+  if(_dropConfirmTimerId){ clearInterval(_dropConfirmTimerId); _dropConfirmTimerId=null; }
+  try{ closePopup('m-drop-confirm-pop'); }catch(_){}
+}
+/* Rev630: cada toggle del popup aplica setAlarm inmediato (backend + panel
+   Alarmas). El usuario ve cambios en vivo. */
+function m_dropToggle(type, on){
+  try{ if(typeof setAlarm==='function') setAlarm(type, !!on); }catch(_){}
+  /* Sync el checkbox del panel Alarmas para que refleje lo mismo. */
+  var mirror = {ais:'chk-alarm-ais',sonda:'chk-alarm-sonda',gps:'chk-alarm-gps',weather:'chk-alarm-weather'}[type];
+  if(mirror){ try{ var el=document.getElementById(mirror); if(el) el.checked = !!on; }catch(_){} }
 }
 /* Rev171: abrir/cerrar el panel completo (con FONDEAR AQUÍ, status,
    marea, CAPAS + sliders, AIS list) como modal fullscreen.
@@ -13258,6 +13664,27 @@ function m_pollBottomBar(){
         sondaEl.textContent = (_lastDepthM != null) ? unitFmt.depth(_lastDepthM, 1) : ('— ' + unitFmt.labelDepth());
         sondaEl.style.color = '';
       }
+    }
+    /* Rev635: celda Sonda B. Superf = profundidad desde superficie.
+       Preferimos backend depth (belowSurface = incluye calado). Si no hay,
+       calculamos: bajo quilla + calado. Sublabel muestra la esperada en
+       próxima bajamar desde superficie (expectedMinDepthM). */
+    var sondaSupEl = document.getElementById('m-bb-sonda-sup');
+    if (sondaSupEl) {
+      var draftM = (s.approach && typeof s.approach.draftM === 'number') ? s.approach.draftM : null;
+      var depthSurfM = null;
+      if (depthBS != null && isFinite(depthBS)) depthSurfM = Number(depthBS);
+      else if (_lastDepthM != null && draftM != null) depthSurfM = _lastDepthM + draftM;
+      sondaSupEl.textContent = (depthSurfM != null) ? unitFmt.depth(depthSurfM, 1) : ('— ' + unitFmt.labelDepth());
+      sondaSupEl.style.color = '';
+    }
+    var sstSup = document.getElementById('m-bb-sonda-sup-status');
+    if (sstSup) {
+      if (typeof _gdisp.expectedMinDepthM === 'number') {
+        sstSup.textContent = (_lang==='en'?'LW: ':'BM: ') + unitFmt.depth(_gdisp.expectedMinDepthM, 1);
+        sstSup.style.color = (_gdisp.expectedMinDepthM < ((s.approach && s.approach.draftM) || 1.5)) ? '#f44336' : '';
+        sstSup.style.display = 'block';
+      } else { sstSup.style.display = 'none'; }
     }
     /* Rev473: sub-texto con HORA DE AVISO (30 min antes de entrar en zona
        de riesgo), no la bajamar peor. Mas accionable: tienes media hora para

@@ -1,5 +1,101 @@
 # Changelog
 
+## [2.5.1] - 2026-07-04
+
+### English
+
+**Post-drop alarm popup (Rev628-Rev635)**
+
+Dropping the anchor now enables ALL fondeo alarms by default (Drag + AIS + Depth + GPS-loss + Weather). A small floating popup appears ~5 s later with the four configurable toggles pre-checked and a 60-second countdown inside the OK button. No action → all stay ON. During those 60 s no AIS target popup opens automatically, so the user isn't ambushed with ACK dialogs before deciding.
+
+- Drag alarm shown as a locked greyed row (always on, base safety).
+- All alarm titles in the popup use a uniform style (no per-alarm colours).
+- Toggle changes apply immediately to the 🔔 Alarms panel across devices.
+
+**Fixes for false-positive AIS "collision" targets (Rev629-Rev631)**
+
+- With AIS alarm OFF, targets no longer get flagged as "DRAGGING" (they had no ACK button reachable and would stay red persistently).
+- Toggling the AIS alarm OFF then ON no longer wipes previously ACK'd targets — ACKs are preserved. Only lifting anchor clears them.
+- Closing the AIS popup also clears the red highlight ring on the map (no orphaned rings around a deselected target).
+- After lifting anchor, every AIS target visually resets: no lingering orange/red states, no orphan rings, no residual "DRAGGING" tag.
+
+**Neighbour anchor visible when selecting an AIS target (Rev630-Rev631)**
+
+Clicking any nearby AIS target now paints its estimated anchor position on the map (a large orange ⚓ with a black glow so it stays visible even when the boat marker overlaps) plus its estimated swing circle (P90 + length + 5 m margin). Clears when the popup is closed, another target is selected, or own anchor is lifted.
+
+**Unified Depth + Anchoring calculator (Rev628)**
+
+The two menu entries "Cálculo Sonda" and "Cálculo Fondeo" are merged into a single "🧮 Cálculo Sonda y Fondeo" modal with both sections stacked. Bottom-bar chain/anchor-distance cells and top tide buttons all open the same unified modal. Less is more.
+
+**Bottom-bar cells (Rev635)**
+
+- "Heading" cell renamed to "Rumbo" in Spanish (was English on both languages).
+- "Sonda" cell renamed to "Sonda B. Quilla" (explicit: below keel).
+- New optional cell **"Sonda B. Superf"** = depth from water surface (sounder + draft), with sub-label showing expected depth at next low water from surface. Off by default; enable in Bottom-bar config.
+
+**Track point popup i18n (Rev628)**
+
+Clicking a point of the track history now shows title, timestamp and "X ago" text localised to the UI language (ES: "hace 5 min", "hace 2 h"; EN: "5 min ago", "2 h ago") with matching locale date format.
+
+**Physics / IMU-based waves (Rev632)**
+
+Fix reported by external user Pablo: his visor showed "Fuerte 63 s ESE" waves and F/10 % shelter grade while the boat was in a marina with weather-forecast flat sea. Root cause: the algorithm was publishing `motionBand: "fuerte"` based solely on a high roll/pitch RMS even when the encountered period was outside physical range for waves (34 s) and Doppler had `confidencePeriodTrue: 0`. Now if `periodOutOfRange` or no significant motion → `motionBand = null` and `rejectionReason = "periodOutOfRange"`, so downstream Shelter score isn't degraded by IMU noise/pier vibration/mis-calibration.
+
+**Watchdog "DATOS NO FIABLES" false-positive fix (Rev632)**
+
+The banner used to fire spuriously on localhost after tab background switches or Chromium CPU spikes (age inflated by a paused event loop). Now: (1) `visibilitychange → visible` resets `_lastStateRecvMs`; (2) threshold raised 15 → 20 s; (3) before showing the banner an active `fetch /state` ping confirms real disconnection — if the backend answers OK it was a local artefact and the banner is suppressed silently.
+
+**High-latency (Tailscale/4G/Mauritania) drop-lift stability (Rev635)**
+
+With ping 400-800 ms the UI used to "flutter" during drop/lift: rings appearing/disappearing, "anchor down" voice spoken twice, `anch` toggling between true/false with each late SSE tick. Optimistic guard added: for 15 s after a local drop/lift, in-flight SSE echoes with the opposite state are ignored. Anchor-down voice de-dupe raised 5 → 30 s.
+
+### Español
+
+**Popup de alarmas post-fondeo (Rev628-Rev635)**
+
+Al echar ancla ahora se activan por defecto TODAS las alarmas de fondeo (Garreo + AIS + Sonda + Pérdida GPS + Meteo). A los ~5 s aparece un popup pequeño flotante con los cuatro toggles configurables marcados y un contador de 60 s dentro del botón OK. Sin acción → todas quedan ON. Durante esos 60 s no se auto-abre ningún popup individual de target AIS, así el usuario no se ve bombardeado con diálogos de ACK antes de decidir.
+
+- Alarma Garreo mostrada como fila bloqueada gris (siempre activa, seguridad base).
+- Todos los títulos del popup con estilo uniforme (sin colorines por alarma).
+- Los cambios de toggle se aplican al panel 🔔 Alarmas en tiempo real cross-device.
+
+**Fixes de falsos positivos AIS "colisión" (Rev629-Rev631)**
+
+- Con la alarma AIS OFF, los targets ya no se marcan como "GARREANDO" (antes quedaban en rojo persistente sin botón ACK accesible).
+- Apagar y volver a encender la alarma AIS ya no borra los ACKs previos — se conservan. Solo se limpian al levar ancla.
+- Cerrar el popup individual de AIS también limpia el aro rojo del mapa (nada de anillos huérfanos alrededor de un target deseleccionado).
+- Al levar ancla, todos los targets AIS resetean su estado visual: sin naranjas/rojos residuales, sin anillos huérfanos, sin "¡GARREANDO!" pegajoso.
+
+**Fondeo del vecino visible al seleccionar un target AIS (Rev630-Rev631)**
+
+Al pinchar cualquier target AIS cercano se pinta ahora en el mapa la posición estimada de su ancla (una ⚓ naranja grande con sombra negra para verse aunque el marker del barco quede encima) más su círculo de borneo estimado (P90 + eslora + 5 m de margen). Se limpia al cerrar el popup, seleccionar otro target o levar el ancla propia.
+
+**Cálculo Sonda + Fondeo unificados (Rev628)**
+
+Las dos entradas del menú "Cálculo Sonda" y "Cálculo Fondeo" se unen en un único modal "🧮 Cálculo Sonda y Fondeo" con ambas secciones apiladas. Las celdas del bottom-bar de cadena/distancia y los botones del panel de mareas abren el mismo modal unificado. Menos es más.
+
+**Widgets del bottom-bar (Rev635)**
+
+- Celda "Heading" renombrada a "Rumbo" en español (salía en inglés en ambos idiomas).
+- Celda "Sonda" renombrada a "Sonda B. Quilla" (explícito: bajo quilla).
+- Nueva celda opcional **"Sonda B. Superf"** = profundidad desde la superficie (sonda + calado), con sublabel mostrando la esperada en la próxima bajamar desde superficie. Off por defecto; se activa en la Config del bottom-bar.
+
+**i18n del popup del punto del track (Rev628)**
+
+Al pinchar un punto del historial del track ahora el título, fecha y texto "hace X" se muestran en el idioma de la UI (ES: "hace 5 min", "hace 2 h"; EN: "5 min ago", "2 h ago") con formato de fecha local.
+
+**Olas por IMU (Rev632)**
+
+Fix reportado por el usuario externo Pablo: su visor mostraba "Fuerte 63 s ESE" y calidad de abrigo F/10 % con el barco en puerto y meteo prediciendo mar plana. Causa raíz: el algoritmo publicaba `motionBand: "fuerte"` sólo por un RMS de balanceo alto aunque el periodo detectado estuviera fuera del rango físico de olas (34 s) y Doppler tuviera `confidencePeriodTrue: 0`. Ahora si `periodOutOfRange` o no hay movimiento significativo → `motionBand = null` y `rejectionReason = "periodOutOfRange"`, así el índice de Abrigo no se degrada por ruido/vibraciones/mala calibración del IMU.
+
+**Fix falso positivo del banner "DATOS NO FIABLES" (Rev632)**
+
+El banner saltaba erróneamente en localhost tras dejar la pestaña en segundo plano o durante picos de CPU en Chromium (el age del watchdog se inflaba porque el event loop estaba pausado). Ahora: (1) `visibilitychange → visible` resetea `_lastStateRecvMs`; (2) umbral subido 15 → 20 s; (3) antes de mostrar el banner se hace un `fetch /state` activo para confirmar la desconexión real — si el backend responde OK era un artefacto local y el banner se suprime silenciosamente.
+
+**Estabilidad drop/lift con alta latencia (Tailscale/4G/Mauritania) (Rev635)**
+
+Con ping de 400-800 ms la UI "titubeaba" durante drop/lift: anillos apareciendo/desapareciendo, voz "ancla fondeada" doble, `anch` oscilando entre true/false por cada tick SSE atrasado. Añadido guard optimista: durante 15 s tras un drop/lift local se ignoran los ecos SSE en vuelo con estado contrario. Dedupe voz "ancla fondeada" subido de 5 s a 30 s.
+
 ## [2.5.0] - 2026-07-03
 
 ### English
