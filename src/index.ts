@@ -79,7 +79,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev609";
+const PLUGIN_REVISION = "Rev627";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -2075,17 +2075,16 @@ try {
     interface SecurityPin {
       alias: string;
       hash: string;
-      // Rev603 (feedback Carlos: "no es tan crítico, no es el PIN del banco"):
-      // guardamos también el PIN en plano para que el maestro pueda
-      // consultarlo desde la ficha del invitado. SOLO se devuelve a sesiones
-      // maestro. Aceptable porque el fichero vive en el Pi local del
-      // armador, sin exposición pública.
       pin?: string;
       createdMs: number;
       isMaster: boolean;
       level: "master" | "full";
       notes: string;
       expiresMs: number | null;
+      // Rev621 (feedback Carlos: "en Usuarios registrados poner Creado /
+      // Validez hasta / Último acceso"): timestamp del último unlock
+      // exitoso. null si nunca ha entrado (recién creado).
+      lastAccessMs?: number | null;
     }
     const PIN_SALT = "ihm-mareas-2026-local";
     const PIN_SESSION_TTL_MS = 30 * 60 * 1000;
@@ -2114,6 +2113,8 @@ try {
                 level: isMaster ? "master" : "full",
                 notes: typeof p.notes === "string" ? p.notes : "",
                 expiresMs: typeof p.expiresMs === "number" ? p.expiresMs : null,
+                // Rev621: último acceso.
+                lastAccessMs: typeof p.lastAccessMs === "number" ? p.lastAccessMs : null,
               } as SecurityPin;
             })
           : [];
@@ -2247,11 +2248,13 @@ try {
           notes: p.notes,
           expiresMs: p.expiresMs,
           expired: typeof p.expiresMs === "number" && p.expiresMs < Date.now(),
+          // Rev621: último acceso.
+          lastAccessMs: p.lastAccessMs ?? null,
         };
-        // NUNCA exponer el pin del maestro a nadie (ni a sí mismo via lista —
-        // si el maestro lo olvida, lo cambia. El expone es solo para
-        // gestionar invitados).
-        if (callerIsMaster && !p.isMaster && typeof p.pin === "string") {
+        // Rev622 (feedback Carlos): el maestro también ve su propio PIN
+        // en su ficha. Coherente con "es el PIN de tu barco". Los invitados
+        // NUNCA ven ningún PIN.
+        if (callerIsMaster && typeof p.pin === "string") {
           base.pin = p.pin;
         }
         return base;
@@ -2282,6 +2285,7 @@ try {
           const created: SecurityPin = {
             alias, hash: hashPin(pin), pin: pin, createdMs: Date.now(),
             isMaster: true, level: "master", notes: "", expiresMs: null,
+            lastAccessMs: Date.now(), // Rev621: primer acceso = ahora.
           };
           pins.push(created);
           await savePins(pins);
@@ -2330,12 +2334,17 @@ try {
         const pins = await loadPins();
         const target = pins.find(p => p.alias === alias);
         if (!target) { res.status(404).json({ ok: false, error: "ALIAS_NOT_FOUND" }); return; }
-        if (target.isMaster) {
-          res.status(400).json({ ok: false, error: "CANNOT_EDIT_MASTER" });
-          return;
-        }
+        // Rev622 (feedback Carlos "no hay forma de editar mi maestro"): el
+        // maestro puede editar sus notas y cambiar su PIN. No puede caducar
+        // (siempre null) ni cambiar de nivel.
         if (typeof body.notes === "string") target.notes = body.notes.slice(0, 120);
         let expiresChanged = false;
+        if (target.isMaster) {
+          // Ignorar cualquier expiresMs recibido para el maestro.
+          await savePins(pins);
+          res.json({ ok: true, alias: target.alias, level: target.level, notes: target.notes, expiresMs: null });
+          return;
+        }
         if (Object.prototype.hasOwnProperty.call(body, "expiresMs")) {
           const newExp = (typeof body.expiresMs === "number" && body.expiresMs > 0) ? body.expiresMs : null;
           expiresChanged = (newExp !== target.expiresMs);
@@ -2387,13 +2396,24 @@ try {
         const pins = await loadPins();
         const target = pins.find(p => p.alias === alias);
         if (!target) { res.status(404).json({ ok: false, error: "ALIAS_NOT_FOUND" }); return; }
+        // Rev623 (feedback Carlos: "el master no puede cambiarse por
+        // cualquiera así de fácil"): al cambiar el PIN del maestro, exigir
+        // el PIN actual en body.currentPin. Para invitados no hace falta
+        // (el maestro decide).
+        if (target.isMaster) {
+          const currentPin = String(req.body?.currentPin || "");
+          if (hashPin(currentPin) !== target.hash) {
+            res.status(403).json({ ok: false, error: "CURRENT_PIN_MISMATCH" });
+            return;
+          }
+        }
         const newHash = hashPin(newPin);
         if (pins.some(p => p.alias !== alias && p.hash === newHash)) {
           res.status(409).json({ ok: false, error: "PIN_DUPLICATE" });
           return;
         }
         target.hash = newHash;
-        target.pin = newPin; // Rev603: actualizar pin plano también.
+        target.pin = newPin;
         await savePins(pins);
         res.json({ ok: true, alias: target.alias });
       } catch (e: any) {
@@ -2420,8 +2440,7 @@ try {
         }
         // Rev606 (feedback Carlos: "salen DOS sesiones maestro y puedo
         // revocarme a mí mismo"): limpiar sesiones previas del mismo
-        // alias en el mismo IP+device antes de crear la nueva. Evita
-        // duplicados al hacer pin-unlock varias veces en la misma máquina.
+        // alias en el mismo IP+device antes de crear la nueva.
         const myIp = _resolveClientIp(req);
         const myDev = _shortDevice(String(req.headers?.["user-agent"] || ""));
         for (const [oldTok, oldSession] of Array.from(_pinSessions.entries())) {
@@ -2429,6 +2448,9 @@ try {
             _pinSessions.delete(oldTok);
           }
         }
+        // Rev621: registrar último acceso.
+        match.lastAccessMs = Date.now();
+        try { await savePins(pins); } catch {}
         const tok = newPinSession(match.alias, !!match.isMaster, match.level, req, match.expiresMs ?? null);
         const maxAgeSec = Math.floor(PIN_SESSION_TTL_MS / 1000);
         res.setHeader("Set-Cookie", `ihm_pin_session=${tok}; Path=/signalk-mareas-ihm; HttpOnly; Max-Age=${maxAgeSec}; SameSite=Lax`);
@@ -3018,8 +3040,8 @@ expressApp.post("/signalk-mareas-ihm/api/anchor/calc", requireControlAccess, asy
       } catch (e: any) { depthDiag[dp] = { error: e?.message }; }
     }
     const validated = _readDepthValidated(0);
-    let skDepth: number | null = validated.vRaw && validated.reason === "ok" ? validated.vRaw : null;
-    let depthPathUsed = validated.pathUsed;
+    const skDepth: number | null = validated.vRaw && validated.reason === "ok" ? validated.vRaw : null;
+    const depthPathUsed = validated.pathUsed;
     const depthReason = validated.reason;
 
     const skTideNow = readSkNumber("environment.tide.heightNow");
@@ -5342,7 +5364,7 @@ expressApp.get("/signalk-mareas-ihm/tiles/:set/:z/:x/:y.:ext", (req: any, res: a
   const ts = tilesets.get(req.params.set);
   if (!ts) { app.debug(`[IHM-TILE] 404 set not found: ${req.params.set}`); return res.status(404).send("Tileset not found"); }
   const z = parseInt(req.params.z), x = parseInt(req.params.x);
-  let y = parseInt(req.params.y);
+  const y = parseInt(req.params.y);
   if (isNaN(z) || isNaN(x) || isNaN(y)) return res.status(400).send("Invalid coords");
   // Convert XYZ to TMS if needed
   const tmsY = ts.meta.tms ? (1 << z) - 1 - y : y;
@@ -5871,7 +5893,7 @@ function getAnchorWatchState() {
   let bkeelResume = "";
   try { const v = app.getSelfPath("environment.tide.finalExpctDepthBKeelResume"); bkeelResume = (typeof v === "object" ? (v as any).value : v) ?? ""; } catch {}
 
-  let tideEvents: Array<{ type: string; time: string; height: number }> = [];
+  const tideEvents: Array<{ type: string; time: string; height: number }> = [];
   try {
     const paths = [
       { type: "high", timePath: "environment.tide.timeNextHigh", hPath: "environment.tide.heightNextHigh" },
@@ -6457,7 +6479,7 @@ const _WAVE_MIN_SAMPLES = 30;
 // al eje longitudinal del barco (e.g. 40-50° clockwise observados por el
 // usuario en pruebas reales). Se actualiza desde plugin.start() leyendo
 // props.waveDirectionOffsetDeg. Default 0 (chip alineado proa-popa).
-let _waveDirectionOffsetDeg: number = 0;
+const _waveDirectionOffsetDeg: number = 0;
 const _WAVE_SAMPLE_INTERVAL_MS = 200;     // 5 Hz
 let _waveSampleTimer: NodeJS.Timeout | null = null;
 
@@ -7671,7 +7693,7 @@ const PYPILOT_DEG_TO_RAD = Math.PI / 180;
 // muevo arriba con `var` para evitar futuros TDZ — `var` se hoista con
 // undefined inicial, no entra en TDZ.
 var _accelFromSKTimer: NodeJS.Timeout | null = null;
-var _lastAccelFedFromBridgeMs: number = 0;
+let _lastAccelFedFromBridgeMs: number = 0;
 const _ACCEL_BRIDGE_FRESH_MS = 1500;
 
 // Rev121: cache de attitude para alimentar Fase 1 directamente desde el bridge

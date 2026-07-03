@@ -322,7 +322,7 @@ export class ImuManager {
   private _looksLikeMacArthur(): boolean {
     try {
       // Sólo en Linux/Pi; cualquier error → asume no.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+       
       const fs = require("fs");
       const candidates = [
         "/sys/firmware/devicetree/base/model",

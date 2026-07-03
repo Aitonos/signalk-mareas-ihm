@@ -1,5 +1,147 @@
 # Changelog
 
+## [2.5.0] - 2026-07-03
+
+### English
+
+**Nearby AIS anchor estimation, rewritten (Rev625-Rev626)**
+
+The estimation of "where the other AIS boat has its anchor" has been rewritten from scratch. Before it barely triggered and never included the target's length — Carlos observed on the boat that anchored neighbours never got an estimation drawn.
+
+- Minimum 4 track points (was 8) → appears sooner.
+- 3-hour rolling window (was 30 min) → far more stable estimation.
+- Only applies to targets with SOG < 0.5 kn (regardless of the `isStatic` flag).
+- Discards targets with a net drift first→last > 200 m (in transit, not at anchor).
+- Swing radius = **P90** of the histogram of distances to the centroid (robust against a single GPS outlier that used to inflate the ring).
+- **Length of the target added** to the final swing radius + 5 m margin: `radius = swingP90 + LOA + 5`.
+- Rejects radii > 300 m as implausible.
+- **Only draws the estimation for targets closer than 250 m to your boat** (Rev626) — no visual noise from distant AIS.
+- Popup breakdown: `Ancla est.: r≈45 m (borneo 20 m + eslora 25 m)`.
+
+**User control module — polish (Rev619-Rev624)**
+
+- **Own modal for User control**, out of Configuration. Menú (☰) → 👥 Control de usuarios opens its own popup with header, larger typography (H2 36 px, H3 28 px, help 24 px) and a 900 px max-width so text never floats lost on wide displays.
+- **Master editable now** (Rev622): the master name is clickable (golden underlined) and the ✏️ button opens the edit card. Notes are editable; expiry section is hidden (master never expires); delete button is hidden. PIN change works too but the master must confirm the current PIN first (Rev623) — no easy override.
+- **Each registered user shows 3 lines** (Rev621): `Creado: DD/MM/YYYY` / `Validez hasta: DD/MM/YYYY` or `sin caducidad` / `Último acceso: DD/MM/YYYY HH:MM` (`nunca` in italics if never signed in). Backend now tracks `lastAccessMs` on every successful PIN unlock.
+- **User name is clickable** — opens the edit card (Rev621).
+- **Sidebar lock button always has a dark solid background** (Rev624) — no more disappearing over bright chart backgrounds.
+- **Sidebar lock now opens User control** (not Configuration) when authenticated (Rev623).
+- **Banner "Read-only mode" can be dismissed with ✕** (Rev626) without entering a PIN. The lock stays orange "PIN" as a permanent reminder. Session-scoped dismiss (comes back next reload).
+
+**AIS alarm off = no clutter (Rev613)**
+
+If the AIS alarm toggle is OFF, the "in zone" logic is now inhibited visually: no red rings on the map, no `🔴 Colisión N` badge, no `borneo-alert` frame around the panel, no ACK buttons in the list or target popup. Only distance + locate + vesselfinder. The alarm has to be ON for any anchor-watching machinery to appear.
+
+**Track rendering rewrite (Rev615-Rev616)**
+
+Third iteration after Carlos said "el track es inconexo y el gradiente no tiene pies ni cabeza".
+
+- One consecutive polyline per pair of points → **continuity guaranteed**.
+- Colour changes gradually along the line: **HSL gradient** 0h green (120°) → 4h yellow (60°) → 12h orange (30°) → 24h+ red (10°).
+- Small "checkpoint" dots at the first point of each round hour (5 px radius, coloured by age).
+- Click on the line or on a checkpoint → popup with the exact timestamp of the closest recorded point.
+- **z-index fixed** (Rev608): boat marker now paints on top of the track. Custom Leaflet `trackPane` lowered from `zIndex:650` → `550`.
+- **Bridge segment**: from the last recorded point to the current boat position, refreshed on every `bPos` update so the track never appears to disconnect from the boat.
+
+**Own tracks — Cartas panel (Rev610-Rev611)**
+
+New **"Tracks"** section at the top of the Cartas y Capas panel:
+- ☑ Mi track (GPS) toggle.
+- Slider "Últimas X h" (1-72 h, default 12 h) → filters own track by age. Instant rebuild.
+- 🗑 Borrar mi track completo button.
+- ☑ Tracks de otros barcos (AIS) — now synced with the AIS header toggle (Rev612).
+
+**Anchor / voice bug fixes**
+
+- **Idempotent `/drop`** (Rev602): if already anchored, no re-fire of the "Anchor down" voice nor re-broadcast SSE. Fixes cross-device "first tap says anchor down, second tap actually lifts".
+- **`m_onAnchorBtn` syncs state before deciding** drop vs lift (Rev602).
+- **Anti-spurious voice guard** on `_speakAlarm('anchor_down')` (Rev600, Rev604): checks `anchoredSinceMs` freshness AND `window._lastLocalLiftMs` recency.
+- **Voice dedupe** shortened 30 s → 5 s (Rev598).
+- **AIS activate popup cancelled on lift** (Rev604).
+- **AIS highlight ring turns orange on ACK** (Rev616), not red-with-red as before. Selection ring recreates on ACK state change instead of just repositioning.
+- **ACK button hidden when AIS alarm is OFF** (Rev617).
+
+**Weather advisory false-warn** (already shipped in 2.4.0) confirmed clean in production.
+
+**Notifications workflow — pending fix (Rev620-Rev621)**
+
+The Notifications viewer showed `signalk-mareas-ihm.weatherAdvisory` state=warn even after the user turned the alarm OFF for days. Fixed backend-side in 2.4.0 (Rev608); confirmed by the affected user in this cycle.
+
+**Session table typography (Rev620-Rev621)**
+
+The user reported one entry "Carlos (tu sesión actual) — Windows · Firefox · 100.82.158.116 — Sin caducidad" only occupied 160×35 px on a 2880-wide display. Rebuilt the inline styles inside `m_loadPinsList` and `m_loadSessionsList` — the id-scoped CSS was being overridden by nested inline `font-size`. Sizes now 20-24 px inline, matches the modal typography.
+
+**Wind widget** — "racha" renamed to "Racha" (Rev615) — proper capitalisation as gust label.
+
+**CI Lint** — 2.4.0 CI had a Lint job failing with 905 errors carried over from a React/TS legacy folder (`app/**`). ESLint config updated (Rev626): noisy inherited rules (`no-explicit-any`, `no-unused-vars` with `_` pattern, `no-empty` allowing empty catch, `no-require-imports`, `no-var`) downgraded to **warn**; only genuine structural rules stay as `error`. CI now green.
+
+### Español
+
+**Estimación de ancla de AIS vecinos, reescrita (Rev625-Rev626)**
+
+La estimación de "dónde tiene el ancla el otro AIS" se ha reescrito desde cero. Antes casi nunca se disparaba y no incluía la eslora del target — Carlos comprobó en el barco que los vecinos fondeados nunca conseguían estimación dibujada.
+
+- Mínimo 4 puntos del track (antes 8) → aparece antes.
+- Ventana rodante 3 h (antes 30 min) → estimación mucho más estable.
+- Sólo aplica a targets con SOG < 0.5 kn (independiente del flag `isStatic`).
+- Descarta targets con drift neto primer→último > 200 m (en tránsito, no fondeados).
+- Radio de borneo = **P90** del histograma de distancias al centroide (robusto ante un solo outlier GPS que antes inflaba el círculo).
+- **Eslora del target sumada** al radio + 5 m margen: `radius = swingP90 + eslora + 5`.
+- Rechaza radios > 300 m como no plausibles.
+- **Sólo dibuja la estimación para targets a menos de 250 m del barco propio** (Rev626) — sin ruido visual con AIS lejanos.
+- Popup con desglose: `Ancla est.: r≈45 m (borneo 20 m + eslora 25 m)`.
+
+**Control de usuarios — pulido (Rev619-Rev624)**
+
+- **Modal propio para Control de usuarios**, fuera de Configuración. Menú (☰) → 👥 Control de usuarios abre su popup con cabecera, tipografía más grande (H2 36 px, H3 28 px, help 24 px) y max-width 900 px para que el texto no flote perdido en pantallas amplias.
+- **Maestro editable** (Rev622): el nombre del maestro es clickable (dorado subrayado) y el botón ✏️ abre su ficha. Se pueden cambiar las notas; la sección de caducidad se oculta (el maestro no caduca); no aparece el botón borrar. Cambiar su PIN funciona también, pero se le exige verificar el PIN actual primero (Rev623) — el maestro no puede ser suplantado tan fácil.
+- **Cada usuario registrado muestra 3 líneas** (Rev621): `Creado: DD/MM/YYYY` / `Validez hasta: DD/MM/YYYY` o `sin caducidad` / `Último acceso: DD/MM/YYYY HH:MM` (`nunca` en cursiva si nunca ha entrado). El backend registra `lastAccessMs` en cada unlock exitoso.
+- **Nombre del usuario clickable** — abre la ficha (Rev621).
+- **Botón candado de la sidebar siempre con fondo oscuro sólido** (Rev624) — ya no desaparece sobre fondos claros de cartas.
+- **El candado de la sidebar abre Control de usuarios** (no Configuración) cuando estás autenticado (Rev623).
+- **Banner "Modo SOLO lectura" cerrable con ✕** (Rev626) sin necesidad de meter PIN. El candado queda en naranja "PIN" como recordatorio permanente. Descarte por sesión (vuelve al recargar).
+
+**Alarma AIS OFF = sin adornos (Rev613)**
+
+Si el toggle "Alarma AIS" está OFF, la lógica de "en zona" queda inhibida visualmente: sin círculos rojos en el mapa, sin badge `🔴 Colisión N`, sin marco `borneo-alert` alrededor del panel, sin botones ACK en la lista ni en el popup del target. Sólo distancia + Localizar + Vesselfinder. Para que aparezca cualquier maquinaria de vigilancia AIS la alarma tiene que estar ON.
+
+**Track propio — rediseño (Rev615-Rev616)**
+
+Tercera iteración tras "el track es inconexo y el gradiente no tiene pies ni cabeza".
+
+- Una polyline por cada par de puntos consecutivos → **continuidad garantizada**.
+- El color va cambiando a lo largo de la línea: **gradient HSL** 0h verde (120°) → 4h amarillo (60°) → 12h naranja (30°) → 24h+ rojo (10°).
+- Puntitos "checkpoint" en el primer punto de cada hora entera (radio 5 px, coloreado por edad).
+- Click sobre la línea o sobre un checkpoint → popup con la hora exacta del punto grabado más cercano.
+- **Bug z-index arreglado** (Rev608): el barco se pinta ahora **encima** del track. Custom Leaflet `trackPane` bajado de `zIndex:650` → `550`.
+- **Segmento puente**: desde el último punto grabado hasta la posición actual del barco, refrescado en cada actualización de `bPos` para que el track nunca aparente estar desconectado del barco.
+
+**Tracks propios — panel Cartas (Rev610-Rev611)**
+
+Nueva sección **"Tracks"** al principio del panel Cartas y Capas:
+- ☑ Mi track (GPS) toggle.
+- Slider "Últimas X h" (1-72 h, default 12 h) → filtra tu track por antigüedad. Rebuild instantáneo.
+- 🗑 Borrar mi track completo.
+- ☑ Tracks de otros barcos (AIS) — sincronizado con el toggle del header AIS (Rev612).
+
+**Bug fixes fondeo / voz**
+
+- **`/drop` idempotente** (Rev602): si ya estás fondeado, no re-dispara la voz "Ancla fondeada" ni re-emite SSE. Arregla el "primer tap dice ancla fondeada, segundo tap leva de verdad" en dispositivos cross.
+- **`m_onAnchorBtn` sincroniza estado antes de decidir** drop vs lift (Rev602).
+- **Guard anti-voz-espuria** en `_speakAlarm('anchor_down')` (Rev600, Rev604): comprueba frescor de `anchoredSinceMs` Y recencia de `window._lastLocalLiftMs`.
+- **Dedupe voz** bajado de 30 s → 5 s (Rev598).
+- **Popup activar AIS cancelado al levar** (Rev604).
+- **Aro del target AIS pasa a naranja al ACK** (Rev616), no rojo-con-rojo como antes. El aro se re-crea al cambiar el estado ACK en vez de sólo reposicionarse.
+- **Botón ACK oculto cuando alarma AIS está OFF** (Rev617).
+
+**Tipografía tabla de sesiones (Rev620-Rev621)**
+
+El usuario reportó que una entrada "Carlos (tu sesión actual) — Windows · Firefox · 100.82.158.116 — Sin caducidad" ocupaba sólo 160×35 px en un display de 2880 de ancho. Los inline styles dentro de `m_loadPinsList` y `m_loadSessionsList` estaban ganando al CSS externo por id. Ahora los tamaños se fijan inline en 20-24 px, coherentes con la tipografía del modal.
+
+**Widget viento** — "racha" renombrado a "Racha" (Rev615) — mayúscula inicial como etiqueta.
+
+**CI Lint** — el job Lint del CI en 2.4.0 fallaba con 905 errores heredados de una carpeta React/TS legacy (`app/**`). Config ESLint actualizada (Rev626): reglas ruidosas heredadas (`no-explicit-any`, `no-unused-vars` con patrón `_`, `no-empty` permitiendo catch vacío, `no-require-imports`, `no-var`) bajadas a **warn**; sólo las genuinas reglas estructurales quedan como `error`. CI ahora en verde.
+
 ## [2.4.0] - 2026-07-02
 
 ### English

@@ -1,6 +1,6 @@
 {
   "name": "signalk-mareas-ihm",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "A complete anchor watch and marine safety webapp for Signal K — intelligent anchor monitoring with predictive swing radius, voice alarms (drag/AIS/grounding), AIS anti-collision with cross-session cache, shelter forecast, on-board wave measurement from IMU, IHM Spain tides, multi-layer chart viewer, and multi-user PIN control (master + guests with per-user session, notes and optional expiry). Runs on OpenPlotter / Raspberry Pi.",
   "type": "module",
   "main": "./dist/index.js",

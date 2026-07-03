@@ -2105,13 +2105,15 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 <div id="m-bb-scroll-left" class="m-bb-scroll-ind" onclick="m_bbToggleBar()">◀</div>
 <div id="m-bb-scroll-right" class="m-bb-scroll-ind show" onclick="m_bbToggleBar()">▶</div>
 
-<!-- Rev586 (refactor feedback Carlos: "desactiva referencias a usuario SK"):
-     banner solo-lectura SIN botón "Iniciar sesión". Todo el banner es
-     pulsable y abre el modal PIN. -->
-<div id="m-access-banner" onclick="m_pinOpen('check')" style="display:none;position:fixed;left:8px;right:8px;bottom:62px;z-index:1500;background:rgba(255,138,101,.95);color:#000;padding:10px 14px;border-radius:10px;box-shadow:0 -2px 12px rgba(0,0,0,.5);cursor:pointer">
+<!-- Rev626 (feedback Carlos: "al arrancar, poder cerrar el banner sin
+     meter PIN; el candado ya indica 'sin autorizar'"): añadido ✕ para
+     descartar el banner en la sesión actual. El candado sidebar sigue
+     mostrando "🔒 PIN" naranja como recordatorio permanente. -->
+<div id="m-access-banner" style="display:none;position:fixed;left:8px;right:8px;bottom:62px;z-index:1500;background:rgba(255,138,101,.95);color:#000;padding:10px 14px;border-radius:10px;box-shadow:0 -2px 12px rgba(0,0,0,.5)">
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:nowrap">
     <span style="font-size:22px;line-height:1">🔒</span>
-    <span style="font-weight:900;font-size:16px;flex:1" data-i18n="access_readonly_title">Modo SOLO lectura — toca para introducir PIN</span>
+    <span onclick="m_pinOpen('check')" style="font-weight:900;font-size:16px;flex:1;cursor:pointer" data-i18n="access_readonly_title">Modo SOLO lectura — toca para introducir PIN</span>
+    <button onclick="m_bannerDismiss()" title="Cerrar" style="flex:0 0 auto;background:rgba(0,0,0,.15);border:1.5px solid rgba(0,0,0,.35);color:#000;width:32px;height:32px;border-radius:8px;font-size:18px;font-weight:900;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;padding:0">✕</button>
   </div>
 </div>
 
@@ -2159,9 +2161,10 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 }
 .m-pin-key:active{ background:rgba(255,255,255,.18);transform:scale(.92); }
 .m-pin-quickbtn{
-  flex:1;min-width:70px;padding:9px 6px;font-size:14px;font-weight:700;
-  cursor:pointer;border-radius:7px;
-  border:1px solid rgba(154,170,221,.4);
+  /* Rev621: tamaño +40% para que se lea. */
+  flex:1;min-width:100px;padding:12px 10px;font-size:20px;font-weight:700;
+  cursor:pointer;border-radius:8px;
+  border:1.5px solid rgba(154,170,221,.4);
   background:rgba(154,170,221,.10);color:#9ad;
 }
 .m-pin-quickbtn:active{ background:rgba(154,170,221,.25); }
@@ -2174,23 +2177,22 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
      y caducidad sin tocar el PIN numérico. Para cambiar el PIN tiene un botón
      aparte que abre el dialer PIN en modo 'change-pwd'. -->
 <div class="popup-overlay" id="m-pin-edit-pop" style="z-index:3400" onclick="if(event.target.id==='m-pin-edit-pop')closePopup('m-pin-edit-pop')">
-  <div class="popup-box" onclick="event.stopPropagation()" style="max-width:480px">
-    <h4 data-i18n="pin_edit_title">Editar usuario invitado</h4>
-    <div id="m-pin-edit-header" style="font-size:22px;font-weight:800;color:#fff;margin-bottom:10px"></div>
+  <!-- Rev621: max-width 720 para respirar en pantallas grandes. -->
+  <div class="popup-box" onclick="event.stopPropagation()" style="max-width:720px;padding:28px">
+    <h4 data-i18n="pin_edit_title" style="font-size:30px">Editar usuario invitado</h4>
+    <div id="m-pin-edit-header" style="font-size:30px;font-weight:800;color:#fff;margin-bottom:14px"></div>
     <!-- Rev603 (feedback Carlos opción B): PIN visible al maestro. -->
-    <div id="m-pin-edit-currentpin-wrap" style="display:none;margin-bottom:18px;padding:12px;background:rgba(154,170,221,.10);border:1px solid rgba(154,170,221,.4);border-radius:8px">
-      <div style="font-size:14px;color:#9ad;font-weight:700;margin-bottom:4px" data-i18n="pin_edit_current_pin">PIN actual</div>
-      <div id="m-pin-edit-currentpin" style="font-family:'Courier New',monospace;font-size:26px;font-weight:900;color:#fff;letter-spacing:6px"></div>
-      <div id="m-pin-edit-currentpin-legacy" style="display:none;font-size:12px;color:#bbb;font-style:italic;margin-top:4px" data-i18n="pin_edit_current_pin_legacy"></div>
+    <div id="m-pin-edit-currentpin-wrap" style="display:none;margin-bottom:22px;padding:16px;background:rgba(154,170,221,.10);border:1.5px solid rgba(154,170,221,.4);border-radius:10px">
+      <div style="font-size:20px;color:#9ad;font-weight:700;margin-bottom:6px" data-i18n="pin_edit_current_pin">PIN actual</div>
+      <div id="m-pin-edit-currentpin" style="font-family:'Courier New',monospace;font-size:36px;font-weight:900;color:#fff;letter-spacing:8px"></div>
+      <div id="m-pin-edit-currentpin-legacy" style="display:none;font-size:18px;color:#bbb;font-style:italic;margin-top:6px" data-i18n="pin_edit_current_pin_legacy"></div>
     </div>
-    <!-- Rev596 (feedback Carlos "menos es más"): eliminado selector full/self.
-         Todos los invitados son full (mismas capacidades de uso que maestro,
-         excepto gestión de capa y otros PINs). -->
-    <label style="display:block;font-size:16px;color:#bbb;font-weight:700;margin-bottom:6px" data-i18n="pin_notes_label">Notas</label>
-    <textarea id="m-pin-edit-notes" maxlength="120" rows="2" placeholder="p. ej. tripulación de charter" data-i18n-placeholder="pin_notes_placeholder" style="width:100%;padding:10px 12px;font-size:16px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;box-sizing:border-box;margin-bottom:18px;font-family:inherit;resize:vertical"></textarea>
-    <!-- Rev596: date picker eliminado, solo botones rápidos. -->
-    <label style="display:block;font-size:16px;color:#bbb;font-weight:700;margin-bottom:6px" data-i18n="pin_expiry_label">Validez</label>
-    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+    <!-- Rev621 (feedback Carlos "sigue enano"): tamaños del modal edit
+         subidos +40%. Todos los invitados son full. -->
+    <label style="display:block;font-size:22px;color:#cfd8dc;font-weight:700;margin-bottom:8px" data-i18n="pin_notes_label">Notas</label>
+    <textarea id="m-pin-edit-notes" maxlength="120" rows="2" placeholder="p. ej. tripulación de charter" data-i18n-placeholder="pin_notes_placeholder" style="width:100%;padding:14px 16px;font-size:22px;background:rgba(0,0,0,.4);border:1.5px solid rgba(255,255,255,.25);color:#fff;border-radius:10px;box-sizing:border-box;margin-bottom:22px;font-family:inherit;resize:vertical"></textarea>
+    <label style="display:block;font-size:22px;color:#cfd8dc;font-weight:700;margin-bottom:8px" data-i18n="pin_expiry_label">Validez</label>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <button onclick="m_pinEditExpiryClear()" class="m-pin-quickbtn" style="background:rgba(0,0,0,.45);border-color:rgba(255,255,255,.25);color:#ddd" data-i18n="pin_expiry_never">Sin caducidad</button>
       <button onclick="m_pinEditExpiryQuick(1)"  class="m-pin-quickbtn">+1 día</button>
       <button onclick="m_pinEditExpiryQuick(7)"  class="m-pin-quickbtn">+7 días</button>
@@ -2198,20 +2200,17 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       <button onclick="m_pinEditExpiryQuick(90)" class="m-pin-quickbtn">+90 días</button>
       <button onclick="m_pinEditExpiryQuick(365)" class="m-pin-quickbtn">+1 año</button>
     </div>
-    <div id="m-pin-edit-expiry-status" style="font-size:14px;color:#9ad;margin:0 0 18px 0;text-align:center;min-height:18px;font-weight:700"></div>
-    <div style="display:flex;gap:10px;margin-bottom:14px">
-      <button onclick="closePopup('m-pin-edit-pop')" style="flex:1;padding:12px;background:rgba(0,0,0,.35);color:#ccc;border:1px solid rgba(255,255,255,.18);border-radius:8px;font-weight:700;cursor:pointer;font-size:16px" data-i18n="pin_cancel">Cancelar</button>
-      <button onclick="m_pinEditSave()" style="flex:1;padding:12px;background:rgba(58,168,86,.25);color:#3aa856;border:1.5px solid #3aa856;border-radius:8px;font-weight:800;cursor:pointer;font-size:16px" data-i18n="pin_edit_save">Guardar cambios</button>
+    <div id="m-pin-edit-expiry-status" style="font-size:20px;color:#9ad;margin:0 0 22px 0;text-align:center;min-height:26px;font-weight:700"></div>
+    <div style="display:flex;gap:12px;margin-bottom:18px">
+      <button onclick="closePopup('m-pin-edit-pop')" style="flex:1;padding:16px;background:rgba(0,0,0,.35);color:#ccc;border:1px solid rgba(255,255,255,.18);border-radius:10px;font-weight:700;cursor:pointer;font-size:22px" data-i18n="pin_cancel">Cancelar</button>
+      <button onclick="m_pinEditSave()" style="flex:1;padding:16px;background:rgba(58,168,86,.25);color:#3aa856;border:1.5px solid #3aa856;border-radius:10px;font-weight:800;cursor:pointer;font-size:22px" data-i18n="pin_edit_save">Guardar cambios</button>
     </div>
-    <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:14px">
-      <div style="font-size:14px;color:#bbb;margin-bottom:8px" data-i18n="pin_edit_changepwd_help">Pide un nuevo PIN al maestro…</div>
-      <button onclick="m_pinEditChangePwd()" style="width:100%;padding:11px;background:rgba(255,178,63,.18);color:#ffb23f;border:1.5px solid #ffb23f;border-radius:8px;font-weight:800;cursor:pointer;font-size:15px" data-i18n="pin_edit_changepwd_btn">🔑 Cambiar ahora</button>
+    <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:18px">
+      <div style="font-size:20px;color:#c4c8cd;margin-bottom:12px;line-height:1.4" data-i18n="pin_edit_changepwd_help">Pide un nuevo PIN al maestro…</div>
+      <button onclick="m_pinEditChangePwd()" style="width:100%;padding:16px;background:rgba(255,178,63,.18);color:#ffb23f;border:1.5px solid #ffb23f;border-radius:10px;font-weight:800;cursor:pointer;font-size:22px" data-i18n="pin_edit_changepwd_btn">🔑 Cambiar ahora</button>
     </div>
-    <!-- Rev601: placeholder para los logs de actividad del invitado.
-         Carlos quiere: creación, primer login, último visto, dispositivos,
-         acciones con GPS+hora. Implementación pendiente (TODO backlog). -->
-    <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:14px;margin-top:14px;opacity:.6">
-      <div style="font-size:14px;color:#bbb;font-style:italic;text-align:center" data-i18n="pin_edit_logs_pending">(historial de accesos próximamente)</div>
+    <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:18px;margin-top:18px;opacity:.65">
+      <div style="font-size:18px;color:#bbb;font-style:italic;text-align:center" data-i18n="pin_edit_logs_pending">(historial de accesos próximamente)</div>
     </div>
   </div>
 </div>
@@ -2424,6 +2423,10 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       <span class="ico"><img src="/favicon.ico" alt="SK" style="width:32px;height:32px;object-fit:contain;vertical-align:middle" onerror="this.onerror=null;this.src='/@signalk/server-admin-ui/favicon.ico'"></span>
       <span data-i18n="menu_config_sk">Signal K</span>
     </button>
+    <!-- Rev618 (feedback Carlos 7): Control de usuarios como entrada propia
+         en el menú, JUSTO ANTES de Configuración. Reusa el modal Config y
+         hace scroll al bloque de control tras abrirlo. -->
+    <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openUserControl&&m_openUserControl()"><span class="ico">👥</span><span data-i18n="menu_user_control">Control de usuarios</span></button>
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openConfig&&m_openConfig()"><span class="ico">⚙️</span><span data-i18n="menu_config">Configuración</span></button>
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openInstructions()"><span class="ico">📖</span><span data-i18n="menu_instrucciones">Instrucciones y aviso legal</span></button>
     <!-- Idiomas en grande (un botón cuadrado cada uno) -->
@@ -2462,20 +2465,9 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
            Botones primarios (verde/azul): 18px bold
            Botones secundarios (reset gris): 15px
            Microcopy/status: 14px verde claro -->
-    <!-- Rev588: sección "Mi sesión PIN" visible siempre que el usuario está
-         autenticado (incluyendo invitados). Permite cerrar sesión desde
-         cualquier rol. Aparece al principio para que sea fácil de encontrar. -->
-    <div id="m-cfg-session-block" class="m-cfg-section" style="display:none">
-      <div class="m-cfg-h2"><span id="m-cfg-session-icon">🔓</span> <span data-i18n="cfg_session_title">Mi sesión PIN</span></div>
-      <div id="m-cfg-session-info" class="m-cfg-help"></div>
-      <!-- Rev591: caducidad PIN visible al propio usuario. -->
-      <div id="m-cfg-session-expiry" style="margin:-4px 0 8px 0;padding:10px 12px;border-radius:8px;font-size:15px;font-weight:700;display:none"></div>
-      <!-- Rev606: tiempo restante de la SESIÓN cookie (≠ caducidad PIN).
-           Para que el invitado sepa cuándo tendrá que volver a meter PIN. -->
-      <div id="m-cfg-session-cookie-ttl" style="margin:0 0 14px 0;padding:8px 12px;border-radius:8px;font-size:14px;color:#cde;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);display:none"></div>
-      <button onclick="m_pinLock()" class="m-cfg-btn-secondary" style="width:100%;padding:14px;font-size:18px" data-i18n="pin_logout">Cerrar sesión PIN</button>
-    </div>
-
+    <!-- Rev619 (feedback Carlos): bloque Mi sesión + Control de usuarios
+         MOVIDOS a su propio modal m-user-control-pop (ver abajo). Config
+         queda solo con Unidades / BBar / Botones / Diagnóstico. -->
     <!-- Seccion Unidades -->
     <div class="m-cfg-section">
       <div class="m-cfg-h2" data-i18n="cfg_units">📏 Unidades</div>
@@ -2491,47 +2483,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       <div id="m-cfg-units-status" class="m-cfg-status"></div>
     </div>
 
-    <!-- Rev586/587/593: bloque PIN de control.
-         Visible para: anónimos (para que puedan iniciar sesión), maestro,
-         o cuando no hay PINs (para crear maestro). Oculto solo a invitados
-         ya autenticados. La gestión interna (toggle + lista + añadir) sólo
-         se muestra al maestro o cuando no hay PINs aún. -->
-    <div id="m-cfg-access-block" class="m-cfg-section">
-      <div class="m-cfg-h2" data-i18n="cfg_access">🔐 PIN de control</div>
-      <div class="m-cfg-help" data-i18n="cfg_access_help">Cuando esté activada, las mutaciones (echar/levar ancla, alarmas, configuración…) requieren un PIN. La lectura sigue siendo pública. El primer PIN creado es el MAESTRO (administra capa + PINs); puede crear PINs INVITADO que solo desbloquean uso. Mantenla desactivada si navegas en solitario.</div>
-      <!-- Rev593: prompt para anónimos con PINs registrados. -->
-      <div id="m-cfg-access-loginprompt" style="display:none;padding:14px;border:1.5px solid #ffb23f;background:rgba(255,178,63,.10);border-radius:10px;text-align:center">
-        <div style="font-size:16px;color:#ffb23f;margin-bottom:10px" data-i18n="cfg_access_login_hint">Introduce un PIN para gestionar la capa de seguridad.</div>
-        <button onclick="m_pinOpen('check')" class="m-cfg-btn-primary" style="padding:14px 24px;font-size:18px" data-i18n="cfg_access_login_btn">🔓 Introducir PIN</button>
-      </div>
-      <!-- Bloque de gestión (toggle + lista). Visible solo a maestro o cuando
-           no hay PINs (escenario primera instalación). -->
-      <div id="m-cfg-access-admin" style="display:none">
-        <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap">
-          <!-- Rev594 fix bug toggle visual: SIN data-i18n, el texto lo
-               gestiona m_applyAccessState. -->
-          <button id="m-cfg-access-toggle" onclick="m_toggleSecurityLayer()" class="m-cfg-btn-toggle">🔓 Desactivado</button>
-          <div id="m-cfg-access-state" style="flex:1;min-width:200px;color:#cde;font-size:16px;font-weight:600"></div>
-        </div>
-        <!-- Rev595 (feedback Carlos "sesiones más visible arriba"): movido a
-             primero, antes que la lista de PINs. -->
-        <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:14px;margin-top:8px">
-          <div class="m-cfg-h3" style="margin-bottom:8px" data-i18n="cfg_sessions_title">Sesiones PIN activas</div>
-          <div class="m-cfg-help" style="margin-bottom:10px" data-i18n="cfg_sessions_help">Dispositivos con PIN abierto.</div>
-          <div id="m-cfg-sessions-list" style="font-size:14px"></div>
-        </div>
-        <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:14px;margin-top:14px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-            <div class="m-cfg-h3" data-i18n="cfg_pins_title">PINs registrados</div>
-            <div style="display:flex;gap:8px">
-              <button id="m-cfg-pin-logout" onclick="m_pinLock()" class="m-cfg-btn-secondary" style="display:none" data-i18n="pin_logout">Cerrar sesión PIN</button>
-              <button onclick="m_pinAddNew()" class="m-cfg-btn-primary" data-i18n="cfg_pins_add">+ Añadir PIN</button>
-            </div>
-          </div>
-          <div id="m-cfg-pins-list" style="font-size:16px"></div>
-        </div>
-      </div>
-    </div>
+    <!-- Rev619: bloque Control de usuarios MOVIDO a modal propio. -->
 
     <div class="m-cfg-section">
       <div class="m-cfg-h2" data-i18n="cfg_bbar">📊 Widgets del bottom bar</div>
@@ -2558,6 +2510,97 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     </div>
   </div>
 </div>
+
+<!-- Rev619 (feedback Carlos: "chapuza, sale dos veces, saca de un sitio y
+     deja en otro"): modal PROPIO para Control de usuarios. Anteriormente
+     los bloques vivían dentro del modal Configuración; ahora tienen su
+     propio pop, con jerarquía tipográfica más grande (m-uc-*). -->
+<div class="popup-overlay" id="m-user-control-pop" onclick="if(event.target.id==='m-user-control-pop')closePopup('m-user-control-pop')">
+  <!-- Rev620 (feedback Carlos "sigue enano"): ancho MÁXIMO 900px para
+       que los textos px-fijos no se vean minúsculos en pantallas 2K+. -->
+  <div class="popup-box" onclick="event.stopPropagation()" style="max-width:900px">
+    <h4 data-i18n="menu_user_control_h">👥 Control de usuarios</h4>
+
+    <!-- Mi sesión (visible sólo si estás autenticado). -->
+    <div id="m-uc-session-block" class="m-uc-section" style="display:none">
+      <div class="m-uc-h2"><span id="m-uc-session-icon">🔓</span> <span data-i18n="cfg_session_title">Mi sesión</span></div>
+      <div id="m-uc-session-info" class="m-uc-help"></div>
+      <div id="m-uc-session-expiry" style="margin:-4px 0 10px 0;padding:12px 14px;border-radius:8px;font-size:18px;font-weight:700;display:none"></div>
+      <div id="m-uc-session-cookie-ttl" style="margin:0 0 16px 0;padding:10px 14px;border-radius:8px;font-size:17px;color:#cde;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);display:none"></div>
+      <button onclick="m_pinLock()" class="m-uc-btn-secondary" style="width:100%;padding:16px;font-size:20px" data-i18n="pin_logout">Cerrar sesión</button>
+    </div>
+
+    <!-- Bloque control de usuarios. -->
+    <div id="m-uc-access-block" class="m-uc-section">
+      <div class="m-uc-h2" data-i18n="cfg_access_h">🔒 Control activo de usuarios</div>
+      <div class="m-uc-help" data-i18n="cfg_access_help">Cuando esté activado, las acciones del barco (echar/levar ancla, alarmas, configuración…) requieren un PIN. Quien sólo mira la lectura no necesita PIN. El primer PIN creado es el MAESTRO (gestiona el control y los demás PINs); el maestro puede crear PINs de INVITADO para tripulación o invitados. Manténlo desactivado si navegas en solitario y no te preocupa el toque accidental.</div>
+      <!-- Prompt de login para anónimos con PINs registrados. -->
+      <div id="m-uc-access-loginprompt" style="display:none;padding:18px;border:2px solid #ffb23f;background:rgba(255,178,63,.10);border-radius:10px;text-align:center">
+        <div style="font-size:20px;color:#ffb23f;margin-bottom:12px;font-weight:600" data-i18n="cfg_access_login_hint">Introduce un PIN para gestionar el control de usuarios.</div>
+        <button onclick="m_pinOpen('check')" class="m-uc-btn-primary" style="padding:16px 28px;font-size:20px" data-i18n="cfg_access_login_btn">🔓 Introducir PIN</button>
+      </div>
+      <!-- Bloque de gestión (toggle + lista). Sólo maestro o sin PINs. -->
+      <div id="m-uc-access-admin" style="display:none">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;flex-wrap:wrap">
+          <button id="m-uc-access-toggle" onclick="m_toggleSecurityLayer()" class="m-uc-btn-toggle">🔓 Desactivado</button>
+          <div id="m-uc-access-state" style="flex:1;min-width:220px;color:#cde;font-size:18px;font-weight:600"></div>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:18px;margin-top:8px">
+          <div class="m-uc-h3" style="margin-bottom:8px" data-i18n="cfg_sessions_title">Usuarios activos</div>
+          <div class="m-uc-help" style="margin-bottom:12px" data-i18n="cfg_sessions_help">Usuarios con sesión abierta ahora mismo (dispositivo + IP). Solo lo ve el maestro. Puede cerrar cualquier sesión.</div>
+          <div id="m-uc-sessions-list"></div>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:18px;margin-top:18px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+            <div class="m-uc-h3" data-i18n="cfg_pins_title">Usuarios registrados</div>
+            <button onclick="m_pinAddNew()" class="m-uc-btn-primary" data-i18n="cfg_pins_add">+ Añadir usuario</button>
+          </div>
+          <div id="m-uc-pins-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+/* Rev620 (feedback Carlos "sigue enano"): tamaños tipográficos +20%.
+   Consolidados con !important para ganar a cualquier reset global. */
+.m-uc-section{
+  margin-bottom:26px;padding:24px;
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:12px;
+}
+.m-uc-h2{ font-size:36px!important;font-weight:900;color:#fff;margin-bottom:14px;line-height:1.15 }
+.m-uc-h3{ font-size:28px!important;font-weight:800;color:#fff;line-height:1.2 }
+.m-uc-help{ font-size:24px!important;color:#d8dee6;margin-bottom:20px;line-height:1.45 }
+.m-uc-btn-toggle{
+  flex:0 0 auto;padding:18px 30px;font-size:26px!important;font-weight:900;
+  border-radius:12px;cursor:pointer;
+  border:2px solid rgba(255,255,255,.25);
+  background:rgba(0,0,0,.35);color:#ccc;min-width:200px;
+}
+.m-uc-btn-primary{
+  padding:16px 26px;font-size:24px!important;font-weight:800;cursor:pointer;
+  border-radius:10px;border:1.5px solid #3aa856;
+  background:rgba(58,168,86,.18);color:#3aa856;
+}
+.m-uc-btn-secondary{
+  padding:14px 22px;font-size:22px!important;font-weight:700;cursor:pointer;
+  border-radius:10px;border:1px solid rgba(255,255,255,.25);
+  background:rgba(0,0,0,.45);color:#eee;
+}
+/* Y los inline styles dentro de session-block: cookie-ttl y expiry usan
+   font-size:17-18px. Los subimos también. */
+#m-uc-session-expiry{ font-size:22px!important }
+#m-uc-session-cookie-ttl{ font-size:20px!important }
+#m-uc-access-state{ font-size:22px!important }
+/* Rev620: párrafo inline del prompt de login. */
+#m-uc-access-loginprompt > div{ font-size:24px!important }
+/* Rev620: subir tamaño de lista pins (items) para que respiren. */
+#m-uc-pins-list{ font-size:20px }
+#m-uc-sessions-list{ font-size:20px }
+</style>
 
 <!-- Rev587: estilos consolidados para el modal de Configuración.
      Toda la jerarquía tipográfica vive aquí en un solo sitio. -->
@@ -2918,7 +2961,33 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     </div>
     <div class="ps">
       <div class="ps-t" style="font-size:14px" data-i18n="capas">Capas</div>
-      <div style="font-size:13px;color:#ccc;font-weight:600;margin:4px 0 2px"data-i18n="capas_base">Capas base</div>
+      <!-- Rev610 (feedback Carlos Bloque C): bloque "Tracks" al principio de
+           Cartas para exponer los toggles + slider límite horas + borrar. -->
+      <div style="font-size:13px;color:#ccc;font-weight:600;margin:4px 0 2px" data-i18n="tracks_title">Tracks</div>
+      <div class="lyr-row">
+        <input type="checkbox" id="chk-trk" checked onchange="m_trkSetOwnEnabled(this.checked)">
+        <label for="chk-trk" data-i18n="mostrar_derrotas">Mi track (GPS)</label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:2px 4px 4px 22px;font-size:12px;color:#aaa">
+        <span data-i18n="trk_horas_max">Últimas</span>
+        <input type="range" id="sl-trk-h" min="1" max="72" step="1" value="12"
+               oninput="document.getElementById('sl-trk-h-v').textContent=this.value;m_trkSetLimitHours(this.value)"
+               style="flex:1;height:14px">
+        <span id="sl-trk-h-v" style="min-width:22px;text-align:right;color:#eee;font-weight:700">12</span>
+        <span data-i18n="trk_h">h</span>
+      </div>
+      <div style="padding:2px 4px 6px 22px">
+        <button onclick="m_trkClearOwn()" style="width:100%;padding:6px 10px;font-size:12px;background:rgba(229,57,53,.18);border:1px solid #e53935;color:#ff8a80;border-radius:6px;cursor:pointer;font-weight:700" data-i18n="trk_clear_own">🗑 Borrar mi track completo</button>
+      </div>
+      <!-- Rev611 (feedback Carlos "no sincroniza con Tracks AIS en zona"):
+           en lugar de togglear el layerGroup AIS entero (que tapa iconos y
+           tracks), llamamos al MISMO controlador que el header del panel AIS
+           en zona. Estado autoritativo = aisTracksEnabled. -->
+      <div class="lyr-row">
+        <input type="checkbox" id="chk-ais-trk" checked onchange="m_aisHdrToggleTracks(this.checked)">
+        <label for="chk-ais-trk" data-i18n="mostrar_ais">Tracks de otros barcos (AIS)</label>
+      </div>
+      <div style="font-size:13px;color:#ccc;font-weight:600;margin:8px 0 2px"data-i18n="capas_base">Capas base</div>
       <!-- Rev308 v2: indicador numérico FLOTANTE encima del thumb del slider.
            Wrapper .lyr-slider-wrap con position:relative; el .lyr-val se
            posiciona absoluto a left:var(--val-pct). Se oculta vía clase
@@ -2940,8 +3009,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       <div class="lyr-row"><input type="checkbox" id="chk-sea" onchange="tL('sea',this.checked)"><label for="chk-sea">OpenSeaMap</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-sea" style="--val-pct:77.78%">80</span><input type="range" class="lyr-opa" min="10" max="100" value="80" oninput="opaL('sea',this.value);_updLyrVal('sea',this.value)"></div></div>
       <div id="sec-charts" style="display:none"><div style="font-size:13px;color:#ccc;font-weight:600;margin:6px 0 2px"data-i18n="cartas_mbt">Cartas MBTiles</div><div id="charts-list"></div></div>
       <div id="sec-cp-charts" style="display:none"><div style="font-size:13px;color:#ccc;font-weight:600;margin:6px 0 2px"data-i18n="cartas_sk">Cartas registradas (Signal K)</div><div id="cp-charts-list"></div></div>
-      <div class="lyr-row"><input type="checkbox" id="chk-trk" checked onchange="tL('trk',this.checked)"><label for="chk-trk"data-i18n="mostrar_derrotas">Mostrar derrotas GPS</label></div>
-      <div class="lyr-row"><input type="checkbox" id="chk-ais" checked onchange="tL('ais',this.checked)"><label for="chk-ais"data-i18n="mostrar_ais">Mostrar AIS cercanos</label></div>
+      <!-- Rev610: chk-trk y chk-ais movidos al bloque "Tracks" del principio. -->
       <div class="lyr-row"><input type="checkbox" id="chk-wx-mk" checked onchange="tL('wx-mk',this.checked)"><label for="chk-wx-mk"data-i18n="mostrar_viento_ola">Marcador viento/ola</label></div>
     </div>
     <button class="btn-cfg" onclick="document.getElementById('cfg').classList.toggle('open')"data-i18n="cfg_mbt">⚙ Carpeta MBTiles</button>
@@ -3539,6 +3607,16 @@ function m_setUnits(u){
   try{ if(typeof m_applyUnitsToUI === 'function') m_applyUnitsToUI(); }catch(_){}
 }
 
+/* Rev618 (feedback Carlos 7): entrada propia "Control de usuarios" en el
+   menú, abre el modal Config y hace scroll al bloque de control. */
+function m_openUserControl(){
+  /* Rev619: modal propio (no reusa Config). */
+  try{ if(typeof m_refreshAccessContext==='function') m_refreshAccessContext(); }catch(_){}
+  try{ if(typeof m_loadPinsList==='function') m_loadPinsList(); }catch(_){}
+  try{ if(typeof m_loadSessionsList==='function') m_loadSessionsList(); }catch(_){}
+  openPopup('m-user-control-pop');
+  try{ if(typeof translateAll === 'function') translateAll(); }catch(_){}
+}
 /* Modal Configuracion handlers */
 function m_openConfig(){
   var sel = document.getElementById('m-cfg-units-sel'); if(sel) sel.value = _unitsSystem;
@@ -3546,8 +3624,8 @@ function m_openConfig(){
   openPopup('m-config-pop');
   try{ m_btnCfgRenderLists(); }catch(_){}
   try{ m_bbarCfgRender(); }catch(_){}
-  try{ if(typeof m_loadPinsList==='function') m_loadPinsList(); }catch(_){}
-  try{ if(typeof m_loadSessionsList==='function') m_loadSessionsList(); }catch(_){}
+  /* Rev619: pins y sesiones vive en su modal propio (m-user-control-pop),
+     ya no cargamos aquí. */
   try{ if(typeof translateAll === 'function') translateAll(); }catch(_){}
 }
 function m_closeConfig(){ closePopup('m-config-pop'); }
@@ -4440,6 +4518,14 @@ var _i18n={
   /* Rev599 (feedback Carlos): "Control de usuarios" en masculino — es un
      CONTROL, no una CAPA. Eliminada referencia a SK auth. */
   cfg_access:{es:'👥 Control de usuarios',en:'👥 User control'},
+  menu_user_control:{es:'Control de usuarios',en:'User control'},
+  menu_user_control_h:{es:'👥 Control de usuarios',en:'👥 User control'},
+  /* Rev621: 3 líneas por usuario + cabecera control. */
+  cfg_access_h:{es:'🔒 Control activo de usuarios',en:'🔒 Active user control'},
+  pin_row_validity:{es:'Validez hasta',en:'Valid until'},
+  pin_row_no_expiry:{es:'sin caducidad',en:'no expiry'},
+  pin_row_last_access:{es:'Último acceso',en:'Last access'},
+  pin_row_never:{es:'nunca',en:'never'},
   cfg_access_help:{es:'Cuando esté activado, las acciones del barco (echar/levar ancla, alarmas, configuración…) requieren un PIN. Quien sólo mira la lectura no necesita PIN. El primer PIN creado es el MAESTRO (gestiona el control y los demás PINs); el maestro puede crear PINs de INVITADO para tripulación o invitados. Manténlo desactivado si navegas en solitario y no te preocupa el toque accidental.',en:'When enabled, boat actions (drop/lift anchor, alarms, settings…) require a PIN. Anyone reading does not need a PIN. The first PIN created is the MASTER (manages the control and the other PINs); the master can create GUEST PINs for crew or visitors. Leave it OFF if you sail solo and accidental touch is not a concern.'},
   /* Rev601 (feedback Carlos): nomenclatura "Usuarios" en lugar de "PINs"
      en la UI. El PIN sigue siendo el dato técnico (4-8 dígitos), pero el
@@ -4781,8 +4867,13 @@ var _i18n={
   otras_capas:{es:'Otras capas base',en:'Other base layers'},
   cartas_mbt:{es:'Cartas MBTiles',en:'MBTiles Charts'},
   cartas_sk:{es:'Cartas registradas (Signal K)',en:'Registered charts (Signal K)'},
-  mostrar_derrotas:{es:'Mostrar derrotas GPS',en:'Show GPS tracks'},
-  mostrar_ais:{es:'Mostrar AIS cercanos',en:'Show nearby AIS'},
+  mostrar_derrotas:{es:'Mi track (GPS)',en:'My track (GPS)'},
+  mostrar_ais:{es:'Tracks de otros barcos (AIS)',en:'Other boats\' tracks (AIS)'},
+  /* Rev610 Bloque C: UI de tracks. */
+  tracks_title:{es:'Tracks',en:'Tracks'},
+  trk_horas_max:{es:'Últimas',en:'Last'},
+  trk_h:{es:'h',en:'h'},
+  trk_clear_own:{es:'🗑 Borrar mi track completo',en:'🗑 Clear my full track'},
   mostrar_viento_ola:{es:'Marcador viento/ola',en:'Wind/wave marker'},
   cfg_mbt:{es:'⚙ Carpeta MBTiles',en:'⚙ MBTiles Folder'},
   guardar_reesc:{es:'Guardar y reescanear',en:'Save and rescan'},
@@ -5304,6 +5395,10 @@ function m_aisHdrSyncUI(){
     if(ci){ci.checked=!!aisIconsEnabled;}
     if(ct){ct.checked=!!aisTracksEnabled;}
     if(ca){ca.checked=!!aisAlarmEnabled;}
+    /* Rev612 fix (feedback Carlos: "no sincroniza con tracks AIS en zona"):
+       reflejar el estado también en el checkbox del panel Cartas. */
+    var ctCartas = document.getElementById('chk-ais-trk');
+    if(ctCartas) ctCartas.checked = !!aisTracksEnabled;
     if(li){li.classList.toggle('off',!aisIconsEnabled);}
     if(lt){lt.classList.toggle('off',!aisTracksEnabled);}
     if(la){la.classList.toggle('off',!aisAlarmEnabled);}
@@ -6704,6 +6799,9 @@ function processPollData(s){
     }
     if(s.boatPosition&&s.boatPosition.lat){
       bPos=s.boatPosition;var ll=[bPos.lat,bPos.lng];
+      /* Rev612 (fix bug feedback Carlos: "puente no conecta con el barco"):
+         al actualizar bPos, refrescar el puente track↔barco. */
+      try { if(typeof updateTrackGradient==='function') updateTrackGradient(false); } catch(_){}
       if(!map.hasLayer(boatMk)){boatMk.addTo(map);onZoom();/* Rev418: NO forzar setView ni _followBoat=true al re-anadir el marcador.
          Si el usuario habia desactivado el follow (arrastrando el mapa) y el GPS
          se pierde y se recupera, el boatMk se re-anade pero el follow debe
@@ -9999,10 +10097,15 @@ function updateTrackGradient(force){
     if (!map.getPane('trackPane')) {
       map.createPane('trackPane');
       var _p = map.getPane('trackPane');
-      if (_p) { _p.style.zIndex = '550'; _p.style.pointerEvents = 'none'; }
+      /* Rev611 (feedback Carlos "click punto para ver hora"): pointerEvents
+         a 'auto' para que las polylines RECIBAN clicks y disparen el popup. */
+      if (_p) { _p.style.zIndex = '550'; _p.style.pointerEvents = 'auto'; }
     } else {
       var _pExist = map.getPane('trackPane');
-      if (_pExist && _pExist.style.zIndex !== '550') _pExist.style.zIndex = '550';
+      if (_pExist){
+        if (_pExist.style.zIndex !== '550') _pExist.style.zIndex = '550';
+        if (_pExist.style.pointerEvents !== 'auto') _pExist.style.pointerEvents = 'auto';
+      }
     }
   } catch(_){}
   /* Rev608: si el usuario desactivó "Mis tracks", limpiar y salir. */
@@ -10024,46 +10127,122 @@ function updateTrackGradient(force){
     _trkLastFullRebuildMs=0;
     return;
   }
-  /* Rev608: siempre rebuild al filtrar por horas (evita mezclar cache viejo). */
+  /* Rev616 (feedback Carlos: "me gustaba más que el track sea lo que va
+     cambiando de color, los círculos como checkpoints"): rediseño final.
+       - N-1 segmentos consecutivos (uno por par de puntos), cada uno con
+         color según la edad del punto MEDIO. Al compartir vértices con el
+         segmento vecino, siempre son continuos.
+       - Círculos pequeños SOLO como CHECKPOINTS: primer punto de cada hora
+         entera. Sirve para ubicar cronología a golpe de vista.
+     Gradient HSL: 0h=verde(120°) → 4h=amarillo(60°) → 12h=naranja(30°) →
+     24h+=rojo(10°). */
+  function _trkColorForAgeH(ageH){
+    var hue;
+    if(ageH < 4)       hue = 120 - (ageH/4)*60;
+    else if(ageH < 12) hue = 60  - ((ageH-4)/8)*30;
+    else               hue = Math.max(10, 30 - ((ageH-12)/12)*20);
+    return 'hsl('+Math.round(hue)+',95%,50%)';
+  }
   var fullRebuildDue=force || pts.length !== _trkLastRenderedLen || (nowMs-_trkLastFullRebuildMs>30000);
   if(fullRebuildDue){
     if(window._trkGradLines){window._trkGradLines.forEach(function(l){if(map.hasLayer(l))map.removeLayer(l);});}
     window._trkGradLines=[];
-    var n=pts.length;
-    var segs=Math.min(40,Math.max(2,Math.floor(n/2)));
-    var step=Math.max(1,Math.floor(n/segs));
-    for(var i=0;i<segs;i++){
-      var s=i*step,e=Math.min((i+1)*step+1,n);
-      var subPts=[];for(var j=s;j<e;j++)subPts.push(pts[j].ll);
-      if(subPts.length<2)continue;
-      /* Rev608: color por edad del segmento (usar el punto medio del segmento).
-         - Segmentos con puntos < 4h de antigüedad → gradient rojo→verde.
-         - Segmentos con puntos >= 4h → gris progresivo (más viejo = más
-           translúcido). */
-      var midT = (typeof pts[Math.floor((s+e)/2)].t === 'number') ? pts[Math.floor((s+e)/2)].t : nowMs;
-      var ageMs = nowMs - midT;
-      var col, op;
-      if(ageMs < _TRK_FRESH_HOURS*3600000){
-        var frac=i/(segs-1||1);
-        var r=Math.round(220*(1-frac)+30*frac);
-        var g=Math.round(50*(1-frac)+220*frac);
-        col='rgb('+r+','+g+',50)';
-        op=0.95;
-      } else {
-        /* Gris progresivo: 4h → gris claro; 24h+ → gris tenue. */
-        var ageFrac = Math.min(1, (ageMs - _TRK_FRESH_HOURS*3600000) / (20*3600000));
-        var lightness = Math.round(160 - 80*ageFrac);
-        col = 'rgb(' + lightness + ',' + lightness + ',' + lightness + ')';
-        op = 0.6 - 0.25*ageFrac;
+    /* Handler común de click: encuentra el punto más cercano de pts y abre popup. */
+    function _openTrkPopup(latlng){
+      var best=-1, bestD=Infinity;
+      for(var kk=0; kk<pts.length; kk++){
+        var dLat = latlng.lat - pts[kk].ll[0];
+        var dLng = latlng.lng - pts[kk].ll[1];
+        var d = dLat*dLat + dLng*dLng;
+        if(d<bestD){ bestD=d; best=kk; }
       }
-      var ln=L.polyline(subPts,{pane:'trackPane',color:col,weight:5,opacity:op}).addTo(map);
-      window._trkGradLines.push(ln);
+      if(best<0) return;
+      var p = pts[best];
+      var when = (typeof p.t === 'number') ? new Date(p.t) : null;
+      var ageMinutes = when ? Math.round((Date.now()-p.t)/60000) : null;
+      var whenStr = when ? when.toLocaleString() : '?';
+      var ageStr = '';
+      if(ageMinutes!=null){
+        if(ageMinutes<1) ageStr = 'ahora mismo';
+        else if(ageMinutes<60) ageStr = 'hace '+ageMinutes+' min';
+        else if(ageMinutes<1440) ageStr = 'hace '+Math.round(ageMinutes/60)+' h';
+        else ageStr = 'hace '+Math.round(ageMinutes/1440)+' d';
+      }
+      L.popup({className:'trk-pt-popup',closeButton:true,autoClose:true})
+       .setLatLng([p.ll[0],p.ll[1]])
+       .setContent('<div style="font-size:14px;color:#222;line-height:1.4"><b style="color:#000">📍 Punto del track</b><br><span style="color:#444">'+whenStr+'</span><br><span style="color:#666">'+ageStr+'</span></div>')
+       .openOn(map);
+    }
+    /* Segmentos consecutivos con color según edad. */
+    for(var ii=0; ii<pts.length-1; ii++){
+      var pA = pts[ii], pB = pts[ii+1];
+      var midT = (typeof pA.t === 'number' && typeof pB.t === 'number')
+                  ? (pA.t + pB.t) / 2
+                  : (typeof pA.t === 'number' ? pA.t : nowMs);
+      var ageH = Math.max(0, (nowMs - midT) / 3600000);
+      var col = _trkColorForAgeH(ageH);
+      var seg = L.polyline([pA.ll, pB.ll],{
+        pane:'trackPane', color:col, weight:5, opacity:0.95
+      }).addTo(map);
+      seg.on('click', function(e){ _openTrkPopup(e.latlng); });
+      window._trkGradLines.push(seg);
+    }
+    /* Checkpoints: círculo en el primer punto de cada hora entera. */
+    var lastHourStamp = null;
+    for(var jj=0; jj<pts.length; jj++){
+      var pT = (typeof pts[jj].t === 'number') ? pts[jj].t : null;
+      if(pT == null) continue;
+      var hourStamp = Math.floor(pT / 3600000);
+      if(hourStamp === lastHourStamp) continue;
+      lastHourStamp = hourStamp;
+      var chAgeH = Math.max(0, (nowMs - pT) / 3600000);
+      var chCol = _trkColorForAgeH(chAgeH);
+      var dot = L.circleMarker(pts[jj].ll,{
+        pane:'trackPane', radius:5, color:'#fff', weight:1.5,
+        fillColor:chCol, fillOpacity:0.95
+      }).addTo(map);
+      dot.on('click', function(e){ _openTrkPopup(e.latlng); });
+      window._trkGradLines.push(dot);
     }
     _trkLastRenderedLen=pts.length;
     _trkLastFullRebuildMs=nowMs;
   }
-  // else: no growth, no full-rebuild due → skip silently.
+  /* Rev612 (fix bug feedback Carlos: "no hay conexión con el barco"):
+     el segmento puente último-punto → posición del barco se dibuja SIEMPRE
+     y se refresca en cada llamada a updateTrackGradient. Antes vivía dentro
+     del bloque fullRebuildDue (30 s) → el puente quedaba clavado en la
+     posición vieja del barco cuando la lista de puntos no crecía.
+     window._trkBridge se destruye y recrea; separado del array gradient
+     porque tiene ciclo de vida distinto. */
+  try {
+    if (window._trkBridge && map.hasLayer(window._trkBridge)){
+      map.removeLayer(window._trkBridge);
+    }
+    window._trkBridge = null;
+    if (typeof bPos === 'object' && bPos && typeof bPos.lat === 'number' && typeof bPos.lng === 'number' && pts.length){
+      var lastPt = pts[pts.length-1].ll;
+      window._trkBridge = L.polyline([[lastPt[0],lastPt[1]],[bPos.lat,bPos.lng]],{
+        pane:'trackPane',color:'rgb(30,220,50)',weight:5,opacity:0.95
+      }).addTo(map);
+    }
+  } catch(_){}
 }
+/* Rev610 Bloque C: sincronizar slider + checkbox con localStorage al arrancar. */
+(function _syncTrkUIFromStorage(){
+  function apply(){
+    var sl = document.getElementById('sl-trk-h');
+    var slv = document.getElementById('sl-trk-h-v');
+    if(sl){ sl.value = String(_trkLimitHours); }
+    if(slv){ slv.textContent = String(_trkLimitHours); }
+    var chk = document.getElementById('chk-trk');
+    if(chk) chk.checked = !!_trkOwnEnabled;
+    /* Rev611: reflejar aisTracksEnabled en el checkbox de Cartas. */
+    var chkAisTrk = document.getElementById('chk-ais-trk');
+    if(chkAisTrk && typeof aisTracksEnabled !== 'undefined') chkAisTrk.checked = !!aisTracksEnabled;
+  }
+  if(document.readyState === 'complete' || document.readyState === 'interactive') setTimeout(apply, 50);
+  else document.addEventListener('DOMContentLoaded', function(){ setTimeout(apply, 50); });
+})();
 /* Rev608: setter público del slider "límite horas". Persistente en localStorage.
    fullBuild=true fuerza rebuild inmediato del gradient. */
 function m_trkSetLimitHours(hours){
@@ -10107,6 +10286,14 @@ function loadAIS(){
           _clearAisDisappearedBanner();
           _addAisHighlight(_selT.lat,_selT.lng,false,!!_aisAckedMMSIs[_selectedAisMmsi],_selT.sog,_selT.isStatic);
         }else if(window._aisHighlight&&window._aisHighlight.length){
+          /* Rev616 fix (feedback Carlos: "hago ACK y el rojo no se desmarca"):
+             detectar si el estado ACK cambió respecto al aro dibujado. Si sí,
+             re-crear el aro para que el color se actualice. Antes solo movía
+             los rings y el color quedaba fijo. */
+          var _nowAcked = !!_aisAckedMMSIs[_selectedAisMmsi];
+          if(_nowAcked !== window._aisHighlightWasAcked){
+            _addAisHighlight(_selT.lat,_selT.lng,false,_nowAcked,_selT.sog,_selT.isStatic);
+          } else {
           /* Still visible: reposition rings so they follow the target */
           window._aisHighlight.forEach(function(l){if(l.setLatLng)l.setLatLng([_selT.lat,_selT.lng]);});
           /* Rev400: actualizar texto del label de distancia (ultimo marker del array).
@@ -10125,6 +10312,7 @@ function loadAIS(){
               }
             }
           }catch(_){}
+          } /* cierra else del if(_nowAcked !== window._aisHighlightWasAcked) — Rev616 */
         }else{
           /* Edge: selection set but highlight missing — recreate */
           _addAisHighlight(_selT.lat,_selT.lng,false,!!_aisAckedMMSIs[_selectedAisMmsi],_selT.sog,_selT.isStatic);
@@ -10358,7 +10546,13 @@ function _aisSelLabelInnerHTML(dTxt, sogKn, isStatic){
 function _addAisHighlight(lat,lng,isBorneo,isAcked,sogKn,isStatic){
   if(window._aisHighlight){try{window._aisHighlight.forEach(function(l){map.removeLayer(l);});}catch(e){}}
   window._aisHighlight=[];
-  var hlColor=(isBorneo&&!isAcked)?'#ff1744':'#f44336';
+  /* Rev616 (feedback Carlos: "hago ACK y el círculo rojo no se desmarca"):
+     tras ACK el aro pasa a NARANJA (coherente con los rings borneo). Antes
+     salía rojo apagado, indistinguible del rojo de alarma. */
+  var hlColor = (isBorneo && !isAcked) ? '#ff1744'
+              : (isAcked ? '#ff9800' : '#f44336');
+  window._aisHighlightWasAcked = !!isAcked;
+  window._aisHighlightWasBorneo = !!isBorneo;
   var c1=L.circle([lat,lng],{radius:25,color:hlColor,fillColor:hlColor,fillOpacity:0.08,weight:3,dashArray:'8,4'}).addTo(map);
   var c2=L.circle([lat,lng],{radius:10,color:hlColor,fillColor:hlColor,fillOpacity:0.15,weight:2}).addTo(map);
   var c3=L.circleMarker([lat,lng],{radius:4,color:hlColor,fillColor:hlColor,fillOpacity:1,weight:0}).addTo(map);
@@ -10469,7 +10663,13 @@ function showAisPopup(t,isBorneo){
   var vfBtn='<button class="btn-ack ais-action-btn" style="background:rgba(56,142,60,.55)" onclick="window.open(\''+_vfUrl+'\',\'_blank\',\'noopener\')">🔍 vesselfinder</button>';
   var actionsEl=document.getElementById('ais-pop-actions');
   if(actionsEl){
-    if(isBorneo&&!isAcked){
+    /* Rev617 (feedback Carlos "me ha pedido ACK sin tener alarma AIS
+       activada"): si la alarma AIS está OFF, NUNCA mostrar botón ACK ni
+       "Quitar ACK" — no tiene sentido silenciar/rearmar una alarma que ni
+       siquiera está sonando. Solo localizar + vesselfinder. */
+    if(!aisAlarmEnabled){
+      actionsEl.innerHTML=locateBtn+vfBtn;
+    } else if(isBorneo&&!isAcked){
       actionsEl.innerHTML=locateBtn+vfBtn+'<button class="btn-ack ais-action-btn" onclick="ackAisTarget(\''+cleanMmsi+'\')">ACK ✓</button>';
     } else if(isAcked){
       actionsEl.innerHTML=locateBtn+vfBtn+'<button class="btn-ack ais-action-btn" style="background:#ff9800" onclick="unackAisTarget(\''+cleanMmsi+'\')">'+T('quitar_ack')+'</button>';
@@ -10489,9 +10689,13 @@ function showAisPopup(t,isBorneo){
   var closingHtml='';
   if(closingRate!==null&&closingRate>3){closingHtml='<div class="ap-row"><span>'+T('ais_acercamiento','Acercamiento:')+'</span><b style="color:var(--red)">⚠ '+unitFmt.shortDistance(closingRate,1)+'/min</b></div>';}
   /* Estimate target anchor position from track */
-  var anchorEst=estimateAnchor(cleanMmsi);
+  /* Rev625: pasar target completo. Muestra r + eslora en el popup. */
+  var anchorEst=estimateAnchor(t);
   var anchorHtml='';
-  if(anchorEst){anchorHtml='<div class="ap-row"><span>'+T('ais_ancla_est','Ancla est.:')+'</span><b style="color:var(--org)">r≈'+unitFmt.shortDistance(anchorEst.radius,0)+' ('+anchorEst.points+' '+T('ais_pts','pts')+')</b></div>';}
+  if(anchorEst){
+    var eslL = unitFmt.shortDistance(anchorEst.esloraM,0);
+    anchorHtml='<div class="ap-row"><span>'+T('ais_ancla_est','Ancla est.:')+'</span><b style="color:var(--org)">r≈'+unitFmt.shortDistance(anchorEst.radius,0)+' <small style="color:#aaa;font-weight:400">(borneo '+unitFmt.shortDistance(anchorEst.swingObservedM,0)+' + eslora '+eslL+')</small></b></div>';
+  }
   /* Rev349: F2 — tipo de barco + emoji. Renderiza solo si shipType reconocido. */
   var _ti = (typeof _aisTypeInfo==='function') ? _aisTypeInfo(t.shipType) : null;
   /* Rev388: indicador "cache" por cada campo rellenado desde aisKnownDB.
@@ -10650,23 +10854,60 @@ function getClosingRate(mmsi, ownSogKt, targetSogKt){
   if(Math.abs(rate)>200)return null;/* Rev361: cap defensivo — más allá es siempre ruido */
   return rate;
 }
-/* Estimate anchor position from track history (centroid of static positions) */
-function estimateAnchor(mmsi){
-  var hist=aisTrackHist[mmsi]||aisTrackHist['urn:mrn:imo:mmsi:'+mmsi];
-  if(!hist||hist.length<8)return null;
-  /* Use last 30min of data for stable estimate */
-  var now=Date.now(),recent=hist.filter(function(h){return(now-h.t)<1800000;});
-  if(recent.length<8)return null;
-  /* Centroid = approximate anchor position */
-  var sumLat=0,sumLng=0;
-  recent.forEach(function(h){sumLat+=h.lat;sumLng+=h.lng;});
-  var cLat=sumLat/recent.length,cLng=sumLng/recent.length;
-  /* Max distance from centroid = approximate swing radius */
-  var maxR=0;
-  recent.forEach(function(h){var d=hav({lat:cLat,lng:cLng},{lat:h.lat,lng:h.lng});if(d>maxR)maxR=d;});
-  /* Reject if swing radius is unreasonably large (>200m = probably not anchored) */
-  if(maxR>200||maxR<2)return null;
-  return{lat:cLat,lng:cLng,radius:maxR,points:recent.length};
+/* Rev625 (feedback Carlos "estimación mentira; considerar variabilidad de
+   borneo + eslora"): estimación de ancla para OTROS AIS estáticos. Firma
+   nueva: acepta el target completo (t) para leer eslora y SOG actual.
+   Cambios clave respecto al legacy:
+     - Mínimo 4 puntos (antes 8) → aparece antes.
+     - Ventana 3 h (antes 30 min) → estimación más estable.
+     - Descarta si el target NO parece fondeado (SOG > 0.5 kn).
+     - Descarta si el desplazamiento NETO primer→último > 200 m
+       (target en tránsito, no fondeado en el sitio).
+     - Radio de borneo = P90 del histograma de distancias al centroide
+       + eslora del target + 5 m margen. P90 en vez de max para no
+       inflar el radio con un único outlier GPS.
+     - Rechaza radios > 300 m como no plausibles.
+   Devuelve {lat, lng, radius, points, esloraM, swingObservedM, sourceSogKt}. */
+function estimateAnchor(t){
+  if(!t) return null;
+  var cleanMmsi = (t.mmsi||'').replace(/^urn:mrn:imo:mmsi:/,'').replace(/^urn:mrn:signalk:uuid:/,'');
+  if(!cleanMmsi) return null;
+  var hist = aisTrackHist[cleanMmsi] || aisTrackHist['urn:mrn:imo:mmsi:'+cleanMmsi];
+  if(!hist || hist.length < 4) return null;
+  /* SOG del target en kn. t.sog viene en m/s en SK. Umbral 0.5 kn ≈ deriva GPS. */
+  var sogKn = (typeof t.sog === 'number') ? (t.sog * 1.94384) : 0;
+  if(sogKn > 0.5) return null;
+  /* Ventana 3 h. */
+  var now = Date.now();
+  var recent = hist.filter(function(h){ return (now - h.t) < 3*3600000; });
+  if(recent.length < 4) return null;
+  /* Descartar si drift neto primer→último es demasiado grande. */
+  var first = recent[0], last = recent[recent.length-1];
+  var netDrift = hav({lat:first.lat,lng:first.lng},{lat:last.lat,lng:last.lng});
+  if(netDrift > 200) return null;
+  /* Centroide. */
+  var sumLat=0, sumLng=0;
+  recent.forEach(function(h){ sumLat += h.lat; sumLng += h.lng; });
+  var cLat = sumLat/recent.length, cLng = sumLng/recent.length;
+  /* Distancias al centroide. P90 = radio de borneo observado robusto. */
+  var dists = recent.map(function(h){ return hav({lat:cLat,lng:cLng},{lat:h.lat,lng:h.lng}); });
+  dists.sort(function(a,b){ return a-b; });
+  var p90Index = Math.max(0, Math.floor(dists.length * 0.9) - 1);
+  var swingObservedM = dists[p90Index];
+  /* Eslora. Fallback: 12 m (yate típico). */
+  var eslora = (typeof t.length === 'number' && t.length > 0) ? t.length : 12;
+  /* Radio efectivo = swing observado + eslora + 5 m margen. */
+  var radius = swingObservedM + eslora + 5;
+  /* Radios descomunales indican error de datos, no fondeo. */
+  if(radius > 300) return null;
+  /* Umbral mínimo del radio para no dibujar cosas ridículas. */
+  if(radius < eslora + 5) radius = eslora + 5;
+  return {
+    lat: cLat, lng: cLng, radius: radius,
+    points: recent.length, esloraM: eslora,
+    swingObservedM: swingObservedM,
+    sourceSogKt: sogKn,
+  };
 }
 function showNextBorneoTarget(){
   if(!aisTargets||!aisTargets.length||!anch||!aPos)return;
@@ -10810,7 +11051,12 @@ function checkAisBorneoAlarm(targets){
          doesn't broadcast it — typical pleasure boat / Class B). Mirrors backend. */
       var targetLen=(typeof t.length==='number'&&t.length>0)?t.length:10;
       var alR=baseAlR+targetLen;
-      var inB=anch&&aPos&&d<alR;
+      /* Rev613 (feedback Carlos: "cuando NO hay alarma AIS no debe haber
+         controles ACK ni círculos rojos"): si la alarma AIS está desactivada,
+         el target no se considera "en zona de alarma" a efectos VISUALES.
+         El cálculo de garreo/ACK queda inhibido — sólo se muestra la lista
+         limpia con distancia, sin adornos de vigilancia. */
+      var inB=anch&&aPos&&d<alR&&aisAlarmEnabled;
       var ackTs=_aisAckedMMSIs[cleanMmsi];
       var acked=!!ackTs;
       var targetSogKt=(typeof t.sog==='number')?t.sog:null;
@@ -10856,11 +11102,15 @@ function checkAisBorneoAlarm(targets){
           _aisBorneoRings.addLayer(L.circle([t.lat,t.lng],{radius:25,color:ringCol,fillColor:ringCol,fillOpacity:0.06,weight:acked?2:3,dashArray:'8,4'}));
         }
       }
-      if(t.isStatic&&_aisBorneoRings){
-        var est=estimateAnchor(cleanMmsi);
+      /* Rev626 (feedback Carlos: "solo AIS en nuestra área de 250m alrededor
+         nuestra"): guard espacial. La estimación de ancla ajena solo se
+         calcula/pinta si el target está a menos de 250 m del barco propio.
+         Evita ruido visual y trabajo CPU en zonas con muchos AIS lejanos. */
+      if(d < 250){
+        var est=estimateAnchor(t);
         if(est){
-          _aisBorneoRings.addLayer(L.circle([est.lat,est.lng],{radius:est.radius,color:'#ff9800',fillColor:'#ff9800',fillOpacity:0.03,weight:2,dashArray:'6,6'}));
-          _aisBorneoRings.addLayer(L.circleMarker([est.lat,est.lng],{radius:3,color:'#ff9800',fillColor:'#ff9800',fillOpacity:0.8,weight:0}));
+          _aisBorneoRings.addLayer(L.circle([est.lat,est.lng],{radius:est.radius,color:'#ff9800',fillColor:'#ff9800',fillOpacity:0.04,weight:2,dashArray:'6,6'}));
+          _aisBorneoRings.addLayer(L.circleMarker([est.lat,est.lng],{radius:4,color:'#ff9800',fillColor:'#ff9800',fillOpacity:0.9,weight:0}));
         }
       }
     }
@@ -13388,7 +13638,8 @@ function _updateBBWindCell(){
       if (_dispGust != null) {
         var _gMs = _dispGust / 1.94384;
         var _gStr = unitFmt.speed(_gMs, 0);
-        gustEl.textContent = '(' + (_lang === 'en' ? 'gust' : 'racha') + ' ' + _gStr + ')';
+        /* Rev615 (feedback Carlos: "Racha no está con Mayúsculas"). */
+        gustEl.textContent = '(' + (_lang === 'en' ? 'Gust' : 'Racha') + ' ' + _gStr + ')';
         gustEl.style.color = _dispGust > 25 ? '#e74c3c' : (_dispGust > 16 ? '#f39c12' : '#cde');
       } else {
         gustEl.textContent = '';
@@ -13537,6 +13788,13 @@ function m_toggleSecurityLayer(){
 }
 
 /* Cerrar sesión PIN (limpia cookie en backend). */
+/* Rev626 (feedback Carlos): descartar banner de solo lectura sin meter PIN.
+   Sólo por sesión. El candado sigue naranja = "sin autorizar". */
+function m_bannerDismiss(){
+  try { sessionStorage.setItem('ihm-banner-dismissed','1'); } catch(_){}
+  var banner = document.getElementById('m-access-banner');
+  if(banner) banner.style.display = 'none';
+}
 function m_pinLock(){
   fetch('/signalk-mareas-ihm/api/access/pin-lock',{
     method:'POST',credentials:'include',cache:'no-store',
@@ -13664,7 +13922,8 @@ function m_pinSubmit(){
     fetch('/signalk-mareas-ihm/api/access/pin-change-pwd',{
       method:'POST',credentials:'include',cache:'no-store',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({alias:_pinChangeAlias, newPin:pin}),
+      /* Rev623: currentPin sólo se envía cuando cambio el propio maestro. */
+      body:JSON.stringify({alias:_pinChangeAlias, newPin:pin, currentPin:_pinChangeCurrentPin||''}),
     }).then(function(r){return r.json().then(function(j){return {status:r.status,body:j};});})
       .then(function(res){
         if(res.status === 200 && res.body && res.body.ok){
@@ -13796,7 +14055,7 @@ var _pinJustCreatedAlias = null;
 /* Rev589 Bloque A: lista enriquecida con nivel, notas, caducidad + edición. */
 var _pinListCache = []; /* última lista cargada, usada por edit modal. */
 function m_loadPinsList(){
-  var host = document.getElementById('m-cfg-pins-list');
+  var host = document.getElementById('m-uc-pins-list');
   if(!host) return;
   fetch('/signalk-mareas-ihm/api/access/pins',{
     credentials:'include',cache:'no-store',
@@ -13825,31 +14084,60 @@ function m_loadPinsList(){
         var expChip = '';
         if(typeof p.expiresMs === 'number' && p.expiresMs > 0){
           if(p.expiresMs < nowMs){
-            expChip = '<span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(229,57,53,.18);color:#ff8a80;border:1px solid #e53935;margin-left:6px">' + T('pin_expired_chip') + '</span>';
+            expChip = '<span style="display:inline-block;font-size:20px;font-weight:700;padding:4px 12px;border-radius:12px;background:rgba(229,57,53,.18);color:#ff8a80;border:1px solid #e53935;margin-left:8px">' + T('pin_expired_chip') + '</span>';
           } else {
             var days = Math.max(1, Math.round((p.expiresMs - nowMs)/86400000));
-            expChip = '<span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(255,178,63,.14);color:#ffb23f;border:1px solid #ffb23f;margin-left:6px">⏳ ' + days + 'd</span>';
+            expChip = '<span style="display:inline-block;font-size:20px;font-weight:700;padding:4px 12px;border-radius:12px;background:rgba(255,178,63,.14);color:#ffb23f;border:1px solid #ffb23f;margin-left:8px">⏳ ' + days + 'd</span>';
           }
         }
         var notesLine = '';
         if(p.notes){
-          notesLine = '<div style="font-size:13px;color:#bbb;font-style:italic;margin-top:2px">' + String(p.notes).replace(/[<>&"]/g,'') + '</div>';
+          notesLine = '<div style="font-size:20px;color:#c8ccd4;font-style:italic;margin-top:4px">' + String(p.notes).replace(/[<>&"]/g,'') + '</div>';
         }
-        /* Botones por rol. */
+        /* Rev622 (feedback Carlos): botones también para el maestro (sólo
+           ✏️ editar, sin 🗑 borrar). */
         var btns = '';
+        var escAlias = alias.replace(/\'/g,"\\'");
         if(p.isMaster){
-          btns = '<span style="opacity:.5;font-size:12px" data-i18n="pin_master_protected">' + T('pin_master_protected') + '</span>';
+          btns = '<button onclick="m_pinEditOpen(\'' + escAlias + '\')" style="padding:14px 20px;background:rgba(255,213,79,.18);border:1.5px solid #ffd54f;color:#ffd54f;border-radius:10px;font-weight:800;cursor:pointer;font-size:22px">✏️</button>';
         } else {
-          var escAlias = alias.replace(/\'/g,"\\'");
           btns = '<div style="display:flex;gap:6px">'
-               +   '<button onclick="m_pinEditOpen(\'' + escAlias + '\')" style="padding:8px 12px;background:rgba(154,170,221,.18);border:1px solid #9ad;color:#9ad;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px">✏️</button>'
-               +   '<button onclick="m_pinDeleteEntry(\'' + escAlias + '\')" style="padding:8px 12px;background:rgba(229,57,53,.18);border:1px solid #e53935;color:#ff8a80;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px">🗑</button>'
+               +   '<button onclick="m_pinEditOpen(\'' + escAlias + '\')" style="padding:14px 20px;background:rgba(154,170,221,.18);border:1.5px solid #9ad;color:#9ad;border-radius:10px;font-weight:800;cursor:pointer;font-size:22px">✏️</button>'
+               +   '<button onclick="m_pinDeleteEntry(\'' + escAlias + '\')" style="padding:14px 20px;background:rgba(229,57,53,.18);border:1.5px solid #e53935;color:#ff8a80;border-radius:10px;font-weight:800;cursor:pointer;font-size:22px">🗑</button>'
                + '</div>';
         }
-        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 6px;border-bottom:1px solid rgba(255,255,255,.08)">'
+        /* Rev621: 3 líneas — Creado / Validez hasta / Último acceso. */
+        var validityLine = '';
+        if(!p.isMaster){
+          if(typeof p.expiresMs === 'number' && p.expiresMs > 0){
+            var vDate = '';
+            try { vDate = new Date(p.expiresMs).toLocaleDateString(); } catch(_){}
+            validityLine = '<div style="opacity:.65;font-size:20px;margin-top:4px">' + T('pin_row_validity') + ': ' + vDate + '</div>';
+          } else {
+            validityLine = '<div style="opacity:.65;font-size:20px;margin-top:4px">' + T('pin_row_validity') + ': ' + T('pin_row_no_expiry') + '</div>';
+          }
+        }
+        var lastAccessLine = '';
+        if(typeof p.lastAccessMs === 'number' && p.lastAccessMs > 0){
+          var laStr = '';
+          try { laStr = new Date(p.lastAccessMs).toLocaleString(); } catch(_){}
+          lastAccessLine = '<div style="opacity:.65;font-size:20px;margin-top:4px">' + T('pin_row_last_access') + ': ' + laStr + '</div>';
+        } else if(!p.isMaster) {
+          lastAccessLine = '<div style="opacity:.55;font-size:20px;margin-top:4px;font-style:italic">' + T('pin_row_last_access') + ': ' + T('pin_row_never') + '</div>';
+        }
+        /* Rev622 (feedback Carlos "no hay forma de editar mi master"):
+           tanto maestro como invitados clickables. El maestro con dorado
+           (ffd54f) para que se note que es tu cuenta principal. */
+        var escAliasClick = alias.replace(/\'/g,"\\'");
+        var nameColor = p.isMaster ? '#ffd54f' : '#fff';
+        var nameStyle = 'font-weight:700;color:' + nameColor + ';font-size:26px;line-height:1.25;cursor:pointer;text-decoration:underline dotted;text-underline-offset:4px';
+        var nameOnclick = ' onclick="m_pinEditOpen(\'' + escAliasClick + '\')"';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 8px;border-bottom:1px solid rgba(255,255,255,.08)">'
               +   '<div style="flex:1;min-width:0">'
-              +     '<div style="font-weight:700;color:#fff;font-size:16px">' + icon + ' ' + alias + ' · ' + roleLabel + levelChip + expChip + '</div>'
-              +     (created ? '<div style="opacity:.6;font-size:13px;margin-top:2px">' + T('pin_edit_created') + ': ' + created + '</div>' : '')
+              +     '<div' + nameOnclick + ' style="' + nameStyle + '">' + icon + ' ' + alias + ' · ' + roleLabel + levelChip + expChip + '</div>'
+              +     (created ? '<div style="opacity:.65;font-size:20px;margin-top:6px">' + T('pin_edit_created') + ': ' + created + '</div>' : '')
+              +     validityLine
+              +     lastAccessLine
               +     notesLine
               +   '</div>'
               +   btns
@@ -13861,7 +14149,7 @@ function m_loadPinsList(){
 
 /* Rev594: lista de sesiones PIN activas (solo maestro). */
 function m_loadSessionsList(){
-  var host = document.getElementById('m-cfg-sessions-list');
+  var host = document.getElementById('m-uc-sessions-list');
   if(!host) return;
   if(!(_accessCtx.unlocked && _accessCtx.isMaster)){ host.innerHTML=''; return; }
   fetch('/signalk-mareas-ihm/api/access/sessions',{credentials:'include',cache:'no-store'})
@@ -13878,13 +14166,13 @@ function m_loadSessionsList(){
         var device = String(s.device||'?').replace(/[<>&"]/g,'');
         var ip = String(s.ip||'?').replace(/[<>&"]/g,'');
         var icon = s.isMaster ? '👑' : '👤';
-        var meBadge = s.isMe ? '<span style="color:#3aa856;font-weight:700;margin-left:6px">' + T('cfg_sessions_me') + '</span>' : '';
+        var meBadge = s.isMe ? '<span style="color:#3aa856;font-weight:700;margin-left:8px;font-size:22px">' + T('cfg_sessions_me') + '</span>' : '';
         /* Rev606 (feedback Carlos: "cómo me revoco a mí mismo siendo
            maestro"): nunca mostrar botón Revocar para sesiones del maestro.
            Sólo hay un alias maestro; revocar otra sesión maestro sería
            revocarte a ti mismo. Las propias del maestro tampoco. */
         var revokeBtn = (s.isMe || s.isMaster) ? ''
-          : '<button onclick="m_revokeSession(\'' + s.tokenShort + '\')" style="padding:6px 12px;background:rgba(229,57,53,.18);border:1px solid #e53935;color:#ff8a80;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px" data-i18n="cfg_sessions_revoke">Revocar</button>';
+          : '<button onclick="m_revokeSession(\'' + s.tokenShort + '\')" style="padding:12px 20px;background:rgba(229,57,53,.18);border:1.5px solid #e53935;color:#ff8a80;border-radius:8px;font-weight:800;cursor:pointer;font-size:20px" data-i18n="cfg_sessions_revoke">Revocar</button>';
         /* Rev604 (feedback Carlos "1427 min, dame horas"): formato
            horas/minutos según duración:
              > 180 días → "Sin caducidad"
@@ -13905,11 +14193,13 @@ function m_loadSessionsList(){
           var minLeft = Math.max(0, Math.round(msLeft / 60000));
           ttlLine = T('cfg_sessions_min_left').replace('{N}', minLeft);
         }
-        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.06)">'
+        /* Rev620 fix (feedback Carlos "sigue enano"): tamaños subidos +50%.
+           Los inline styles ganan al CSS externo, así que hay que subirlos aquí. */
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 8px;border-bottom:1px solid rgba(255,255,255,.06)">'
               +   '<div style="flex:1;min-width:0">'
-              +     '<div style="color:#fff;font-weight:700">' + icon + ' ' + alias + meBadge + '</div>'
-              +     '<div style="opacity:.7;font-size:12px;margin-top:2px">' + device + ' · ' + ip + '</div>'
-              +     '<div style="opacity:.6;font-size:12px">' + ttlLine + '</div>'
+              +     '<div style="color:#fff;font-weight:700;font-size:24px">' + icon + ' ' + alias + meBadge + '</div>'
+              +     '<div style="opacity:.8;font-size:20px;margin-top:4px">' + device + ' · ' + ip + '</div>'
+              +     '<div style="opacity:.75;font-size:20px">' + ttlLine + '</div>'
               +   '</div>'
               +   revokeBtn
               + '</div>';
@@ -13936,10 +14226,19 @@ var _pinEditExpiryMs = null;
 function m_pinEditOpen(alias){
   var p = _pinListCache.find(function(x){return x.alias === alias;});
   if(!p) return;
-  if(p.isMaster) return;
+  /* Rev622: se admite abrir ficha del maestro (para cambiar notas y PIN).
+     La sección Validez se oculta porque el maestro nunca caduca. */
   _pinEditingAlias = alias;
   var header = document.getElementById('m-pin-edit-header');
-  if(header) header.textContent = '👤 ' + alias;
+  if(header) header.textContent = (p.isMaster ? '👑 ' : '👤 ') + alias + (p.isMaster ? ' · ' + T('pin_role_master') : '');
+  /* Ocultar/mostrar sección Validez según rol. */
+  var expiryLabel = document.querySelector('#m-pin-edit-pop [data-i18n="pin_expiry_label"]');
+  var expiryButtonsWrap = expiryLabel ? expiryLabel.nextElementSibling : null;
+  var expiryStatus = document.getElementById('m-pin-edit-expiry-status');
+  var displayExpiry = p.isMaster ? 'none' : '';
+  if(expiryLabel) expiryLabel.style.display = displayExpiry;
+  if(expiryButtonsWrap) expiryButtonsWrap.style.display = displayExpiry === 'none' ? 'none' : 'flex';
+  if(expiryStatus) expiryStatus.style.display = displayExpiry === 'none' ? 'none' : 'block';
   /* Rev603: mostrar PIN actual si el backend lo envió (solo a sesión maestro). */
   var wrap = document.getElementById('m-pin-edit-currentpin-wrap');
   var pinEl = document.getElementById('m-pin-edit-currentpin');
@@ -14001,9 +14300,23 @@ function m_pinEditSave(){
 function m_pinEditChangePwd(){
   if(!_pinEditingAlias) return;
   var alias = _pinEditingAlias;
+  /* Rev623 (feedback Carlos "meter el antiguo, el master no puede cambiarse
+     por cualquiera"): si el alias a cambiar es el propio maestro autenticado,
+     pedir primero su PIN actual (modo 'check') y luego abrir change-pwd
+     con currentPin capturado. Para invitados, el maestro decide sin más. */
+  var isMasterTarget = !!(_accessCtx && _accessCtx.isMaster && _accessCtx.alias === alias);
   closePopup('m-pin-edit-pop');
-  m_pinOpen('change-pwd', null, { changeAlias:alias });
+  if(isMasterTarget){
+    m_pinOpen('check', function(currentPin){
+      _pinChangeCurrentPin = currentPin || '';
+      m_pinOpen('change-pwd', null, { changeAlias:alias });
+    }, { requireMaster:true });
+  } else {
+    _pinChangeCurrentPin = '';
+    m_pinOpen('change-pwd', null, { changeAlias:alias });
+  }
 }
+var _pinChangeCurrentPin = '';
 
 /* Borrar PIN invitado. Requiere sesión maestro. */
 function m_pinDeleteEntry(alias){
@@ -14053,48 +14366,61 @@ function m_applyAccessState(){
   var ico = document.getElementById('m-sb-access-ico');
   var lbl = document.getElementById('m-sb-access-lbl');
   if(btn && ico && lbl){
+    /* Rev624 (feedback Carlos: "en fondos claros no se ve"): fondo sólido
+       oscuro SIEMPRE. El estado se distingue por color del icono/texto,
+       borde y glow. Así el candado se ve igual sobre mar, tierra, cartas
+       claras o satélite. */
+    var _SOLID_BG = 'rgba(10,25,45,.92)';
     if(!_secLayerEnabled){
-      /* Capa OFF: discreto, gris. */
       ico.textContent = '🔓';
       lbl.textContent = 'OFF';
-      btn.style.color = '#888';
-      btn.style.background = '';
-      btn.style.borderColor = '';
+      btn.style.color = '#c8ccd4';
+      btn.style.background = _SOLID_BG;
+      btn.style.borderColor = 'rgba(255,255,255,.35)';
       btn.style.boxShadow = '';
     } else if(!_accessCtx.unlocked){
-      /* Capa ON sin sesión: NARANJA llamativo + pulse. */
       ico.textContent = '🔒';
       lbl.textContent = 'PIN';
       btn.style.color = '#ffb23f';
-      btn.style.background = 'rgba(255,178,63,.22)';
+      btn.style.background = _SOLID_BG;
       btn.style.borderColor = '#ffb23f';
-      btn.style.boxShadow = '0 0 12px rgba(255,178,63,.55)';
+      btn.style.boxShadow = '0 0 14px rgba(255,178,63,.65)';
     } else if(_accessCtx.isMaster) {
-      /* Maestro autenticado: AMARILLO con corona. */
       ico.textContent = '👑';
       lbl.textContent = (_accessCtx.alias || 'OK').substr(0,6);
       btn.style.color = '#ffd54f';
-      btn.style.background = 'rgba(255,213,79,.18)';
+      btn.style.background = _SOLID_BG;
       btn.style.borderColor = '#ffd54f';
-      btn.style.boxShadow = '0 0 8px rgba(255,213,79,.35)';
+      btn.style.boxShadow = '0 0 10px rgba(255,213,79,.45)';
     } else {
-      /* Invitado autenticado: VERDE. */
       ico.textContent = '🔓';
       lbl.textContent = (_accessCtx.alias || 'OK').substr(0,6);
-      btn.style.color = '#3aa856';
-      btn.style.background = 'rgba(58,168,86,.15)';
-      btn.style.borderColor = '#3aa856';
-      btn.style.boxShadow = '0 0 6px rgba(58,168,86,.30)';
+      btn.style.color = '#4ade80';
+      btn.style.background = _SOLID_BG;
+      btn.style.borderColor = '#4ade80';
+      btn.style.boxShadow = '0 0 8px rgba(74,222,128,.40)';
     }
   }
-  /* 2. Banner solo-lectura */
+  /* 2. Banner solo-lectura.
+     Rev626: se puede descartar con ✕ para no molestar. El candado sidebar
+     sigue mostrando "🔒 PIN" naranja como recordatorio. El descarte es
+     sólo por sesión (sessionStorage) — al recargar el visor vuelve a
+     aparecer. Y se auto-cancela cuando el usuario mete PIN o desactivo
+     la capa. */
   var banner = document.getElementById('m-access-banner');
   if(banner){
-    banner.style.display = (_secLayerEnabled && !_accessCtx.unlocked) ? 'block' : 'none';
+    var shouldShow = _secLayerEnabled && !_accessCtx.unlocked;
+    var dismissed = false;
+    try { dismissed = sessionStorage.getItem('ihm-banner-dismissed')==='1'; } catch(_){}
+    if(!shouldShow){
+      /* Estado cambió: limpia el flag para que si vuelve a activarse aparezca. */
+      try { sessionStorage.removeItem('ihm-banner-dismissed'); } catch(_){}
+    }
+    banner.style.display = (shouldShow && !dismissed) ? 'block' : 'none';
   }
   /* 3. Switch Configuración */
-  var cfgBtn = document.getElementById('m-cfg-access-toggle');
-  var cfgSt  = document.getElementById('m-cfg-access-state');
+  var cfgBtn = document.getElementById('m-uc-access-toggle');
+  var cfgSt  = document.getElementById('m-uc-access-state');
   if(cfgBtn){
     /* Rev599: masculino "Activado/Desactivado" — es el CONTROL, no la CAPA. */
     if(_secLayerEnabled){
@@ -14129,7 +14455,7 @@ function m_applyAccessState(){
     cfgSt.textContent = line;
   }
   /* 4. Botón "Cerrar sesión PIN" (visible solo si unlocked) */
-  var logoutBtn = document.getElementById('m-cfg-pin-logout');
+  var logoutBtn = document.getElementById('m-uc-pin-logout');
   if(logoutBtn) logoutBtn.style.display = _accessCtx.unlocked ? 'inline-block' : 'none';
   /* 5. Rev593: bloque PIN de control con 3 estados internos.
      - Bloque entero: visible salvo si soy INVITADO autenticado (no necesita
@@ -14138,9 +14464,9 @@ function m_applyAccessState(){
        PINs (escenario primera instalación).
      - loginprompt (botón "Introducir PIN"): visible si hay PINs y NO estoy
        autenticado — punto de entrada que ANTES faltaba (bug Carlos QA). */
-  var accessBlock = document.getElementById('m-cfg-access-block');
-  var accessAdmin = document.getElementById('m-cfg-access-admin');
-  var accessLogin = document.getElementById('m-cfg-access-loginprompt');
+  var accessBlock = document.getElementById('m-uc-access-block');
+  var accessAdmin = document.getElementById('m-uc-access-admin');
+  var accessLogin = document.getElementById('m-uc-access-loginprompt');
   var iAmGuest = _accessCtx.unlocked && !_accessCtx.isMaster;
   var iAmMaster = _accessCtx.unlocked && _accessCtx.isMaster;
   var noPins = !_accessCtx.hasPins;
@@ -14150,13 +14476,13 @@ function m_applyAccessState(){
   /* 6. Rev588/591: sección "Mi sesión PIN" siempre visible si unlocked
      (incluso invitados). Muestra caducidad para que el invitado sepa cuándo
      pierde el acceso. */
-  var sessionBlock = document.getElementById('m-cfg-session-block');
+  var sessionBlock = document.getElementById('m-uc-session-block');
   if(sessionBlock){
     if(_accessCtx.unlocked){
       sessionBlock.style.display = 'block';
-      var icon = document.getElementById('m-cfg-session-icon');
+      var icon = document.getElementById('m-uc-session-icon');
       if(icon) icon.textContent = _accessCtx.isMaster ? '👑' : '🔓';
-      var info = document.getElementById('m-cfg-session-info');
+      var info = document.getElementById('m-uc-session-info');
       if(info){
         var tpl = _accessCtx.isMaster ? T('cfg_session_master') : T('cfg_session_guest');
         info.textContent = tpl.replace('{ALIAS}', _accessCtx.alias || '?');
@@ -14164,7 +14490,7 @@ function m_applyAccessState(){
       /* Rev606: tiempo restante de sesión cookie (puede ser distinto de la
          caducidad del PIN). Se oculta al maestro (su sesión es persistente
          a efectos prácticos — 1 año). */
-      var ckEl = document.getElementById('m-cfg-session-cookie-ttl');
+      var ckEl = document.getElementById('m-uc-session-cookie-ttl');
       if(ckEl){
         var sms = _accessCtx.sessionExpiresMs;
         if(_accessCtx.isMaster || typeof sms !== 'number' || sms <= 0){
@@ -14186,7 +14512,7 @@ function m_applyAccessState(){
         }
       }
       /* Rev591: línea de caducidad. */
-      var expEl = document.getElementById('m-cfg-session-expiry');
+      var expEl = document.getElementById('m-uc-session-expiry');
       if(expEl){
         var ms = _accessCtx.expiresMs;
         if(typeof ms !== 'number' || ms <= 0){
@@ -14232,18 +14558,13 @@ function m_applyAccessState(){
     var btn = document.getElementById('m-sb-access');
     if(!btn) return;
     btn.addEventListener('click', function(){
-      /* Rev593: si hay PINs y no estoy autenticado, abrir directamente el
-         modal PIN (sin importar si la capa está ON u OFF). Antes solo se
-         abría si la capa estaba ON, lo que dejaba al usuario sin entrada
-         cuando había PINs pero capa OFF. */
+      /* Rev623 (feedback Carlos "el candado te lleva aún a Configuración"):
+         si hay PINs y no estoy autenticado → modal PIN; si estoy autenticado
+         → abrir Control de usuarios (modal propio) en lugar de Config. */
       if(_accessCtx.hasPins && !_accessCtx.unlocked){
         m_pinOpen('check');
-      } else if(typeof m_openConfig === 'function'){
-        m_openConfig();
-        setTimeout(function(){
-          var sec = document.querySelector('[data-i18n="cfg_access"]');
-          if(sec && sec.scrollIntoView) sec.scrollIntoView({behavior:'smooth',block:'start'});
-        }, 150);
+      } else if(typeof m_openUserControl === 'function'){
+        m_openUserControl();
       }
     });
   }
