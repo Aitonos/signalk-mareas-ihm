@@ -6793,6 +6793,46 @@ function _ihmShowBanner(msg, kind){
   }
 }
 function _ihmHideBanner(){ if (_ihmBannerEl) _ihmBannerEl.style.display = 'none'; }
+/* Rev645 (bug crítico confirmado por Pablo+ChatGPT): el plugin oficial
+   @signalk/set-system-time corrompe el IMU cada 60 s en instalaciones
+   OpenPlotter con internet. Cuando el backend detecta que está activo,
+   el visor pinta un banner AMARILLO permanente (bajo el banner rojo de
+   desconexión si coincide) con instrucciones de desactivarlo. El usuario
+   puede cerrarlo por sesión con la X — se re-mostrará al recargar mientras
+   siga activo. Ver docs/memoria: project_bug_imu_60s_clock_glitch.md. */
+var _stsBannerEl = null;
+var _stsBannerDismissed = false;
+try{ _stsBannerDismissed = (sessionStorage.getItem('ihm-sts-dismissed') === '1'); }catch(_){}
+function _ihmShowStsBanner(){
+  if (_stsBannerDismissed) return;
+  try {
+    if (!_stsBannerEl){
+      _stsBannerEl = document.createElement('div');
+      _stsBannerEl.id = 'ihm-sts-banner';
+      _stsBannerEl.style.cssText = 'position:fixed;top:56px;left:0;right:0;z-index:2147483646;'
+        + 'padding:10px 44px 10px 18px;text-align:center;font-weight:700;font-size:14px;line-height:1.35;'
+        + 'color:#000;background:#ffc107;box-shadow:0 4px 12px rgba(0,0,0,.55);'
+        + 'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+      var msg = (_lang==='en')
+        ? '⚠ SignalK plugin "Set System Time" is ACTIVE. It corrupts the IMU every 60 s (phantom "Fuerte" waves, jerky attitude). Disable it in SignalK → Server → Plugin Config → "Set System Time" → OFF, then restart SK.'
+        : '⚠ El plugin de SignalK "Set System Time" está ACTIVO. Corrompe el IMU cada 60 s ("Fuerte" fantasma, saltos de actitud). Desactívalo en SignalK → Server → Plugin Config → "Set System Time" → OFF y reinicia SK.';
+      _stsBannerEl.textContent = msg;
+      var closeBtn = document.createElement('button');
+      closeBtn.textContent = '✕';
+      closeBtn.style.cssText = 'position:absolute;top:6px;right:10px;background:rgba(0,0,0,.15);border:1px solid rgba(0,0,0,.35);color:#000;cursor:pointer;font-size:16px;font-weight:900;padding:2px 8px;border-radius:6px;line-height:1';
+      closeBtn.title = (_lang==='en') ? 'Dismiss for this session' : 'Cerrar durante esta sesión';
+      closeBtn.onclick = function(){
+        _stsBannerDismissed = true;
+        try{ sessionStorage.setItem('ihm-sts-dismissed','1'); }catch(_){}
+        if (_stsBannerEl) _stsBannerEl.style.display = 'none';
+      };
+      _stsBannerEl.appendChild(closeBtn);
+      (document.body || document.documentElement).appendChild(_stsBannerEl);
+    }
+    _stsBannerEl.style.display = 'block';
+  } catch(e){ try{ console.error('[IHM-STS-BANNER] failed',e); }catch(_){} }
+}
+function _ihmHideStsBanner(){ if (_stsBannerEl) _stsBannerEl.style.display = 'none'; }
 /* Rev487: log solo si age > 10s para no saturar consola. Watchdog validado
    en barco real (Rev486 — corte WiFi laptop confirmo disparo del banner).
    Rev632 (feedback Carlos "en localhost el banner sale con apagones hasta
@@ -7658,6 +7698,11 @@ function processPollData(s){
     if(s.wx6h){ window._wx6hBE = s.wx6h; try{ if(typeof m_updateWx6hBottom==='function') m_updateWx6hBottom(); }catch(_){} }
     /* Rev467: cache snapshot del motor wave nav y render celda Olas. */
     if(s.wave){ window._waveBE = s.wave; try{ if(typeof m_updateWaveBottom==='function') m_updateWaveBottom(); }catch(_){} }
+    /* Rev645: banner de aviso si el bug crítico set-system-time está activo. */
+    if(typeof s.setSystemTimePluginActive === 'boolean'){
+      if(s.setSystemTimePluginActive) _ihmShowStsBanner();
+      else _ihmHideStsBanner();
+    }
     fitSbarFont();
     if(firstPoll&&bPos){
       firstPoll=false;

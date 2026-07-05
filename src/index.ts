@@ -79,7 +79,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev643";
+const PLUGIN_REVISION = "Rev645";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1118,6 +1118,42 @@ export default function (app: SignalKApp): Plugin {
   // grounding evaluator. Declarado dentro del closure por scoping léxico
   // (start() nested lo modifica; evaluateAndPublishGroundingRisk lo lee).
   let _pluginStartedAtMs: number = 0;
+  // Rev644: estado del check del plugin @signalk/set-system-time.
+  let _setSystemTimePluginActive: boolean = false;
+  let _setSystemTimePluginCheckedAt: number = 0;
+  async function _detectSetSystemTimePlugin(): Promise<void> {
+    try {
+      const http = await import("http");
+      await new Promise<void>((resolve) => {
+        const req = http.get(
+          { host: "127.0.0.1", port: 3000, path: "/skServer/plugins/", timeout: 3000 },
+          (r) => {
+            let body = "";
+            r.on("data", (chunk) => { body += chunk; });
+            r.on("end", () => {
+              try {
+                const arr = JSON.parse(body);
+                if (Array.isArray(arr)) {
+                  const found = arr.find((p: any) =>
+                    typeof p?.id === "string" && p.id.indexOf("set-system-time") >= 0 && p.enabled === true
+                  );
+                  const wasActive = _setSystemTimePluginActive;
+                  _setSystemTimePluginActive = !!found;
+                  _setSystemTimePluginCheckedAt = Date.now();
+                  if (_setSystemTimePluginActive && !wasActive) {
+                    app.debug("[IHM-SYSTEM-TIME] ⚠ Plugin @signalk/set-system-time DETECTADO ACTIVO. Este plugin corrompe el IMU cada 60s. Recomendamos DESACTIVARLO en SK → Server → Plugin Config → 'Set System Time' → OFF.");
+                  }
+                }
+              } catch { /* ignore parse */ }
+              resolve();
+            });
+          }
+        );
+        req.on("error", () => resolve());
+        req.on("timeout", () => { req.destroy(); resolve(); });
+      });
+    } catch { /* ignore */ }
+  }
   let _telegramBotToken: string = "";
   let _telegramChatId: string = "";              // del schema (manual)
   let _telegramChatIdCached: string = "";        // de ihmCache (auto-detect)
@@ -1191,6 +1227,17 @@ export default function (app: SignalKApp): Plugin {
     // Rev639: sello para warmup guard del grounding evaluator (ver
     // _GROUNDING_WARMUP_MS). Se reinicializa a cada start del plugin.
     _pluginStartedAtMs = Date.now();
+    // Rev644 (feedback Pablo + ChatGPT 2026-07-05 — bug crítico confirmado):
+    // el plugin oficial @signalk/set-system-time viene ACTIVADO por defecto
+    // en muchas instalaciones OpenPlotter con internet. Cada 60s hace
+    // `date -u -s` con resolución de 1s → salto de ~0.8s → RTIMULib
+    // (pypilot) integra el gyro con dt corrupto → bandazo de attitude ±150°
+    // → nuestro algoritmo de olas ve "Fuerte 63s" fantasma. Detectamos si
+    // el plugin está activo y lo exponemos en /api/env/system-time-warning
+    // + en el state SSE para que el visor muestre banner de advertencia.
+    setTimeout(() => { _detectSetSystemTimePlugin().catch(() => {}); }, 5000);
+    // Re-probe cada 5 min por si el usuario lo desactiva sin restart de SK.
+    setInterval(() => { _detectSetSystemTimePlugin().catch(() => {}); }, 5 * 60_000);
 
     let lastForecast: TideForecastResult | null = null;
     let lastPosition: Position | null = null;
@@ -1958,6 +2005,20 @@ try {
         gitHash: _buildInfo?.gitHash ?? null,
         gitDirty: _buildInfo?.gitDirty ?? false,
         builtAt: _buildInfo?.builtAt ?? null,
+      });
+    });
+
+    // Rev644: detección del plugin oficial @signalk/set-system-time que
+    // corrompe el IMU cada 60s en instalaciones OpenPlotter con internet.
+    // Ver docs de memoria: project_bug_imu_60s_clock_glitch.md.
+    expressApp.get("/signalk-mareas-ihm/api/env/system-time-warning", (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      res.json({
+        active: _setSystemTimePluginActive,
+        checkedAtMs: _setSystemTimePluginCheckedAt,
+        message: _setSystemTimePluginActive
+          ? "El plugin @signalk/set-system-time está ACTIVO. Corrompe el IMU cada 60 s. Desactívalo en SignalK → Server → Plugin Config → 'Set System Time' → OFF."
+          : "El plugin @signalk/set-system-time no está activo — bien.",
       });
     });
 
@@ -6097,6 +6158,9 @@ function getAnchorWatchState() {
       confidence: _lastWaveNav.confidence,
       rejectionReason: _lastWaveNav.rejectionReason,
     } : null,
+    // Rev644: flag para que el visor pinte banner rojo si el bug crítico
+    // del plugin @signalk/set-system-time está activo — corrompe IMU cada 60s.
+    setSystemTimePluginActive: _setSystemTimePluginActive,
     // Rev478 (C-17): schemaVersion=2 introduce campo `grounding` (FSM) y
     // `gpsAgeMs`. Frontend cacheado con expected=1 debe forzar reload.
     schemaVersion: SSE_SCHEMA_VERSION,
@@ -6510,6 +6574,20 @@ function _waveStartSampling() {
     const pitchDeg = att.pitchRad * 180 / Math.PI;
     const rollDeg = att.rollRad * 180 / Math.PI;
     const headingDeg = ((yawRad ?? 0) * 180 / Math.PI + 360) % 360;
+    // Rev645 (mitigación bug @signalk/set-system-time — ver memoria):
+    // el sampler corre a intervalos regulares de 200 ms via setInterval; si
+    // el `now` (reloj de pared) da un salto > 500 ms respecto al último
+    // sample, es casi seguro un ajuste de reloj (NTP + set-system-time)
+    // que corrompe el `dt`. Descartar ese sample para no meter un ángulo
+    // integrado sobre un intervalo falso. Es defensa; la solución real
+    // es desactivar el plugin que ajusta el reloj (advertimos por banner).
+    if (_waveBuffer.length > 0) {
+      const dt = now - _waveBuffer[_waveBuffer.length - 1].ts;
+      if (dt > 500 || dt < 0) {
+        app.debug(`[IHM-WAVE] descartando sample con salto de reloj dt=${dt}ms (probable ajuste NTP / set-system-time)`);
+        return;
+      }
+    }
     _waveBuffer.push({ ts: now, pitchDeg, rollDeg, headingDeg });
     while (_waveBuffer.length > 0 && now - _waveBuffer[0].ts > _WAVE_BUFFER_DUR_MS) {
       _waveBuffer.shift();
@@ -8113,16 +8191,47 @@ function _pypilotInit(props: any) {
     app.debug(`[IHM-PYPILOT] aplicando config de SK + persistiendo a ${_pypilotConfigFile()}`);
     _pypilotApplyConfig(enabled, host, port);
     _savePypilotConfig({ enabled, host, port });
-  } else {
-    app.debug(`[IHM-PYPILOT] SK config vacía → intentando fallback ${_pypilotConfigFile()}`);
-    const saved = _loadPypilotConfig();
-    if (saved && saved.host) {
-      app.debug(`[IHM-PYPILOT] fallback fs OK: ${saved.host}:${saved.port} enabled=${saved.enabled}`);
-      _pypilotApplyConfig(saved.enabled, saved.host, saved.port);
-    } else {
-      app.debug(`[IHM-PYPILOT] fallback fs FAIL (no file o invalid). Bridge quedará apagado hasta que usuario haga Save.`);
-    }
+    return;
   }
+  app.debug(`[IHM-PYPILOT] SK config vacía → intentando fallback ${_pypilotConfigFile()}`);
+  const saved = _loadPypilotConfig();
+  if (saved && saved.host) {
+    app.debug(`[IHM-PYPILOT] fallback fs OK: ${saved.host}:${saved.port} enabled=${saved.enabled}`);
+    _pypilotApplyConfig(saved.enabled, saved.host, saved.port);
+    return;
+  }
+  // Rev644 (feedback Pablo + Carlos: "el bridge pypilot viene apagado por
+  // defecto — todo el sistema de olas queda mudo hasta que el usuario
+  // descubra el toggle en Plugin Config"). Auto-detect: probe rápido a
+  // localhost:23322. Si abre el socket TCP en <1500 ms, asumimos que hay
+  // pypilot local corriendo y auto-enable el bridge. Persiste la config
+  // para no re-probar cada arranque. Cero side-effects si el socket no
+  // responde: bridge queda como estaba (apagado, esperando config manual).
+  app.debug(`[IHM-PYPILOT] fallback fs FAIL. Probando auto-detect en localhost:23322…`);
+  const probe = new Socket();
+  let settled = false;
+  const timer = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    try { probe.destroy(); } catch { /* ignore */ }
+    app.debug(`[IHM-PYPILOT] auto-detect: timeout (no hay pypilot en localhost). Bridge queda apagado.`);
+  }, 1500);
+  probe.once("connect", () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    try { probe.destroy(); } catch { /* ignore */ }
+    app.debug(`[IHM-PYPILOT] auto-detect OK → activando bridge localhost:23322 y persistiendo.`);
+    _pypilotApplyConfig(true, "localhost", 23322);
+    _savePypilotConfig({ enabled: true, host: "localhost", port: 23322 });
+  });
+  probe.once("error", () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    app.debug(`[IHM-PYPILOT] auto-detect: no responde (ECONNREFUSED / no route). Bridge queda apagado.`);
+  });
+  probe.connect(23322, "localhost");
 }
 
 // Rev126: endpoint diagnóstico — expone la causa raíz del problema "tengo

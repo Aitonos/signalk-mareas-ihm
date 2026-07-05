@@ -1,5 +1,43 @@
 # Changelog
 
+## [2.5.3] - 2026-07-05
+
+### English
+
+**Critical: detect and warn about `@signalk/set-system-time` corrupting the IMU every 60 s (Rev644, Rev645)**
+
+Diagnosed by external user Pablo with help from ChatGPT: the SignalK official plugin `@signalk/set-system-time` (shipped by default and often enabled without the user knowing on OpenPlotter installations with internet) runs `date -u -s` every 60 s at 1-second resolution. That truncates ~0.8 s off the clock; `systemd-timesyncd` then corrects it via NTP a few ms later. Two wall-clock jumps per minute, forever. RTIMULib (used by pypilot) timestamps IMU samples with wall clock, so each jump corrupts the Kalman filter `dt` → attitude bandazos of ±150° for 1-2 s → our wave RMS absorbs the noise and publishes phantom "Fuerte 63s" waves with flat sea. Pablo verified the 1:1 correlation between wall-clock jumps and IMU flips.
+
+Two safeguards added:
+
+1. **Backend detection**: the plugin polls `/skServer/plugins/` at start (+5 s) and every 5 min looking for `set-system-time` with `enabled: true`. Exposed as `setSystemTimePluginActive` in the SSE state and via `GET /api/env/system-time-warning`.
+2. **Persistent yellow warning banner** in the viewer when detected, with instructions to disable the plugin (SignalK → Server → Plugin Config → "Set System Time" → OFF → restart). Dismissable per browser session.
+3. **Defensive `dt` guard on the wave buffer** (Rev645): if the wall-clock time between two consecutive samples jumps > 500 ms (or goes backwards), the new sample is discarded. Debug log emitted. Mitigates the impact even if the user doesn't disable the offending plugin.
+
+**Impact**: any OpenPlotter installation with internet that hasn't manually disabled `set-system-time` was silently suffering this — the visible symptom in our plugin was "phantom Fuerte waves" but the underlying corruption also degrades autopilot, KIP attitude gauges and any other consumer of `navigation.attitude`.
+
+**Auto-detect Pypilot bridge on localhost (Rev644)**
+
+Reported by Pablo: our "Pypilot IMU bridge" defaults to disabled with empty host — the user has to discover the toggle in Plugin Config and set `host: localhost` manually or the whole wave engine stays mute. Now on plugin start, if no host is configured (neither in the SK plugin schema nor in the fs fallback), we probe TCP `localhost:23322` for 1.5 s. If pypilot answers, we auto-enable the bridge with `host=localhost, port=23322` and persist. Zero side effects if no pypilot is listening.
+
+### Español
+
+**Crítico: detección y aviso del bug de `@signalk/set-system-time` que corrompe el IMU cada 60 s (Rev644, Rev645)**
+
+Diagnosticado por el usuario externo Pablo con ayuda de ChatGPT: el plugin oficial de SignalK `@signalk/set-system-time` (viene de serie y muchas veces está activado sin que el usuario lo sepa en instalaciones OpenPlotter con internet) ejecuta `date -u -s` cada 60 s con resolución de 1 segundo. Eso trunca ~0.8 s del reloj; `systemd-timesyncd` corrige por NTP unos ms después. Dos saltos de reloj por minuto, indefinidamente. RTIMULib (usada por pypilot) timestamp´a las muestras del IMU con reloj de pared, así cada salto corrompe el `dt` del filtro Kalman → bandazos de attitude de ±150° durante 1-2 s → nuestro RMS de olas absorbe el ruido y publica "Fuerte 63s" fantasma con mar plana. Pablo verificó la correlación 1:1 entre saltos de reloj y vuelcos del IMU.
+
+Dos salvaguardas añadidas:
+
+1. **Detección backend**: el plugin consulta `/skServer/plugins/` al arrancar (+5 s) y cada 5 min buscando `set-system-time` con `enabled: true`. Expuesto como `setSystemTimePluginActive` en el state SSE y vía `GET /api/env/system-time-warning`.
+2. **Banner amarillo persistente** en el visor cuando se detecta, con instrucciones para desactivarlo (SignalK → Server → Plugin Config → "Set System Time" → OFF → reiniciar). Se puede cerrar por sesión.
+3. **Guard defensivo del `dt` en el buffer de olas** (Rev645): si el tiempo de pared entre dos muestras consecutivas salta > 500 ms (o retrocede), se descarta la nueva muestra. Log en debug. Mitiga el impacto aunque el usuario no desactive el plugin culpable.
+
+**Impacto**: cualquier instalación OpenPlotter con internet que no haya desactivado manualmente `set-system-time` está sufriéndolo en silencio — el síntoma visible en nuestro plugin era "olas Fuerte fantasma" pero la corrupción subyacente también degrada el autopilot, los gauges de attitude de KIP y cualquier otro consumer de `navigation.attitude`.
+
+**Auto-detect del bridge Pypilot en localhost (Rev644)**
+
+Reportado por Pablo: nuestro "Pypilot IMU bridge" venía apagado por defecto con host vacío — el usuario tenía que descubrir el toggle en Plugin Config y poner `host: localhost` manualmente o todo el motor de olas se quedaba mudo. Ahora al arrancar el plugin, si no hay host configurado (ni en el schema del plugin SK ni en el fallback de fs), hacemos un probe TCP a `localhost:23322` durante 1.5 s. Si pypilot responde, auto-activamos el bridge con `host=localhost, port=23322` y lo persistimos. Cero efectos si no hay pypilot escuchando.
+
 ## [2.5.2] - 2026-07-05
 
 ### English
