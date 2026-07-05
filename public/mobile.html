@@ -4534,15 +4534,54 @@ function m_updateWaveBottom(){
   var w = window._waveBE;
   // Limpiar alerta por defecto
   grid.classList.remove('alert');
-  if (!w || w.status !== 'active' || !w.motionBand){
+  if (!w || w.status !== 'active'){
     grid.innerHTML = '<span class="wave-ico">—</span><span class="wave-period">—</span><span class="wave-dir">—</span>';
+    return;
+  }
+  /* Rev641-642 (feedback Carlos "no dice nada el widget de olas"): distinguir
+     los estados en los que motionBand sale null:
+       - rejectionReason = "noMotion"         → CALMA real (RMS < 0.3°).
+       - rejectionReason = "buffer_warming"   → IMU calentando (< 90 s de datos).
+       - rejectionReason = "periodOutOfRange" → movimiento espurio, no ola.
+     Cada uno con su propio icono/label; antes todos caían a "— — —". */
+  if (!w.motionBand){
+    if (w.rejectionReason === 'noMotion'){
+      grid.innerHTML = '<span class="wave-ico">🟢</span><span class="wave-period" data-i18n="m_calma">Calma</span><span class="wave-dir">—</span>';
+      grid.title = (_lang==='en') ? 'Sea state (IMU): calm (RMS < 0.3°)' : 'Estado del mar (IMU): calma (RMS < 0.3°)';
+      try{ if(typeof translateAll==='function') translateAll(); }catch(_){}
+      return;
+    }
+    if (w.rejectionReason === 'buffer_warming'){
+      grid.innerHTML = '<span class="wave-ico">🕒</span><span class="wave-period" data-i18n="wave_warming">IMU…</span><span class="wave-dir">—</span>';
+      grid.title = (_lang==='en')
+        ? 'Sea state (IMU): warming up, needs 90 s of samples after restart'
+        : 'Estado del mar (IMU): calentando, necesita 90 s de datos tras el restart';
+      try{ if(typeof translateAll==='function') translateAll(); }catch(_){}
+      return;
+    }
+    grid.innerHTML = '<span class="wave-ico">—</span><span class="wave-period">—</span><span class="wave-dir">—</span>';
+    grid.title = (_lang==='en')
+      ? 'Sea state (IMU): unreliable data (period out of range)'
+      : 'Estado del mar (IMU): dato no fiable (periodo fuera de rango)';
     return;
   }
   // Alert si motion agitada o fuerte
   if (w.motionBand === 'agitada' || w.motionBand === 'fuerte') grid.classList.add('alert');
   var ico = _waveMotionIcon(w.motionBand);
-  var T = (w.periodTrue != null) ? w.periodTrue : w.periodEncountered;
-  var periodStr = (T != null) ? T.toFixed(1) + 's' : '—';
+  /* Rev637 (feedback Carlos): distinguir periodo APARENTE (encountered, sin
+     Doppler resuelto) vs REAL (Doppler resuelto). El chip permite entender
+     por qué valores de olas en fondeo y navegación pueden diferir del mismo
+     estado de mar: en fondeo NO hay Doppler → se muestra el encountered. */
+  var T = null, isTrue = false;
+  if (w.periodTrue != null) { T = w.periodTrue; isTrue = true; }
+  else if (w.periodEncountered != null) { T = w.periodEncountered; isTrue = false; }
+  var periodStr;
+  if (T != null){
+    periodStr = T.toFixed(1) + 's';
+    if (!isTrue) periodStr += '~'; /* ~ = periodo aparente (sin Doppler) */
+  } else {
+    periodStr = '—';
+  }
   var dirStr;
   if (w.directionTrue != null){
     dirStr = Math.round(w.directionTrue) + '° ' + _waveCardinal(w.directionTrue);
@@ -4555,6 +4594,10 @@ function m_updateWaveBottom(){
     '<span class="wave-ico">' + ico + '</span>' +
     '<span class="wave-period">' + periodStr + '</span>' +
     '<span class="wave-dir">' + dirStr + '</span>';
+  /* Rev637: tooltip aclara el sufijo ~. */
+  grid.title = isTrue
+    ? ((_lang==='en') ? 'Sea state (IMU): real period via Doppler' : 'Estado del mar (IMU): periodo real vía Doppler')
+    : ((_lang==='en') ? 'Sea state (IMU): apparent period (no Doppler at anchor)' : 'Estado del mar (IMU): periodo aparente (~) — sin Doppler en fondeo');
 }
 
 function _wx6hRender(plus6, nowPt){
@@ -4919,6 +4962,9 @@ var _i18n={
   met_amanece:{es:'Amanece',en:'Sunrise'},
   met_atardece:{es:'Atardece',en:'Sunset'},
   m_calma:{es:'Calma',en:'Calm'},
+  /* Rev642 (feedback Carlos): estado transitorio del buffer IMU tras
+     restart — 90 s para acumular muestras antes de publicar estado real. */
+  wave_warming:{es:'IMU…',en:'IMU…'},
   sh_detected:{es:'Detectado',en:'Detected'},
   /* Rev555 (feedback Carlos #11): plural-aware del texto sectores abrigados. */
   sh_detected_pl:{es:'Detectados',en:'Detected'},
@@ -5192,7 +5238,10 @@ var _i18n={
   fuente_calado:{es:'Fuente de calado',en:'Draft source'},
   calado_m:{es:'Calado',en:'Draft'},
   margen_seg:{es:'Margen seguridad',en:'Safety margin'},
-  calado_eff:{es:'Calado efectivo (+15%)',en:'Effective draft (+15%)'},
+  /* Rev638 (feedback Carlos): quitado el sufijo "(+15%)" — el factor extra
+     estaba dando falsa seguridad y generando falsas alarmas. El calado
+     efectivo es ahora simplemente calado + margen de seguridad. */
+  calado_eff:{es:'Calado efectivo',en:'Effective draft'},
   estado_varada:{es:'Estado de varada',en:'Grounding status'},
   sin_riesgo_ok:{es:'✓ SIN RIESGO',en:'✓ NO RISK'},
   guardar_cerrar:{es:'💾 Guardar y cerrar',en:'💾 Save and close'},
@@ -6871,9 +6920,10 @@ function _groundingDisplay(s){
       /* Rev488: remainingDropM = cuanto bajara la marea hasta la proxima bajamar.
          Vicente lo pidio expresamente como dato principal para decidir fondear. */
       remainingDropM:   (typeof (s.groundingDetail||{}).remainingDropM === 'number') ? s.groundingDetail.remainingDropM : null,
+      /* Rev638: fallback sin +15% (ver decisión en src/index.ts ALARM_EXTRA_FACTOR=0). */
       effectiveDraftM:  (typeof g.config.effectiveDraftM === 'number') ? g.config.effectiveDraftM
                         : (typeof g.config.draftM === 'number' && typeof g.config.safetyMarginM === 'number'
-                            ? (g.config.draftM + g.config.safetyMarginM) * 1.15 : null),
+                            ? (g.config.draftM + g.config.safetyMarginM) : null),
       nextLowTimeIso:   g.physics.nextLowTimeIso || null,
       timeUntilMin:     (typeof g.physics.timeUntilMin === 'number') ? g.physics.timeUntilMin : null,
       dataHealth:       g.physics.dataHealth || null,
@@ -11930,7 +11980,8 @@ function fetchSondaData(){
   ]).then(function(res){
     var al=res[0]||{},cal=res[1]||{};
     var draft=cal.draft||0,margin=cal.safetyMargin||0.5;
-    var eff=((draft+margin)*1.15).toFixed(2);
+    /* Rev638: sin factor 15% (ver backend ALARM_EXTRA_FACTOR=0). */
+    var eff=(draft+margin).toFixed(2);
     var draftSrc=cal.draftSource||'manual';
     /* If SK has a draft value, lock to signalk — user cannot override */
     var skHasDraft=cal.skDraftAvailable===true;
@@ -11965,7 +12016,8 @@ function updSndEff(){
   var m_disp = parseFloat(document.getElementById('snd-margin').value)||0;
   var d_m = unitFmt.depthToMeters(d_disp);
   var m_m = unitFmt.depthToMeters(m_disp);
-  document.getElementById('snd-eff').textContent = unitFmt.depth((d_m + m_m) * 1.15, 2);
+  /* Rev638: sin factor 15% (ver backend ALARM_EXTRA_FACTOR=0). */
+  document.getElementById('snd-eff').textContent = unitFmt.depth(d_m + m_m, 2);
 }
 function saveSondaCfg(){
   /* Rev428: inputs en unidad activa (m o ft). Convertimos a m antes de POSTear

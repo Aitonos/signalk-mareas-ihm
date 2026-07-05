@@ -1,5 +1,73 @@
 # Changelog
 
+## [2.5.2] - 2026-07-05
+
+### English
+
+**IMU-driven waves — coherence and no more phantom "Fuerte" (Rev637, Rev642)**
+
+The two wave endpoints (`/api/wave/boat` and `/api/wave/nav`) now share the same physical guard: if the encountered period is outside 2-20 s (impossible for real waves) or RMS motion is negligible (< 0.3°), `motionBand` is null and a `rejectionReason` is exposed. Previously only `/api/wave/nav` had the guard, so the map arrow, `wx-wave` in the Shelter popup, and the shelter grade could still show "Fuerte 63s" while the widget said nothing. Consistent now across widget, map, popup and grade.
+
+Rev642 fixes a priority bug in the rejection reason: when both `noMotion` and `periodOutOfRange` were true (typical case in a calm harbour — no real motion produces a spurious PCA period from noise), we now report `noMotion` because that's the real physical state. Before, the widget said "unreliable data" when it should have said "calm".
+
+**Bottom-bar Olas widget — informative states (Rev641, Rev643)**
+
+The widget used to show "— — —" for anything that wasn't a resolved wave. Now it shows:
+
+- 🕒 **IMU…** while the buffer warms up (first 90 s after restart).
+- 🟢 **Calma** when RMS is below 0.3° (real calm).
+- 🚢 icon + period (with `~` suffix for apparent period at anchor, plain for real Doppler-resolved) + direction when there are real waves.
+
+**Depth calculator — hidden 15% factor removed (Rev638)**
+
+The `effectiveDraft = (draft + safetyMargin) × 1.15` formula is gone. Now `effectiveDraft = draft + safetyMargin` cleanly. The extra factor was giving false safety and triggering premature grounding alarms based on a coefficient the navigator never chose. The user controls all the margin from `safetyMargin`.
+
+Cache from previous versions with the inflated value is auto-repaired on first evaluation. UI label "Calado efectivo (+15%)" simplified to "Calado efectivo".
+
+**Grounding alarm — canonical message + boot warmup (Rev639)**
+
+Fix reported by Carlos: alarm sounded at plugin restart despite plenty of clearance (`physicalRisk: false`, `notifyRisk: false`) and did not recur after snooze. Two root causes patched:
+
+1. The `message` field of `groundingRisk` was always built saying "RIESGO DE VARADA", regardless of whether risk actually existed. Any external consumer reading `message` as a source of truth was misled. Now the message reflects the real state ("SIN RIESGO" or "RIESGO DE VARADA" with the correct predicted depth).
+2. Added a 20 s warmup guard: `evaluateAndPublishGroundingRisk` skips execution during the first 20 s after plugin start. This prevents a race where `skDraft` (published by SignalK) has not arrived yet, we fall back to a legacy inflated cache, and a single tick with incomplete data triggers a phantom alarm.
+
+**IMU Audit auto-fallback to SignalK deltas (Rev640)**
+
+Reported by external user Pablo: the IMU Audit page showed 0 samples and "pypilot disconnected" even though his IMU was providing data (via SK deltas). Root cause: the audit buffers were only fed from the direct pypilot TCP socket. In OpenPlotter's "Enable IMU only" mode of the Pypilot plugin, the socket 23322 is not exposed — the audit had no source although the rest of the plugin worked. Now the 5 Hz SK sampler that feeds the wave buffer also feeds the audit buffers. A new `auditSource` field is returned by `/api/imu/debug` (`pypilot-tcp` | `sk-deltas` | `none`) so the user knows which channel is active.
+
+### Español
+
+**Olas por IMU — coherencia y adiós al "Fuerte" fantasma (Rev637, Rev642)**
+
+Los dos endpoints de olas (`/api/wave/boat` y `/api/wave/nav`) comparten ahora el mismo guard físico: si el periodo detectado está fuera de 2-20 s (imposible para olas reales) o el RMS de movimiento es despreciable (< 0.3°), `motionBand` se pone a null y se expone `rejectionReason`. Antes sólo `/api/wave/nav` filtraba, así que la flecha de olas del mapa, el `wx-wave` del popup Abrigo y el grado de abrigo podían seguir mostrando "Fuerte 63s" mientras el widget no decía nada. Ahora consistente entre widget, mapa, popup y grado.
+
+Rev642 corrige un bug de prioridad en el rejection reason: cuando eran verdad a la vez `noMotion` y `periodOutOfRange` (caso típico en puerto tranquilo — sin movimiento real el análisis PCA saca un periodo espurio del ruido), ahora reportamos `noMotion` porque es el estado físico real. Antes el widget decía "dato no fiable" cuando debería decir "calma".
+
+**Widget Olas del bottom-bar — estados informativos (Rev641, Rev643)**
+
+El widget mostraba "— — —" para todo lo que no fuera una ola resuelta. Ahora:
+
+- 🕒 **IMU…** mientras el buffer se calienta (los primeros 90 s tras cada restart).
+- 🟢 **Calma** cuando el RMS es inferior a 0.3° (calma real).
+- 🚢 icono + periodo (sufijo `~` para periodo aparente en fondeo, sin sufijo para real vía Doppler) + dirección cuando hay olas reales.
+
+**Cálculo Sonda — eliminado el factor 15% oculto (Rev638)**
+
+La fórmula `effectiveDraft = (calado + margen) × 1.15` desaparece. Ahora `effectiveDraft = calado + margen` limpio. El factor extra daba falsa seguridad y disparaba alarmas de varada prematuras basadas en un coeficiente que el navegante nunca eligió. El usuario controla TODO el margen desde `safetyMargin`.
+
+Cache de versiones previas con el valor inflado se auto-repara en la primera evaluación. La etiqueta UI "Calado efectivo (+15%)" pasa a "Calado efectivo".
+
+**Alarma de varada — mensaje canónico + warmup al arrancar (Rev639)**
+
+Fix reportado por Carlos: la alarma sonaba al reiniciar el plugin pese a tener agua sobrada (`physicalRisk: false`, `notifyRisk: false`) y no volvía a sonar tras el snooze. Dos causas raíz corregidas:
+
+1. El campo `message` de `groundingRisk` se construía siempre diciendo "RIESGO DE VARADA", con o sin riesgo real. Cualquier consumer externo que leyera `message` como fuente de verdad se confundía. Ahora el mensaje refleja el estado real ("SIN RIESGO" o "RIESGO DE VARADA" con la profundidad esperada).
+2. Añadido warmup guard de 20 s: `evaluateAndPublishGroundingRisk` no se ejecuta durante los primeros 20 s tras el start del plugin. Con esto se evita el race en el que `skDraft` (publicado por SignalK) aún no ha llegado, caemos al cache legacy inflado, y un solo tick con datos incompletos dispara una alarma fantasma.
+
+**Audit del IMU con auto-fallback a deltas SK (Rev640)**
+
+Reportado por el usuario externo Pablo: la página de IMU Audit mostraba 0 samples y "pypilot desconectado" pese a que su IMU sí publicaba (vía deltas SK). Causa raíz: los buffers del audit sólo se alimentaban desde el socket TCP directo de pypilot. En el modo "Habilitar sólo IMU" del plugin Pypilot de OpenPlotter el socket 23322 no se expone — el audit se quedaba sin fuente aunque el resto del plugin funcionara. Ahora el sampler SK a 5 Hz que alimenta el buffer principal también alimenta los buffers del audit. Nuevo campo `auditSource` en `/api/imu/debug` (`pypilot-tcp` | `sk-deltas` | `none`) para que el usuario sepa por qué canal le llegan los datos.
+
 ## [2.5.1] - 2026-07-04
 
 ### English

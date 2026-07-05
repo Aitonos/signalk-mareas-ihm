@@ -79,7 +79,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev636";
+const PLUGIN_REVISION = "Rev643";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -453,7 +453,7 @@ const PATH_DESCRIPTIONS_ES: Record<string, string> = {
 "environment.tide.vessel.draftUsed": "Calado usado por el sistema (m) (resuelto desde Signal K o manual)",
 "environment.tide.vessel.draftSafetyMarginUsed": "Margen de seguridad usado (m)",
 "environment.tide.vessel.draftBase": "Suma calado + margen (m) = draftUsed + draftSafetyMarginUsed",
-"environment.tide.vessel.draftEffective": "Calado efectivo (m) = (calado + margen) × 1.15",
+"environment.tide.vessel.draftEffective": "Calado efectivo (m) = calado + margen de seguridad",
 "environment.tide.vessel.groundingRisk": "Riesgo de alarma de varada (true/false): respeta ALARMA ON/OFF y modos (al llegar / X minutos antes). La física se ve en groundingStatus.",
 "environment.tide.vessel.groundingStatus": "Situación física REAL de varada: SIN RIESGO / RIESGO DE VARADA. Siempre refleja la realidad, independientemente de si la alarma está activada o no.",
 "environment.tide.vessel.groundingAlarm": "Estado de la alarma: ALARMA ON / ALARMA OFF / SNOOZE XX MIN. Independiente de la situación física.",
@@ -546,7 +546,7 @@ const PATH_DESCRIPTIONS_EN: Record<string, string> = {
 "environment.tide.vessel.draftUsed": "Draft used by the system (m) (resolved from Signal K or manual)",
 "environment.tide.vessel.draftSafetyMarginUsed": "Safety margin used (m)",
 "environment.tide.vessel.draftBase": "Draft + margin (m) = draftUsed + draftSafetyMarginUsed",
-"environment.tide.vessel.draftEffective": "Effective draft (m) = (draft + margin) × 1.15",
+"environment.tide.vessel.draftEffective": "Effective draft (m) = draft + safety margin",
 "environment.tide.vessel.groundingRisk": "Alarm grounding risk (true/false): respects ALARM ON/OFF and modes (arrival / X minutes before). Physics is shown in groundingStatus.",
 "environment.tide.vessel.groundingStatus": "REAL physical grounding status: NO RISK / GROUNDING RISK. Always reflects reality, regardless of whether the alarm is enabled.",
 "environment.tide.vessel.groundingAlarm": "Alarm state: ALARM ON / ALARM OFF / SNOOZE XX MIN. Independent of physical situation.",
@@ -1114,6 +1114,10 @@ export default function (app: SignalKApp): Plugin {
   // declaraban a nivel de módulo, start() referencia ANTES de la
   // declaración → TS2304.
   // ===========================================================
+  // Rev639: timestamp del arranque del plugin — para warmup guard del
+  // grounding evaluator. Declarado dentro del closure por scoping léxico
+  // (start() nested lo modifica; evaluateAndPublishGroundingRisk lo lee).
+  let _pluginStartedAtMs: number = 0;
   let _telegramBotToken: string = "";
   let _telegramChatId: string = "";              // del schema (manual)
   let _telegramChatIdCached: string = "";        // de ihmCache (auto-detect)
@@ -1184,6 +1188,9 @@ export default function (app: SignalKApp): Plugin {
 
   async function start(props: Config) {
     app.debug("Starting signalk-mareas-ihm: " + JSON.stringify(props));
+    // Rev639: sello para warmup guard del grounding evaluator (ver
+    // _GROUNDING_WARMUP_MS). Se reinicializa a cada start del plugin.
+    _pluginStartedAtMs = Date.now();
 
     let lastForecast: TideForecastResult | null = null;
     let lastPosition: Position | null = null;
@@ -3072,7 +3079,8 @@ expressApp.post("/signalk-mareas-ihm/api/anchor/calc", requireControlAccess, asy
     const caladoCfg = (await ihmCache.get("caladoConfig")) as { safetyMargin?: number } | undefined;
     const safetyMargin = (typeof caladoCfg?.safetyMargin === "number" && isFinite(caladoCfg.safetyMargin))
       ? caladoCfg.safetyMargin : 0.5;
-    const draftEffective = skDraft != null ? Math.round((skDraft + safetyMargin) * 1.15 * 100) / 100 : null;
+    // Rev638: fórmula sin factor 15% (ver ALARM_EXTRA_FACTOR=0 más abajo).
+    const draftEffective = skDraft != null ? Math.round((skDraft + safetyMargin) * 100) / 100 : null;
 
     // Publish if autoPublish
     if (anchorAutoPublish && Number.isFinite(result.chainL) && !result.partial) {
@@ -6499,17 +6507,38 @@ function _waveStartSampling() {
     }
     if (att.pitchRad == null || att.rollRad == null) return;
     const now = Date.now();
-    _waveBuffer.push({
-      ts: now,
-      pitchDeg: att.pitchRad * 180 / Math.PI,
-      rollDeg: att.rollRad * 180 / Math.PI,
-      headingDeg: ((yawRad ?? 0) * 180 / Math.PI + 360) % 360,
-    });
+    const pitchDeg = att.pitchRad * 180 / Math.PI;
+    const rollDeg = att.rollRad * 180 / Math.PI;
+    const headingDeg = ((yawRad ?? 0) * 180 / Math.PI + 360) % 360;
+    _waveBuffer.push({ ts: now, pitchDeg, rollDeg, headingDeg });
     while (_waveBuffer.length > 0 && now - _waveBuffer[0].ts > _WAVE_BUFFER_DUR_MS) {
       _waveBuffer.shift();
     }
+    // Rev640 (feedback Carlos + bug Pablo Rev636 "IMU Audit 0 samples"): con
+    // Pypilot en modo "solo IMU" (OpenPlotter) el socket TCP 23322 no se
+    // expone, y los buffers de audit sólo se alimentaban desde ese socket
+    // (vía _pypilotHandleNameValue). Fallback automático: alimentamos también
+    // el audit ATT desde SK deltas — así el IMU Audit refleja la actividad
+    // real del sensor sea cual sea la vía de llegada.
+    _recordImuAtt(pitchDeg, rollDeg, headingDeg);
+    // Accel via SK (navigation.acceleration composite si lo publica algún
+    // provider). Muchos usuarios no tienen accel expuesto por SK; en ese
+    // caso _imuAuditAcc quedará vacío y los checks fallarán, que es la
+    // información correcta ("sin datos de aceleración accesibles vía SK").
+    const acc = app.getSelfPath("navigation.acceleration");
+    const accVal = (acc && typeof acc === "object")
+      ? ((acc as any).value ?? acc)
+      : null;
+    if (accVal && typeof accVal === "object") {
+      const ax = Number((accVal as any).x);
+      const ay = Number((accVal as any).y);
+      const az = Number((accVal as any).z);
+      if (isFinite(ax) && isFinite(ay) && isFinite(az)) {
+        _recordImuAcc(ax, ay, az);
+      }
+    }
   }, _WAVE_SAMPLE_INTERVAL_MS);
-  app.debug("[IHM-WAVE] sampling iniciado @5Hz sobre navigation.attitude composite");
+  app.debug("[IHM-WAVE] sampling iniciado @5Hz sobre navigation.attitude composite (+ audit fallback SK)");
 }
 function _waveStopSampling() {
   if (_waveSampleTimer) { clearInterval(_waveSampleTimer); _waveSampleTimer = null; }
@@ -6980,12 +7009,21 @@ function _getImuAuditReport(lastMs?: number): any {
   if (absMeans.x > absMeans.y && absMeans.x > absMeans.z) { upAxis = "x"; upSign = aStatsX.mean > 0 ? 1 : -1; }
   else if (absMeans.y > absMeans.z) { upAxis = "y"; upSign = aStatsY.mean > 0 ? 1 : -1; }
   else { upAxis = "z"; upSign = aStatsZ.mean > 0 ? 1 : -1; }
+  // Rev640: fuente activa del audit. `pypilot-tcp` cuando llegan mensajes por
+  // el socket 23322; `sk-deltas` cuando el buffer se está alimentando vía el
+  // sampler SK (caso Pypilot en modo "solo IMU" de OpenPlotter — no expone
+  // TCP pero sí publica navigation.attitude por SK); `none` si ninguno.
+  const pypilotFresh = _pypilotLastMsgMs > 0 && (now - _pypilotLastMsgMs) < 5000;
+  const audit_source: "pypilot-tcp" | "sk-deltas" | "none" =
+    pypilotFresh ? "pypilot-tcp"
+    : (fAtt.length > 0 ? "sk-deltas" : "none");
   return {
     nowMs: now,
     pluginRev: PLUGIN_REVISION,
     windowMs: (typeof lastMs === "number" && lastMs > 0) ? lastMs : _IMU_AUDIT_DUR_MS,
-    pypilotConnected: _pypilotLastMsgMs > 0 && (now - _pypilotLastMsgMs) < 5000,
+    pypilotConnected: pypilotFresh,
     pypilotLastMsgAgeMs: _pypilotLastMsgMs > 0 ? now - _pypilotLastMsgMs : null,
+    auditSource: audit_source,
     waveBufferSize: _waveBuffer.length,
     attitude: {
       samples: fAtt.length,
@@ -7171,7 +7209,42 @@ expressApp.get("/signalk-mareas-ihm/api/wave/boat", (_req: any, res: any) => {
     });
     return;
   }
-  res.json({ available: true, source: "boat-imu", ...stats, ...heightStats });
+  // Rev637 (feedback Carlos "el widget Olas no da datos pero el mapa sigue
+  // mintiendo 'Fuerte 63s'"): mismo guard que /api/wave/nav — si el periodo
+  // está fuera del rango físico de olas (2-20 s) o el RMS es despreciable,
+  // el movimiento NO representa olas y no debemos publicarlo como tal. Antes
+  // solo /api/wave/nav aplicaba este filtro; ahora ambos endpoints son
+  // coherentes → widget bottom-bar + flecha del mapa + wx-wave del popup
+  // Abrigo + shelter grade dejan de mostrar "Fuerte" cuando en realidad es
+  // ruido de sensor o vibración de pantalán.
+  const periodOutOfRange = typeof stats.periodSec === "number" &&
+                           (stats.periodSec < 2 || stats.periodSec > 20);
+  const noSignificantMotion = typeof stats.rmsDeg === "number" && stats.rmsDeg < 0.3;
+  // Rev642: priorizamos noMotion sobre periodOutOfRange — cuando el barco
+  // está literalmente quieto, el "periodo raro" es artefacto del análisis
+  // sobre ruido, no una condición real. Coherente con /api/wave/nav.
+  const rejectionReason: string | null = noSignificantMotion ? "noMotion"
+                                       : (periodOutOfRange ? "periodOutOfRange" : null);
+  if (rejectionReason) {
+    res.json({
+      available: true,
+      source: "boat-imu",
+      intensity: null,
+      periodSec: null,
+      dirFromDeg: null,
+      dirAxisOnly: false,
+      rejectionReason,
+      rmsDeg: stats.rmsDeg,
+      rmsRollDeg: stats.rmsRollDeg,
+      rmsPitchDeg: stats.rmsPitchDeg,
+      headingDeg: stats.headingDeg,
+      samples: stats.samples,
+      bufferDurMs: stats.bufferDurMs,
+      ...heightStats,
+    });
+    return;
+  }
+  res.json({ available: true, source: "boat-imu", rejectionReason: null, ...stats, ...heightStats });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -7545,7 +7618,12 @@ function _computeWaveNav(): WaveNavResult {
     confidence,
     confidenceDirection,
     confidencePeriodTrue,
-    rejectionReason: periodOutOfRange ? "periodOutOfRange" : (noSignificantMotion ? "noMotion" : null),
+    // Rev642 (bug widget Olas Carlos): cuando NO hay movimiento significativo,
+    // el "periodOutOfRange" es un artefacto matemático del PCA sobre ruido
+    // residual — no una condición real. Priorizamos noMotion para que el
+    // widget muestre "🟢 Calma" en lugar de "— dato no fiable —" cuando
+    // literalmente el barco está quieto (RMS < 0.3°).
+    rejectionReason: noSignificantMotion ? "noMotion" : (periodOutOfRange ? "periodOutOfRange" : null),
     dopplerReason,
     disclaimer: "motion-derived, not certified",
     diagnostics: {
@@ -10994,7 +11072,13 @@ expressApp.get("/signalk-mareas-ihm/api/stationRef", stationRefHandler);
 
     
 // --- Draft / grounding alarm helpers ---
-const ALARM_EXTRA_FACTOR = 0.15; // +15% by default
+// Rev638 (feedback Carlos, decisión validada en sesión anterior no plasmada:
+// "el +15% traía a falsa seguridad y no era nada preciso añadir un 15% porque
+// sí, podía generar muchas falsas alarmas"). El factor extra queda a 0: el
+// calado efectivo pasa a ser simplemente `draft + safetyMargin`. El navegante
+// controla TODO el margen desde safetyMargin, sin factores ocultos que
+// multipliquen sin justificación física.
+const ALARM_EXTRA_FACTOR = 0;
 
 // v1.2.0: Track last notification state to avoid spam.
 // Alarm sounds ONCE; stays latched until user does snooze/off.
@@ -11002,8 +11086,7 @@ let lastGroundingNotifState: "alarm" | "normal" | "cleared" = "cleared";
 let _cachedDraft: number = 0; // Updated by grounding evaluation for use by predictive swing
 
 function effectiveDraft(draft: number, safetyMargin: number): number {
-  const base = draft + safetyMargin;
-  return base + (base * ALARM_EXTRA_FACTOR);
+  return draft + safetyMargin;
 }
 
 // v1.3.1: Depth quality tracker — detects frozen/phantom sonar readings.
@@ -11074,6 +11157,12 @@ function isDepthReliable(depthNow: number | null, sourcePath: string = "unknown"
 // y se re-ejecuta tras commit. Excepciones tambien fuerzan re-ejecucion.
 let _groundingEvalRunning = false;
 let _groundingEvalPending = false;
+// Rev639 (bug report Carlos: alarma varada al arrancar Rev638 aunque haya
+// agua sobrada; tras snooze no vuelve): warmup guard. Constante a nivel
+// de módulo. El timestamp real (`_pluginStartedAtMs`) vive dentro del
+// closure del plugin — declarado más arriba con las variables que start()
+// nested necesita ver por scoping léxico (evita TDZ TS2448).
+const _GROUNDING_WARMUP_MS = 20_000;
 async function requestGroundingEvaluation(): Promise<void> {
   if (_groundingEvalRunning) { _groundingEvalPending = true; return; }
   _groundingEvalRunning = true;
@@ -11107,6 +11196,15 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
   // v1.3.1: Only evaluate grounding when boat is STOPPED (SOG < 0.5kn = ~0.26m/s).
   // When moving, depth sensor readings are unreliable (especially near keel) and
   // grounding risk is not meaningful — the boat is transiting, not sitting.
+  // Rev639 (bug report Carlos): warmup guard. En los primeros 20 s tras el
+  // start del plugin no evaluamos — evita ticks con skDraft aún no publicado,
+  // cachedDraft legacy inflado que se auto-repara tarde, o depth sensor sin
+  // muestras. La alarma sonaba al arrancar con physicalRisk=false pero por
+  // un tick transitorio con datos incompletos.
+  if (_pluginStartedAtMs > 0 && (Date.now() - _pluginStartedAtMs) < _GROUNDING_WARMUP_MS) {
+    app.debug(`[IHM-GROUNDING] skip eval — warmup (${Date.now() - _pluginStartedAtMs}ms < ${_GROUNDING_WARMUP_MS}ms)`);
+    return;
+  }
   try {
     let sogMs: number | null = null;
     try { const v = app.getSelfPath("navigation.speedOverGround"); sogMs = typeof v === "object" ? (v as any).value : typeof v === "number" ? v : null; } catch {}
@@ -11215,9 +11313,14 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
     const cachedDraft = toNum(caladoCfg?.draft);
     const skDraft = readSkDraft();
 
+    // Rev638: hardcode 1.15 aquí (no usa ALARM_EXTRA_FACTOR) porque este check
+    // detecta caches HEREDADOS de la versión previa donde el draft se guardaba
+    // ya multiplicado por 1.15 (bug forensic). Con el nuevo factor 0 seguimos
+    // necesitando detectar ese caso concreto para migrar el cache de usuarios
+    // que actualizan desde <=2.5.1.
     const legacyInflated =
       (typeof cachedDraft === "number" && typeof skDraft === "number" && skDraft > 0)
-        ? (Math.abs(cachedDraft - (skDraft * (1 + ALARM_EXTRA_FACTOR))) <= 0.03)
+        ? (Math.abs(cachedDraft - (skDraft * 1.15)) <= 0.03)
         : false;
 
     let draft: number | null = null;
@@ -11415,22 +11518,28 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
     const alertRisk = Boolean(enabled && alertCriteriaMet);
     const notifyRisk = Boolean(enabled && alertCriteriaMet && !isSnoozed);
 
-    // Build single, canonical message (backend only)
-    const minsLine = (minutesToRisk != null)
-      ? tr(`RIESGO DE VARADA en ${minutesToRisk} MINUTOS`, `GROUNDING RISK in ${minutesToRisk} MINUTES`)
-      : tr("RIESGO DE VARADA", "GROUNDING RISK");
-
-    const msgEs =
-      `${minsLine}
-` +
-      `Sonda final esperada: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
-
-    const msgEn =
-      `${minsLine}
-` +
-      `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
-
-    const message = (lang === "en") ? msgEn : msgEs;
+    // Build single, canonical message (backend only).
+    // Rev639 (bug reportado Carlos: `message: "RIESGO DE VARADA"` con
+    // physicalRisk=false, risk=false, notifyRisk=false → consumers externos
+    // podían dispararse por leer el texto en vez del flag). El mensaje ahora
+    // refleja el estado REAL: sólo dice "RIESGO DE VARADA" cuando existe
+    // riesgo físico; si no, dice "SIN RIESGO" con la sonda esperada.
+    let message: string;
+    if (physicalRisk) {
+      const minsLine = (minutesToRisk != null)
+        ? tr(`RIESGO DE VARADA en ${minutesToRisk} MINUTOS`, `GROUNDING RISK in ${minutesToRisk} MINUTES`)
+        : tr("RIESGO DE VARADA", "GROUNDING RISK");
+      const depthLine = (lang === "en")
+        ? `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`
+        : `Sonda final esperada: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
+      message = `${minsLine}\n${depthLine}`;
+    } else {
+      const okLine = tr("SIN RIESGO", "NO RISK");
+      const depthLine = (lang === "en")
+        ? `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`
+        : `Sonda final esperada: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
+      message = `${okLine}\n${depthLine}`;
+    }
 
     // Persist grounding snapshot for the WebApp
     // Rev475 paso 8 (C-02): chequear si liberar latch.
