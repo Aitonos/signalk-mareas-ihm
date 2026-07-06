@@ -79,7 +79,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev645";
+const PLUGIN_REVISION = "Rev656";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1242,6 +1242,76 @@ export default function (app: SignalKApp): Plugin {
     let lastForecast: TideForecastResult | null = null;
     let lastPosition: Position | null = null;
     const cache = new FileCache(app.getDataDirPath());
+    // Rev655 (Sprint I-1 opción B — feedback Carlos): estado del fetch de
+    // marea para el frontend. Cuando extremes.length < 2, en vez de "Sin
+    // datos" seco el visor muestra "🔄 Descargando marea IHM (intento X/5)…"
+    // + botón "↻ Reintentar ahora" que llama a POST /api/tide/force-refresh.
+    // Warmup automático al start del plugin con retry exponencial (15s, 60s,
+    // 3min, 10min). Agnóstico a la fuente: la fuente se lee del `lastForecast
+    // .source` o de la estación seleccionada.
+    const _tideFetchState: {
+      status: "idle" | "fetching" | "ok" | "failed";
+      attempts: number;
+      lastAttemptMs: number;
+      lastError: string | null;
+      source: string | null;
+    } = { status: "idle", attempts: 0, lastAttemptMs: 0, lastError: null, source: null };
+    const _tideRetryDelays = [3_000, 15_000, 60_000, 180_000, 600_000]; // 3s → 10min
+    let _tideRetryTimer: NodeJS.Timeout | null = null;
+    async function _doTideFetch(force = false): Promise<{ ok: boolean; error?: string; extremes: number }> {
+      if (_tideFetchState.status === "fetching" && !force) {
+        return { ok: false, error: "already-fetching", extremes: 0 };
+      }
+      _tideFetchState.status = "fetching";
+      _tideFetchState.attempts += force ? 0 : 1;  // manual no cuenta
+      _tideFetchState.lastAttemptMs = Date.now();
+      _tideFetchState.lastError = null;
+      try {
+        const p = await ensureProvider();
+        if (typeof p !== "function") throw new Error("provider not ready");
+        const fresh = await (p as any)({ position: lastPosition ?? undefined });
+        if (fresh && Array.isArray(fresh.extremes) && fresh.extremes.length >= 2) {
+          lastForecast = fresh;
+          _tideFetchState.status = "ok";
+          // Rev656: derivar fuente del stationId (IHM ids son numéricos;
+          // openmeteo, sin-marea, mediterraneo son sintéticas).
+          const sid = String(fresh.station?.id ?? "");
+          let src: string;
+          if (sid === "openmeteo-global") src = "Open-Meteo";
+          else if (sid === "sin-marea" || sid === "mediterraneo") src = "sintética";
+          else if (/^\d+$/.test(sid)) src = "IHM";
+          else src = fresh.station?.source || fresh.source || "IHM";
+          _tideFetchState.source = src;
+          _tideFetchState.lastError = null;
+          return { ok: true, extremes: fresh.extremes.length };
+        }
+        throw new Error("empty forecast");
+      } catch (e: any) {
+        const msg = String(e?.message || e).slice(0, 200);
+        _tideFetchState.status = "failed";
+        _tideFetchState.lastError = msg;
+        return { ok: false, error: msg, extremes: 0 };
+      }
+    }
+    function _scheduleTideRetry() {
+      if (_tideRetryTimer) return;
+      const idx = Math.min(_tideFetchState.attempts, _tideRetryDelays.length - 1);
+      const delay = _tideRetryDelays[idx];
+      app.debug(`[IHM-TIDE-WARMUP] retry en ${delay}ms (attempt ${_tideFetchState.attempts + 1})`);
+      _tideRetryTimer = setTimeout(async () => {
+        _tideRetryTimer = null;
+        const res = await _doTideFetch();
+        if (!res.ok && _tideFetchState.attempts < _tideRetryDelays.length) {
+          _scheduleTideRetry();
+        }
+      }, delay);
+    }
+    // Arranque del warmup a los 3s (fuera del start crítico para no bloquear).
+    setTimeout(() => {
+      _doTideFetch().then((res) => {
+        if (!res.ok) _scheduleTideRetry();
+      }).catch(() => {});
+    }, 3_000);
 
     // Rev106: bridge pypilot — el init real está en el try-block expressApp
     // (asigna `_pypilotInitOuter` allí). En cada SK plugin start se reactiva
@@ -2008,6 +2078,36 @@ try {
       });
     });
 
+    // Rev655 (Sprint I-1 opción B): fuerza un fetch del forecast de marea.
+    // Usa el mismo provider (IHM u Open-Meteo según la estación seleccionada
+    // y el modo — no hardcodeamos fuente). Devuelve estado + count.
+    expressApp.post("/signalk-mareas-ihm/api/tide/force-refresh", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const t0 = Date.now();
+      const r = await _doTideFetch(true);
+      res.json({
+        ok: r.ok,
+        error: r.error,
+        extremesCount: r.extremes,
+        ms: Date.now() - t0,
+        status: _tideFetchState.status,
+        attempts: _tideFetchState.attempts,
+        source: _tideFetchState.source,
+        lastError: _tideFetchState.lastError,
+      });
+    });
+    expressApp.get("/signalk-mareas-ihm/api/tide/fetch-status", (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      res.json({
+        status: _tideFetchState.status,
+        attempts: _tideFetchState.attempts,
+        lastAttemptMs: _tideFetchState.lastAttemptMs,
+        lastError: _tideFetchState.lastError,
+        source: _tideFetchState.source,
+        maxAttempts: _tideRetryDelays.length,
+      });
+    });
+
     // Rev644: detección del plugin oficial @signalk/set-system-time que
     // corrompe el IMU cada 60s en instalaciones OpenPlotter con internet.
     // Ver docs de memoria: project_bug_imu_60s_clock_glitch.md.
@@ -2020,6 +2120,543 @@ try {
           ? "El plugin @signalk/set-system-time está ACTIVO. Corrompe el IMU cada 60 s. Desactívalo en SignalK → Server → Plugin Config → 'Set System Time' → OFF."
           : "El plugin @signalk/set-system-time no está activo — bien.",
       });
+    });
+
+    // Rev646→Rev647 (Sprint I-4, feedback Carlos: "que el diagnóstico sea
+    // INTEGRAL de todas las funciones del plugin, sus dependencias, fuentes,
+    // etc TODO; y si hay datos sensibles han de ser eliminados con XXXX y
+    // avisar al usuario"). Endpoint agregador que devuelve un JSON con TODO
+    // lo relevante para debug + sanitización: coordenadas exactas
+    // enmascaradas, tokens de Telegram redactados, PIN hashes eliminados.
+    // El frontend muestra preview + confirmación antes de copiar.
+    expressApp.get("/signalk-mareas-ihm/api/diagnostic", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const started = Date.now();
+      const now = Date.now();
+
+      // Sanitizadores.
+      const maskCoord = (v: any): any => {
+        if (typeof v !== "number" || !isFinite(v)) return v;
+        // Redondeo a 0.1 grado (~11 km) para dar contexto geográfico sin exponer
+        // ubicación exacta. Suficiente para diagnóstico (¿está en el mar norte?
+        // ¿mediterráneo?) sin revelar amarre.
+        return Math.round(v * 10) / 10;
+      };
+      const maskPosition = (raw: any): any => {
+        if (!raw) return null;
+        const val = (typeof raw === "object" && "value" in raw) ? raw.value : raw;
+        if (!val || typeof val !== "object") return val;
+        return {
+          latitude: maskCoord((val as any).latitude),
+          longitude: maskCoord((val as any).longitude),
+          _redacted: "coords rounded to 0.1° for privacy",
+        };
+      };
+      const maskString = (s: any): string => {
+        if (typeof s !== "string" || !s) return s;
+        return s.length > 4 ? (s.slice(0, 2) + "XXXX" + s.slice(-2)) : "XXXX";
+      };
+
+      // Rev650: i18n del _note según el idioma cacheado del usuario.
+      let noteLang: string = "es";
+      try {
+        const l = await ihmCache.get("lang");
+        if (l === "en" || l === "es") noteLang = l;
+      } catch { /* ignore */ }
+      const noteText = (noteLang === "en")
+        ? "Sensitive data (GPS position, PIN, Telegram tokens, own MMSI) masked as XXXX or rounded. Technical data intact."
+        : "Datos sensibles (posición GPS, PIN, tokens Telegram, MMSI propio) enmascarados como XXXX o redondeados. Datos técnicos íntegros.";
+
+      const bag: any = {
+        capturedAt: new Date().toISOString(),
+        _note: noteText,
+        build: {
+          version: PLUGIN_VERSION,
+          revision: PLUGIN_REVISION,
+          buildTag: BUILD_TAG,
+          gitHash: _buildInfo?.gitHash ?? null,
+          builtAt: _buildInfo?.builtAt ?? null,
+        },
+        runtime: null,  // Rellenado abajo tras los awaits.
+        setSystemTimePlugin: {
+          active: _setSystemTimePluginActive,
+          checkedAtMs: _setSystemTimePluginCheckedAt,
+        },
+        wave: {
+          nav: (_lastWaveNav ? {
+            status: _lastWaveNav.status,
+            motionBand: _lastWaveNav.motionBand,
+            motionRmsDeg: _lastWaveNav.motionRmsDeg,
+            periodEncountered: _lastWaveNav.periodEncountered,
+            periodTrue: _lastWaveNav.periodTrue,
+            rejectionReason: _lastWaveNav.rejectionReason,
+            dopplerReason: _lastWaveNav.dopplerReason,
+            confidence: _lastWaveNav.confidence,
+          } : null),
+          bufferSize: _waveBuffer.length,
+        },
+        imu: {
+          audit: _getImuAuditReport(),
+        },
+        pypilot: {
+          connected: _pypilotLastMsgMs > 0 && (now - _pypilotLastMsgMs) < 5000,
+          lastMsgAgeMs: _pypilotLastMsgMs > 0 ? now - _pypilotLastMsgMs : null,
+          host: _pypilotHost,
+          port: _pypilotPort,
+          enabled: _pypilotEnabled,
+        },
+      };
+
+      // Rev649: clave correcta del cache es "anchorWatch" (no "anchor-watch").
+      try {
+        const anchorState = await ihmCache.get("anchorWatch") as any;
+        bag.anchor = anchorState ? {
+          anchored: !!anchorState.anchored,
+          anchoredSinceMs: anchorState.anchoredSinceMs ?? null,
+          anchorPosition: maskPosition(anchorState.anchorPosition),
+          swingRadiusM: anchorState.swingRadiusM ?? null,
+          alarmRadiusM: anchorState.alarmRadiusM ?? null,
+          chainDeployedM: anchorState.chainDeployedM ?? null,
+        } : null;
+      } catch { bag.anchor = null; }
+
+      // Config alarmas.
+      try {
+        const alarmaCfg = await ihmCache.get("alarmaConfig") as any;
+        bag.alarma = alarmaCfg ? {
+          enabled: !!alarmaCfg.enabled,
+          alertOnArrival: alarmaCfg.alertOnArrival,
+          alertBeforeGrounding: alarmaCfg.alertBeforeGrounding,
+          minutesBefore: alarmaCfg.minutesBefore,
+          safetyMargin: alarmaCfg.safetyMargin,
+        } : null;
+      } catch { bag.alarma = null; }
+
+      // Config calado (sensible: mostrar valores, sin redactar — es info técnica del barco).
+      try {
+        const caladoCfg = await ihmCache.get("caladoConfig") as any;
+        bag.calado = caladoCfg ? {
+          draft: caladoCfg.draft,
+          safetyMargin: caladoCfg.safetyMargin,
+          draftSource: caladoCfg.draftSource,
+        } : null;
+      } catch { bag.calado = null; }
+
+      // Grounding risk actual (sin coords).
+      bag.groundingRisk = _currentGroundingRisk ? {
+        risk: (_currentGroundingRisk as any).risk,
+        physicalRisk: (_currentGroundingRisk as any).physicalRisk,
+        expectedMinDepth: (_currentGroundingRisk as any).expectedMinDepth,
+        depthNow: (_currentGroundingRisk as any).depthNow,
+        effectiveDraft: (_currentGroundingRisk as any).effectiveDraft,
+        operationalMode: (_currentGroundingRisk as any).operationalMode,
+      } : null;
+
+      // Idioma / unidades.
+      try {
+        const lang = await ihmCache.get("lang");
+        const units = await ihmCache.get("unitsSystem");
+        bag.settings = { lang, units };
+      } catch { bag.settings = null; }
+
+      // Weather advisory.
+      bag.weatherAdvisoryEnabled = _weatherAdvisoryEnabled;
+
+      // Telegram (SIN token, sin chat_id — solo si está configurado).
+      bag.telegram = {
+        botTokenConfigured: !!_telegramBotToken,
+        botToken: _telegramBotToken ? maskString(_telegramBotToken) : null,
+        chatIdConfigured: !!(_telegramChatId || _telegramChatIdCached),
+        chatId: (_telegramChatId || _telegramChatIdCached) ? maskString(_telegramChatId || _telegramChatIdCached) : null,
+      };
+
+      // PIN sessions info (nº de PINs y sesiones, SIN los hashes ni los alias
+      // completos — solo iniciales).
+      try {
+        const pins = (await ihmCache.get("securityPins") as any[]) ?? [];
+        bag.pinSecurity = {
+          pinsCount: Array.isArray(pins) ? pins.length : 0,
+          hasMaster: Array.isArray(pins) && pins.some((p: any) => p?.level === "master"),
+          guests: Array.isArray(pins) ? pins.filter((p: any) => p?.level !== "master").length : 0,
+        };
+      } catch { bag.pinSecurity = null; }
+
+      // Rev650: la estación activa se publica como SK path `environment.tide.
+      // stationName` y `.stationId`. Los leemos directamente.
+      try {
+        const nameRaw = app.getSelfPath("environment.tide.stationName");
+        const idRaw = app.getSelfPath("environment.tide.stationId");
+        const readVal = (raw: any): any => {
+          if (raw == null) return null;
+          if (typeof raw === "object" && "value" in raw) return raw.value;
+          return raw;
+        };
+        const name = readVal(nameRaw);
+        const id = readVal(idRaw);
+        bag.tideStation = (name || id) ? {
+          id: id ? String(id) : null,
+          name: name ? String(name) : null,
+        } : null;
+      } catch { bag.tideStation = null; }
+
+      // Rev649: MBTiles — la clave real del cache es "mbtilesDir".
+      try {
+        const mbDir = await ihmCache.get("mbtilesDir") as string | undefined;
+        bag.mbtiles = mbDir ? {
+          dir: mbDir,
+          note: "mbtiles directory configured",
+        } : { configured: false };
+      } catch { bag.mbtiles = null; }
+
+      // Dependencies runtime versions.
+      try {
+        const pkg = esmRequire("../package.json") as any;
+        bag.dependencies = pkg.dependencies ?? {};
+      } catch { bag.dependencies = null; }
+
+      // Rev648 (feedback Carlos: diagnóstico integral — SK version, OP, RAM,
+      // load, uptime, memoria del plugin). Info que ayuda a saber si la Pi
+      // está saturada, qué versiones tiene el usuario, etc.
+      try {
+        const os = await import("os");
+        const totalMB = Math.round(os.totalmem() / 1024 / 1024);
+        const freeMB  = Math.round(os.freemem()  / 1024 / 1024);
+        let skVersion: string | null = null;
+        try {
+          const skPkg = esmRequire("signalk-server/package.json") as any;
+          skVersion = skPkg?.version ?? null;
+        } catch { /* ignore */ }
+        // Rev649: detección OpenPlotter robusta. OP no publica un archivo
+        // canónico de versión — busco varios paths + dpkg como fallback.
+        let opVersion: string | null = null;
+        try {
+          const fs = await import("fs");
+          const candidates = [
+            "/boot/openplotter/version.txt",
+            "/etc/openplotter/version",
+            "/etc/openplotter-version",
+            "/etc/openplotter_version",
+            "/boot/openplotter-version",
+            "/home/pi/.openplotter/version",
+          ];
+          for (const p of candidates) {
+            try {
+              if (fs.existsSync(p)) { opVersion = String(fs.readFileSync(p, "utf8")).trim().slice(0, 40); break; }
+            } catch { /* ignore */ }
+          }
+          // Fallback: dpkg-query
+          if (!opVersion) {
+            try {
+              const cp = await import("child_process");
+              const out = cp.execSync("dpkg-query -W -f='${Version}' openplotter-settings 2>/dev/null", { timeout: 1500 }).toString().trim();
+              if (out) opVersion = "opkg-settings:" + out.slice(0, 30);
+            } catch { /* ignore */ }
+          }
+          // Fallback más simple: leer os-release por si trae info.
+          if (!opVersion) {
+            try {
+              if (fs.existsSync("/etc/os-release")) {
+                const rel = fs.readFileSync("/etc/os-release", "utf8");
+                const m = rel.match(/^PRETTY_NAME="?([^"\n]+)"?/m);
+                if (m) opVersion = "os:" + m[1].slice(0, 40);
+              }
+            } catch { /* ignore */ }
+          }
+        } catch { /* ignore */ }
+        bag.runtime = {
+          nodeVersion: process.version,
+          signalkVersion: skVersion,
+          openplotterVersion: opVersion,
+          platform: process.platform,
+          arch: process.arch,
+          hostname: os.hostname().replace(/[a-zA-Z0-9-]{2,}/g, (m: string) => m.length > 4 ? m.slice(0, 2) + "XX" : m),
+          uptimeSec: Math.round(process.uptime()),
+          osUptimeSec: Math.round(os.uptime()),
+          loadAvg: os.loadavg(),
+          cpuCount: os.cpus().length,
+          memoryMB: {
+            totalSystem: totalMB,
+            freeSystem: freeMB,
+            usedSystemPct: totalMB > 0 ? Math.round(((totalMB - freeMB) / totalMB) * 100) : null,
+            pluginRss: Math.round(process.memoryUsage().rss / 1024 / 1024),
+            pluginHeapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+            pluginHeapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+          },
+        };
+      } catch { /* ignore */ }
+
+      // Rev650/Rev651: enabled real. En SignalK el archivo raíz de config
+      // es `settings.json`, pero además cada plugin habilitado tiene su
+      // propio archivo en `plugin-config-data/<pluginId>.json` (dependiendo
+      // de la versión de SK). Y el propio settings.json a veces vive en:
+      //   - $SIGNALK_NODE_CONF_DIR/settings.json
+      //   - ~/.signalk/settings.json
+      //   - app.getDataDirPath()/.. (junto al pluginId)
+      // Además, el ihmCache local del plugin tiene su propio dir; el conf de
+      // SK está un nivel más arriba. Probamos todos.
+      const enabledMap: Map<string, boolean> = new Map();
+      let enabledSource: string | null = null;
+      try {
+        const fsX = await import("fs");
+        const pathX = await import("path");
+        const osX = await import("os");
+        const homedirX = osX.homedir();
+        const candidates: string[] = [];
+        if (process.env.SIGNALK_NODE_CONF_DIR) candidates.push(pathX.join(process.env.SIGNALK_NODE_CONF_DIR, "settings.json"));
+        candidates.push(pathX.join(homedirX, ".signalk", "settings.json"));
+        candidates.push("/home/pi/.signalk/settings.json");
+        candidates.push("/root/.signalk/settings.json");
+        // Fallback: derivar del dataDirPath del plugin (padre × 2).
+        try {
+          const dd = app.getDataDirPath();
+          if (dd) candidates.push(pathX.join(dd, "..", "..", "settings.json"));
+        } catch { /* ignore */ }
+        for (const p of candidates) {
+          try {
+            if (fsX.existsSync(p)) {
+              const raw = fsX.readFileSync(p, "utf8");
+              const cfg = JSON.parse(raw);
+              const pluginList = Array.isArray(cfg?.plugins) ? cfg.plugins : [];
+              for (const pl of pluginList) {
+                if (typeof pl?.id === "string") enabledMap.set(pl.id, pl.enabled === true);
+              }
+              if (enabledMap.size > 0) { enabledSource = p; break; }
+            }
+          } catch { /* ignore */ }
+        }
+        // Fallback si settings.json no tenía plugins[]: escanear
+        // plugin-config-data/*.json (existe uno por plugin habilitado).
+        if (enabledMap.size === 0) {
+          const pcdCandidates: string[] = [];
+          if (process.env.SIGNALK_NODE_CONF_DIR) pcdCandidates.push(pathX.join(process.env.SIGNALK_NODE_CONF_DIR, "plugin-config-data"));
+          pcdCandidates.push(pathX.join(homedirX, ".signalk", "plugin-config-data"));
+          pcdCandidates.push("/home/pi/.signalk/plugin-config-data");
+          try {
+            const dd = app.getDataDirPath();
+            if (dd) pcdCandidates.push(pathX.join(dd, "..", "..", "plugin-config-data"));
+          } catch { /* ignore */ }
+          for (const dir of pcdCandidates) {
+            try {
+              if (!fsX.existsSync(dir)) continue;
+              // Rev652: SignalK guarda los plugin-config para scope packages
+              // con la barra en el path físico. Ejemplos vistos:
+              //   plugin-config-data/@signalk/set-system-time.json
+              //   plugin-config-data/@signalk/@signalk-tracks-plugin.json
+              // Escaneamos también los subdirectorios que empiezan por "@".
+              const readPluginFile = (fullPath: string, id: string) => {
+                try {
+                  const raw = fsX.readFileSync(fullPath, "utf8");
+                  const cfg = JSON.parse(raw);
+                  const en = cfg?.enabled;
+                  if (typeof en === "boolean") enabledMap.set(id, en);
+                  else enabledMap.set(id, true);
+                } catch { /* ignore */ }
+              };
+              const files = fsX.readdirSync(dir, { withFileTypes: true });
+              for (const f of files) {
+                if (f.isDirectory() && f.name.startsWith("@")) {
+                  // Scope directory: e.g. plugin-config-data/@signalk/*.json
+                  try {
+                    const scopeDir = pathX.join(dir, f.name);
+                    for (const sub of fsX.readdirSync(scopeDir)) {
+                      if (!sub.endsWith(".json")) continue;
+                      const bare = sub.slice(0, -5);
+                      const id = `${f.name}/${bare}`;
+                      readPluginFile(pathX.join(scopeDir, sub), id);
+                    }
+                  } catch { /* ignore */ }
+                  continue;
+                }
+                if (!f.isFile() || !f.name.endsWith(".json")) continue;
+                const id = f.name.slice(0, -5);
+                readPluginFile(pathX.join(dir, f.name), id);
+              }
+              if (enabledMap.size > 0) { enabledSource = "plugin-config-data:" + dir; break; }
+            } catch { /* ignore */ }
+          }
+        }
+      } catch { /* ignore */ }
+
+      // Rev650: (bonus) usamos el mismo enabledMap para redefinir la detección
+      // del set-system-time — más fiable que el HTTP /skServer/plugins/ que
+      // requiere auth.
+      try {
+        for (const [id, en] of enabledMap.entries()) {
+          if (id.includes("set-system-time")) {
+            _setSystemTimePluginActive = en;
+            _setSystemTimePluginCheckedAt = Date.now();
+            break;
+          }
+        }
+      } catch { /* ignore */ }
+      bag.setSystemTimePlugin = {
+        active: _setSystemTimePluginActive,
+        checkedAtMs: _setSystemTimePluginCheckedAt,
+      };
+
+      // Rev649: listado de plugins SK vía filesystem. El endpoint
+      // /skServer/plugins/ requiere autenticación (Rev648 devolvía vacío) —
+      // en cambio, cualquier plugin instalado tiene su carpeta en
+      // ~/.signalk/node_modules/ o /usr/lib/node_modules/. Escaneamos ambos
+      // y filtramos por package.json que declare la key `signalk` o el
+      // keyword `signalk-node-server-plugin`.
+      try {
+        const fs = await import("fs");
+        const path = await import("path");
+        const homedir = (await import("os")).homedir();
+        const roots = [
+          path.join(homedir, ".signalk", "node_modules"),
+          "/usr/lib/node_modules",
+          "/usr/local/lib/node_modules",
+        ];
+        const plugins: Array<{ id: string; version: string | null; enabled: boolean | null; scope?: string }> = [];
+        const seen = new Set<string>();
+        const scanDir = (dir: string) => {
+          if (!fs.existsSync(dir)) return;
+          const entries = fs.readdirSync(dir, { withFileTypes: true });
+          for (const e of entries) {
+            if (!e.isDirectory()) continue;
+            // Scope package like @signalk/*.
+            if (e.name.startsWith("@")) {
+              const scopeDir = path.join(dir, e.name);
+              try {
+                for (const sub of fs.readdirSync(scopeDir, { withFileTypes: true })) {
+                  if (sub.isDirectory()) checkPackage(path.join(scopeDir, sub.name), `${e.name}/${sub.name}`);
+                }
+              } catch { /* ignore */ }
+              continue;
+            }
+            checkPackage(path.join(dir, e.name), e.name);
+          }
+        };
+        const checkPackage = (pkgDir: string, id: string) => {
+          const key = id;
+          if (seen.has(key)) return;
+          const pkgJsonPath = path.join(pkgDir, "package.json");
+          if (!fs.existsSync(pkgJsonPath)) return;
+          try {
+            const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, "utf8"));
+            const kwds: string[] = Array.isArray(pkg.keywords) ? pkg.keywords : [];
+            const isPlugin = !!pkg.signalk
+              || kwds.some((k) => typeof k === "string" && (k.includes("signalk-plugin") || k.includes("signalk-node-server-plugin") || k.includes("signalk-webapp")));
+            if (!isPlugin) return;
+            seen.add(key);
+            // Rev650/Rev653: enabled real desde el settings.json de SK.
+            // Rev653 fix: SK guarda los archivos de plugin-config-data flat
+            // sin el prefijo `@scope/` para los scope packages. Lookup fuzzy:
+            //   1) key exacta (id completo con scope).
+            //   2) basename tras `/` (ej. "set-system-time" de "@signalk/set-system-time").
+            let enabled: boolean | null;
+            if (enabledMap.has(id)) {
+              enabled = !!enabledMap.get(id);
+            } else if (id.includes("/")) {
+              const bare = id.slice(id.lastIndexOf("/") + 1);
+              enabled = enabledMap.has(bare) ? !!enabledMap.get(bare) : null;
+            } else {
+              enabled = null;
+            }
+            plugins.push({
+              id,
+              version: typeof pkg.version === "string" ? pkg.version : null,
+              enabled,
+            });
+          } catch { /* ignore */ }
+        };
+        for (const r of roots) scanDir(r);
+        bag.signalkPlugins = {
+          count: plugins.length,
+          enabledCount: plugins.filter(p => p.enabled === true).length,
+          enabledSource,  // path del archivo/dir del que leímos el flag enabled (debug)
+          list: plugins,
+        };
+      } catch { bag.signalkPlugins = null; }
+
+      // Rev648: AIS — cuántos MMSI conocidos en la base local del plugin.
+      // Diagnóstico: 0 targets = no hay feed AIS (no receptor, o receptor
+      // offline). >0 = SÍ hay feed.
+      try {
+        const aisTargets = _aisKnownDB ? Object.keys(_aisKnownDB).length : 0;
+        bag.ais = {
+          targetsKnown: aisTargets,
+          hasAisFeed: aisTargets > 0,
+        };
+      } catch { bag.ais = null; }
+
+      // Rev648: paths SK adicionales — sonda, sensor viento/veleta, presión,
+      // temperaturas, GPS quality. La lista _SK_PATHS_TO_AUDIT ya tenía las
+      // primeras; añadimos aquí más para el diagnóstico.
+      const skPathsExtra = [
+        "environment.wind.speedApparent",
+        "environment.wind.angleApparent",
+        "environment.outside.pressure",
+        "environment.outside.temperature",
+        "environment.water.temperature",
+        "navigation.gnss.satellites",
+        "navigation.gnss.horizontalDilution",
+        "navigation.gnss.methodQuality",
+        "navigation.rateOfTurn",
+        "navigation.attitude",
+        "navigation.acceleration",
+      ];
+
+      // Rutas SK críticas — con age y valor plano (position enmascarado).
+      const skPaths: Record<string, any> = {};
+      const allPaths = [..._SK_PATHS_TO_AUDIT, ...skPathsExtra];
+      for (const p of allPaths) {
+        try {
+          const raw = app.getSelfPath(p);
+          const shape = _classifyShape(raw);
+          let sample = shape.sampleValue;
+          if (p === "navigation.position" && sample && typeof sample === "object") {
+            sample = {
+              latitude: maskCoord((sample as any).latitude),
+              longitude: maskCoord((sample as any).longitude),
+              _redacted: "coords rounded to 0.1° for privacy",
+            };
+          }
+          skPaths[p] = { shape: shape.shape, ageMs: shape.ageMs, sample };
+        } catch { /* ignore */ }
+      }
+      bag.skPaths = skPaths;
+
+      // Rev649/Rev653: pings a servicios externos. Timeout 3000 ms (subido
+      // desde 1500 ms tras ver false-positive timeouts en red 4G/Tailscale
+      // con RTT alto). GET en vez de HEAD (algunos servidores responden más
+      // rápido a GET). Descartamos el body en cuanto llega la primera línea.
+      const pingUrls: Array<[string, string]> = [
+        ["ihm",       "https://ideihm.covam.es"],
+        ["openMeteo", "https://api.open-meteo.com"],
+        ["github",    "https://github.com"],
+        ["npmjs",     "https://registry.npmjs.org"],
+      ];
+      const pingResults: Record<string, { ok: boolean; ms: number | null; error?: string; status?: number }> = {};
+      await Promise.all(pingUrls.map(async ([key, url]) => {
+        const t0 = Date.now();
+        try {
+          const https = await import("https");
+          const result = await new Promise<{ status: number }>((resolve, reject) => {
+            const u = new URL(url);
+            const req = https.request(
+              { host: u.hostname, port: 443, path: "/", method: "GET", timeout: 3000 },
+              (r: any) => {
+                resolve({ status: r.statusCode || 0 });
+                r.destroy();
+              }
+            );
+            req.on("error", (e: any) => reject(e));
+            req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); });
+            req.end();
+          });
+          pingResults[key] = { ok: true, ms: Date.now() - t0, status: result.status };
+        } catch (e: any) {
+          pingResults[key] = { ok: false, ms: null, error: String(e?.code || e?.message || "err").slice(0, 40) };
+        }
+      }));
+      bag.internetPings = pingResults;
+
+      bag.durationMs = Date.now() - started;
+      bag.serverTimeMs = now;
+      res.json(bag);
     });
 
     // Rev575 (feedback Carlos 2026-06-26): F1 capa acceso opcional.
@@ -2342,7 +2979,7 @@ try {
       const body = req.body || {};
       const pin = String(body.pin || "");
       const alias = String(body.alias || "").trim() || "PIN";
-      const notes = String(body.notes || "").slice(0, 120);
+      const notes = String(body.notes || "").slice(0, 500);
       const expiresMsRaw = body.expiresMs;
       const expiresMs = (typeof expiresMsRaw === "number" && expiresMsRaw > 0) ? expiresMsRaw : null;
       // Rev596: nivel siempre "full" para invitados (eliminado "self").
@@ -2409,7 +3046,7 @@ try {
         // Rev622 (feedback Carlos "no hay forma de editar mi maestro"): el
         // maestro puede editar sus notas y cambiar su PIN. No puede caducar
         // (siempre null) ni cambiar de nivel.
-        if (typeof body.notes === "string") target.notes = body.notes.slice(0, 120);
+        if (typeof body.notes === "string") target.notes = body.notes.slice(0, 500);
         let expiresChanged = false;
         if (target.isMaster) {
           // Ignorar cualquier expiresMs recibido para el maestro.
@@ -6157,10 +6794,22 @@ function getAnchorWatchState() {
       relativeAxisAmbiguous: _lastWaveNav.relativeAxisAmbiguous,
       confidence: _lastWaveNav.confidence,
       rejectionReason: _lastWaveNav.rejectionReason,
+      // Rev654 (feedback Carlos): exponer duración actual del buffer para que
+      // el widget muestre "IMU… Xs/Ys" durante el warmup — así el usuario
+      // sabe que está calentando, no colgado.
+      bufferDurSec: (_lastWaveNav as any).diagnostics?.bufferDurSec ?? null,
+      bufferGateSec: _WAVE_NAV_GATE_MIN_BUF_MS / 1000,
     } : null,
     // Rev644: flag para que el visor pinte banner rojo si el bug crítico
     // del plugin @signalk/set-system-time está activo — corrompe IMU cada 60s.
     setSystemTimePluginActive: _setSystemTimePluginActive,
+    // Rev655 (Sprint I-1): estado del fetch de marea para el visor.
+    tideFetch: {
+      status: _tideFetchState.status,
+      attempts: _tideFetchState.attempts,
+      source: _tideFetchState.source,
+      maxAttempts: _tideRetryDelays.length,
+    },
     // Rev478 (C-17): schemaVersion=2 introduce campo `grounding` (FSM) y
     // `gpsAgeMs`. Frontend cacheado con expected=1 debe forzar reload.
     schemaVersion: SSE_SCHEMA_VERSION,

@@ -1,5 +1,49 @@
 # Changelog
 
+## [2.5.4] - 2026-07-06
+
+### English
+
+**Sprint I — quick wins pack**
+
+Pack of small-but-useful features that many users have been asking for. All batched together so the AppStore card doesn't get spammed with tiny releases.
+
+- **🐛 Send diagnostic — 1-button** (Rev646, Rev648-Rev654). New menu entry `🐛 Enviar diagnóstico` that captures a full technical snapshot of the installation and copies it to the clipboard for the user to paste into support chat/email. Preview modal with big readable typography (28px title, 20px explanation, 16px monospace JSON, 960px wide) shows exactly what's about to be sent so the user can review; sensitive data is already redacted (GPS coords rounded to 0.1°/~11 km, Telegram token/chat_id masked as XXXX, PIN hashes and own MMSI removed). The diagnostic includes: SK Server version, OpenPlotter version, Node version, hostname, uptime, load average, memory (system + plugin), full list of installed SK plugins with real `enabled: true/false` flag, IMU audit, wave engine state, pypilot bridge status, AIS targets seen, all subscribed SK paths with age, `@signalk/set-system-time` detection, tide fetch status, mbtiles config, PIN accounts summary and internet reachability pings to IHM/Open-Meteo/GitHub/NPM. Fuzzy matching for scope packages (`@signalk/*`, `@mxtommy/*`) so `enabled` reflects the real state even when SK stores plugin-config-data flat without the scope prefix.
+
+- **🌀 Windy multi-source** (Rev646). Menu entry Windy now opens a small chooser with 💨 **Wind** (default), 🛰️ **Satellite** and 📡 **Radar**. Choice persisted in localStorage. Closing the Windy popup returns to the chooser instead of the visor so you can switch layers without going through the menu again.
+
+- **User Control polish** (Rev646-Rev648). "Users active" and "Registered users" titles unified to the same big style as "Access control master switch". Thicker separators between blocks (3 px). New explanatory descriptor under each title so the button doesn't sit stuck to the heading. `+ Add user` button now below the title in its own row. `Notes` field bumped from 120 to **500 chars** with a 5-line textarea. Redundant "Your PIN does not expire" line hidden for master users (implicit for the master, useful for guests).
+
+- **🔄 Force tide fetch + auto retry** (Rev655-Rev656). When the first tide download fails on a fresh install (no cache yet + IHM slow / no internet), instead of the dead "Sin datos suficientes" the Curves modal now shows `🔄 Descargando marea IHM — intento X/5…` and a big `↻ Reintentar ahora` button. Backend auto-retries with exponential backoff (3s / 15s / 60s / 3min / 10min). Source is agnostic — displays "IHM" or "Open-Meteo" depending on the station selected. New endpoints `POST /api/tide/force-refresh` and `GET /api/tide/fetch-status`.
+
+- **Minimum requirements documented** (Rev654 README). Explicit block in README (EN + ES) listing: OpenPlotter V4, SignalK Server ≥ 2.0, Node ≥ 20, UTF-8 locale (critical: non-UTF-8 corrupts IMU parsing), `fonts-noto-color-emoji`, `espeak`. Loud warning about `@signalk/set-system-time` being incompatible.
+
+**Additional fixes bundled**
+
+- **Wave widget "IMU… Xs/90s" progress bar** during buffer warmup (Rev654). Previous "🕒 IMU…" was vague; now the user sees the buffer filling in real time and knows exactly when to expect the value.
+- **Auto-detect Pypilot bridge on localhost** (Rev644). If no host is configured (fresh install), the plugin probes TCP `localhost:23322` for 1.5 s. If Pypilot answers, the bridge is auto-enabled with `host=localhost, port=23322`. Eliminates a manual step users often missed.
+
+### Español
+
+**Sprint I — pack de mejoras rápidas**
+
+Pack de features pequeños pero útiles que muchos usuarios habían pedido. Todo agrupado en una release para no saturar la ficha del AppStore con mini-releases.
+
+- **🐛 Enviar diagnóstico — 1 botón** (Rev646, Rev648-Rev654). Nueva entrada de menú `🐛 Enviar diagnóstico` que captura una foto técnica completa de la instalación y la copia al portapapeles para que el usuario la pegue en el chat/email de soporte. Modal preview con tipografía grande y legible (título 28px, explicación 20px, JSON monoespaciado 16px, ancho 960px) muestra exactamente qué se va a enviar para que el usuario revise; los datos sensibles ya vienen redactados (coordenadas GPS redondeadas a 0,1°/~11 km, token/chat_id de Telegram enmascarados como XXXX, hashes de PIN y MMSI propio eliminados). El diagnóstico incluye: versión de SK Server, versión de OpenPlotter, versión de Node, hostname, uptime, load average, memoria (sistema + plugin), lista completa de plugins SK instalados con el flag `enabled: true/false` real, IMU audit, estado del motor de olas, estado del bridge pypilot, targets AIS vistos, todos los paths SK con age, detección de `@signalk/set-system-time`, estado del fetch de marea, config de mbtiles, resumen de cuentas PIN y pings de conectividad a IHM/Open-Meteo/GitHub/NPM. Fuzzy matching para paquetes scope (`@signalk/*`, `@mxtommy/*`) para que `enabled` refleje el estado real aunque SK guarde los `plugin-config-data` sin el prefijo del scope.
+
+- **🌀 Windy multi-fuente** (Rev646). La entrada Windy del menú abre ahora un mini-chooser con 💨 **Viento** (por defecto), 🛰️ **Satélite** y 📡 **Radar**. Elección persistida en localStorage. Cerrar el popup Windy vuelve al chooser en lugar del visor para poder cambiar de capa sin pasar por el menú otra vez.
+
+- **Control de usuarios pulido** (Rev646-Rev648). Títulos "Usuarios activos" y "Usuarios registrados" unificados al mismo tamaño grande que "Control activo de usuarios". Separadores entre bloques más gruesos (3 px). Nuevo descriptor explicativo bajo cada título para que el botón no quede pegado al encabezado. Botón `+ Añadir usuario` ahora debajo del título en su propia fila. Campo `Notas` ampliado de 120 a **500 caracteres** con un textarea de 5 líneas. Línea redundante "Tu PIN no caduca" oculta para usuarios master (implícito para el master, útil para invitados).
+
+- **🔄 Forzar fetch de marea + retry automático** (Rev655-Rev656). Cuando la primera descarga de marea falla en una instalación fresca (sin cache + IHM lento / sin internet), en lugar del muerto "Sin datos suficientes" el modal Curvas muestra ahora `🔄 Descargando marea IHM — intento X/5…` y un botón grande `↻ Reintentar ahora`. El backend hace retry automático con backoff exponencial (3s / 15s / 60s / 3min / 10min). Agnóstico a la fuente — muestra "IHM" u "Open-Meteo" según la estación seleccionada. Nuevos endpoints `POST /api/tide/force-refresh` y `GET /api/tide/fetch-status`.
+
+- **Requisitos mínimos documentados** (Rev654 README). Bloque explícito en README (ES + EN) con: OpenPlotter V4, SignalK Server ≥ 2.0, Node ≥ 20, locale UTF-8 (crítico: un locale no-UTF-8 corrompe el parseo del IMU), `fonts-noto-color-emoji`, `espeak`. Aviso destacado sobre la incompatibilidad de `@signalk/set-system-time`.
+
+**Otros fixes bundleados**
+
+- **Barra de progreso "IMU… Xs/90s" en el widget Olas** durante el warmup del buffer (Rev654). El "🕒 IMU…" anterior era vago; ahora el usuario ve el buffer llenándose en tiempo real y sabe exactamente cuándo esperar el valor.
+- **Auto-detect del bridge Pypilot en localhost** (Rev644). Si no hay host configurado (instalación fresca), el plugin sondea el TCP `localhost:23322` durante 1.5 s. Si Pypilot responde, se auto-activa el bridge con `host=localhost, port=23322`. Elimina un paso manual que muchos usuarios se saltaban.
+
 ## [2.5.3] - 2026-07-05
 
 ### English

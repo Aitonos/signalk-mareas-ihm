@@ -139,6 +139,21 @@ curl -X POST http://openplotter.local:3000/signalk-mareas-ihm/api/anchor-watch/l
 curl http://openplotter.local:3000/signalk-mareas-ihm/api/anchor-watch/simple
 ```
 
+### Minimum requirements
+
+The plugin is ESM-only and uses modern features. Older stacks will not load it (`ERR_REQUIRE_ESM`).
+
+| Component | Minimum | Notes |
+|---|---|---|
+| **OpenPlotter** | **V4** | V3 ships SK 1.x, which cannot load ESM plugins. |
+| **Signal K Server** | **≥ 2.0** | 1.x uses `require()` for plugins → `ERR_REQUIRE_ESM`. |
+| **Node.js** | **≥ 20** | LTS. |
+| **System locale** | **UTF-8 (e.g. `es_ES.UTF-8`)** | A non-UTF-8 locale causes RTIMULib/pypilot to misparse gyro values and returns spurious 10-15° roll noise (breaks wave engine). Verify with `locale`. |
+| Emoji font (opt.) | `fonts-noto-color-emoji` | Without it, buttons show empty squares on Chromium/Pi. `sudo apt install fonts-noto-color-emoji`. |
+| Voice engine | `espeak` | Mandatory for voice alarms. Usually already installed on OpenPlotter. |
+
+⚠ **Do NOT enable `@signalk/set-system-time`** (ships with Signal K, sometimes on by default in OpenPlotter with internet). It runs `date -u -s` every 60 s with 1 s resolution and corrupts the IMU Kalman filter → phantom "strong" waves in port and jerky attitude. Disable in **SK → Server → Plugin Config → Set System Time → OFF**.
+
 ### Quick install
 
 From the **Signal K Appstore**: search `signalk-mareas-ihm` and click install.
@@ -155,7 +170,7 @@ Then open: `http://your-pi.local:3000/signalk-mareas-ihm/`
 
 ### Tested on
 
-- Raspberry Pi 4 (OpenPlotter V4) — primary target.
+- Raspberry Pi 4 / 5 with OpenPlotter V4 — primary target.
 - Linux x64, macOS, Windows 11.
 - Firefox, Chrome, Safari on iOS / Android.
 
@@ -309,6 +324,21 @@ curl -X POST http://openplotter.local:3000/signalk-mareas-ihm/api/anchor-watch/l
 curl http://openplotter.local:3000/signalk-mareas-ihm/api/anchor-watch/simple
 ```
 
+### Requisitos mínimos
+
+El plugin es ESM puro y usa features modernas. Stacks antiguos no lo cargarán (`ERR_REQUIRE_ESM`).
+
+| Componente | Mínimo | Notas |
+|---|---|---|
+| **OpenPlotter** | **V4** | V3 viene con SK 1.x que no puede cargar plugins ESM. |
+| **Signal K Server** | **≥ 2.0** | 1.x usa `require()` para plugins → `ERR_REQUIRE_ESM`. |
+| **Node.js** | **≥ 20** | LTS. |
+| **Locale del sistema** | **UTF-8 (p. ej. `es_ES.UTF-8`)** | Un locale no-UTF-8 hace que RTIMULib/pypilot parseen mal los valores del giróscopo y devuelvan ruido de 10-15° en el roll (rompe el motor de olas). Comprueba con `locale`. |
+| Fuente emoji (opc.) | `fonts-noto-color-emoji` | Sin ella, los botones salen como cuadrados vacíos en Chromium/Pi. `sudo apt install fonts-noto-color-emoji`. |
+| Motor de voz | `espeak` | Obligatorio para las alarmas de voz. Suele estar ya instalado en OpenPlotter. |
+
+⚠ **NO actives `@signalk/set-system-time`** (viene con Signal K, a veces activado por defecto en OpenPlotter con internet). Ejecuta `date -u -s` cada 60 s con resolución de 1 s y corrompe el filtro de Kalman del IMU → "olas fuertes" fantasma en puerto y saltos de attitude. Desactívalo en **SK → Server → Plugin Config → Set System Time → OFF**.
+
 ### Instalación rápida
 
 Desde el **Appstore de Signal K**: busca `signalk-mareas-ihm` y pulsa instalar.
@@ -325,7 +355,7 @@ Después abre: `http://tu-pi.local:3000/signalk-mareas-ihm/`
 
 ### Probado en
 
-- Raspberry Pi 4 (OpenPlotter V4) — objetivo principal.
+- Raspberry Pi 4 / 5 con OpenPlotter V4 — objetivo principal.
 - Linux x64, macOS, Windows 11.
 - Firefox, Chrome, Safari en iOS / Android.
 

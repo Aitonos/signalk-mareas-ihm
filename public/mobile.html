@@ -2276,8 +2276,10 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     </div>
     <!-- Rev621 (feedback Carlos "sigue enano"): tamaños del modal edit
          subidos +40%. Todos los invitados son full. -->
+    <!-- Rev646 (Sprint I-3, feedback Carlos "Ampliar notas a un campo mucho
+         mayor, 500 caracteres"): límite 120 → 500 chars, 5 líneas visibles. -->
     <label style="display:block;font-size:22px;color:#cfd8dc;font-weight:700;margin-bottom:8px" data-i18n="pin_notes_label">Notas</label>
-    <textarea id="m-pin-edit-notes" maxlength="120" rows="2" placeholder="p. ej. tripulación de charter" data-i18n-placeholder="pin_notes_placeholder" style="width:100%;padding:14px 16px;font-size:22px;background:rgba(0,0,0,.4);border:1.5px solid rgba(255,255,255,.25);color:#fff;border-radius:10px;box-sizing:border-box;margin-bottom:22px;font-family:inherit;resize:vertical"></textarea>
+    <textarea id="m-pin-edit-notes" maxlength="500" rows="5" placeholder="p. ej. tripulación de charter" data-i18n-placeholder="pin_notes_placeholder" style="width:100%;padding:14px 16px;font-size:22px;background:rgba(0,0,0,.4);border:1.5px solid rgba(255,255,255,.25);color:#fff;border-radius:10px;box-sizing:border-box;margin-bottom:22px;font-family:inherit;resize:vertical;min-height:120px"></textarea>
     <label style="display:block;font-size:22px;color:#cfd8dc;font-weight:700;margin-bottom:8px" data-i18n="pin_expiry_label">Validez</label>
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <button onclick="m_pinEditExpiryClear()" class="m-pin-quickbtn" style="background:rgba(0,0,0,.45);border-color:rgba(255,255,255,.25);color:#ddd" data-i18n="pin_expiry_never">Sin caducidad</button>
@@ -2492,7 +2494,8 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
          en la sidebar derecha). Orden final del menu reordenado por feedback. -->
     <!-- Rev628: una sola entrada de menú "Cálculo (Sonda + Fondeo)". -->
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openCalc()"><span class="ico">🧮</span><span data-i18n="menu_calc_unified">Cálculo Sonda y Fondeo</span></button>
-    <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');toggleWindy&&toggleWindy()"><span class="ico">🌀</span><span>Windy</span></button>
+    <!-- Rev646 (Sprint I-2): Windy multifunción — abre chooser de capa. -->
+    <button class="ml-row" onclick="m_openWindyChooser&&m_openWindyChooser()"><span class="ico">🌀</span><span>Windy</span></button>
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');window.open('https://windregatta.com','_blank','noopener,noreferrer')">
       <!-- Rev186: logo Windregatta inline SVG estilo iOS icon (vela sobre fondo azul gradiente).
            Si el usuario sube el PNG oficial a public/windregatta-icon.png, prevalece. -->
@@ -2522,6 +2525,11 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openUserControl&&m_openUserControl()"><span class="ico">👥</span><span data-i18n="menu_user_control">Control de usuarios</span></button>
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openConfig&&m_openConfig()"><span class="ico">⚙️</span><span data-i18n="menu_config">Configuración</span></button>
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openInstructions()"><span class="ico">📖</span><span data-i18n="menu_instrucciones">Instrucciones y aviso legal</span></button>
+    <!-- Rev646 (Sprint I-4, feedback Carlos "Hay que hacer un script automatico
+         para feedback debug con los usuarios que no les funciona; solo le den
+         un botón y nos manden lo que le salga"). Captura /api/diagnostic +
+         copia al portapapeles + confirma. -->
+    <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_captureDiagnostic&&m_captureDiagnostic()"><span class="ico">🐛</span><span data-i18n="menu_diag">Enviar diagnóstico</span></button>
     <!-- Idiomas en grande (un botón cuadrado cada uno) -->
     <div style="display:flex;gap:10px;margin-top:18px;padding-top:18px;border-top:2px solid rgba(255,255,255,.15)">
       <button class="ml-row" style="flex:1;justify-content:center;font-size:38px!important;padding:18px!important;min-height:84px" onclick="setLang('es')">🇪🇸</button>
@@ -2638,14 +2646,19 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
           <button id="m-uc-access-toggle" onclick="m_toggleSecurityLayer()" class="m-uc-btn-toggle">🔓 Desactivado</button>
           <div id="m-uc-access-state" style="flex:1;min-width:220px;color:#cde;font-size:18px;font-weight:600"></div>
         </div>
-        <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:18px;margin-top:8px">
-          <div class="m-uc-h3" style="margin-bottom:8px" data-i18n="cfg_sessions_title">Usuarios activos</div>
-          <div class="m-uc-help" style="margin-bottom:12px" data-i18n="cfg_sessions_help">Usuarios con sesión abierta ahora mismo (dispositivo + IP). Solo lo ve el maestro. Puede cerrar cualquier sesión.</div>
+        <!-- Rev648 (feedback Carlos): separadores más gruesos entre bloques
+             (3px en lugar de 1px). Títulos "Usuarios activos" y "Usuarios
+             registrados" pasan a m-uc-h2 para igualar con "Control activo de
+             usuarios". Descriptor bajo cada título para separar del botón. -->
+        <div style="border-top:3px solid rgba(255,255,255,.20);padding-top:22px;margin-top:18px">
+          <div class="m-uc-h2" style="margin-bottom:10px" data-i18n="cfg_sessions_title">Usuarios activos</div>
+          <div class="m-uc-help" style="margin-bottom:14px" data-i18n="cfg_sessions_help">Usuarios con sesión abierta ahora mismo (dispositivo + IP). Solo lo ve el maestro. Puede cerrar cualquier sesión.</div>
           <div id="m-uc-sessions-list"></div>
         </div>
-        <div style="border-top:1px solid rgba(255,255,255,.12);padding-top:18px;margin-top:18px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
-            <div class="m-uc-h3" data-i18n="cfg_pins_title">Usuarios registrados</div>
+        <div style="border-top:3px solid rgba(255,255,255,.20);padding-top:22px;margin-top:22px">
+          <div class="m-uc-h2" style="margin-bottom:10px" data-i18n="cfg_pins_title">Usuarios registrados</div>
+          <div class="m-uc-help" style="margin-bottom:14px" data-i18n="cfg_pins_help">Cuentas PIN configuradas en el barco. El maestro puede editar sus notas, nivel de acceso y caducidad, o eliminarlas. Añade un usuario para dar acceso a tripulación o invitados.</div>
+          <div style="margin-bottom:14px">
             <button onclick="m_pinAddNew()" class="m-uc-btn-primary" data-i18n="cfg_pins_add">+ Añadir usuario</button>
           </div>
           <div id="m-uc-pins-list"></div>
@@ -3409,11 +3422,15 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <div id="curvas-content" style="flex:1;overflow:hidden;padding:10px 20px;display:flex;flex-direction:column"><div style="text-align:center;padding:30px;opacity:.5">Cargando...</div></div>
   </div>
 </div>
-<div class="popup-overlay" id="windy-pop" onclick="closePopup('windy-pop')">
+<!-- Rev647 (feedback Carlos): "Atrás" del popup Windy vuelve al chooser
+     para elegir otra capa, no al visor directo. Reemplazo el onclick del
+     overlay y del ✕ por m_windyClose() que decide destino según el flag
+     _windyFromChooser. -->
+<div class="popup-overlay" id="windy-pop" onclick="m_windyClose()">
   <div class="popup-box" onclick="event.stopPropagation()" style="width:90vw;height:85vh;max-width:1200px;padding:0;overflow:hidden;display:flex;flex-direction:column">
     <div style="padding:8px 14px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.1)">
       <h4 style="font-size:18px;margin:0"data-i18n="windy_title">🌀 Windy — Previsión de viento</h4>
-      <button onclick="closePopup('windy-pop')" style="background:none;border:none;color:#aaa;font-size:22px;cursor:pointer;line-height:1">✕</button>
+      <button onclick="m_windyClose()" style="background:none;border:none;color:#aaa;font-size:22px;cursor:pointer;line-height:1">✕</button>
     </div>
     <iframe id="windy-frame" style="flex:1;border:none;width:100%;min-height:0" src="about:blank"></iframe>
   </div>
@@ -4552,11 +4569,22 @@ function m_updateWaveBottom(){
       return;
     }
     if (w.rejectionReason === 'buffer_warming'){
-      grid.innerHTML = '<span class="wave-ico">🕒</span><span class="wave-period" data-i18n="wave_warming">IMU…</span><span class="wave-dir">—</span>';
+      /* Rev654 (feedback Carlos: "tardo mucho más de 90s"): barra de progreso
+         concreta X/Y en vez de "IMU…" vago. El backend expone bufferDurSec y
+         bufferGateSec para calcular el % actual. Si no llegan (backend viejo),
+         fallback al texto original. */
+      var dur = (typeof w.bufferDurSec === 'number') ? w.bufferDurSec : null;
+      var gate = (typeof w.bufferGateSec === 'number') ? w.bufferGateSec : 90;
+      var lbl;
+      if (dur != null){
+        lbl = '🕒 ' + Math.round(dur) + '/' + Math.round(gate) + 's';
+      } else {
+        lbl = '🕒 IMU…';
+      }
+      grid.innerHTML = '<span class="wave-ico">🕒</span><span class="wave-period">' + lbl + '</span><span class="wave-dir">—</span>';
       grid.title = (_lang==='en')
-        ? 'Sea state (IMU): warming up, needs 90 s of samples after restart'
-        : 'Estado del mar (IMU): calentando, necesita 90 s de datos tras el restart';
-      try{ if(typeof translateAll==='function') translateAll(); }catch(_){}
+        ? 'Sea state (IMU): warming up, needs ' + gate + ' s of samples. If it exceeds that, check pypilot bridge / SK deltas.'
+        : 'Estado del mar (IMU): calentando, necesita ' + gate + ' s de datos. Si tarda más, revisa el puente pypilot o los deltas SK.';
       return;
     }
     grid.innerHTML = '<span class="wave-ico">—</span><span class="wave-period">—</span><span class="wave-dir">—</span>';
@@ -4754,7 +4782,7 @@ var _i18n={
   pin_level_full:{es:'Control total (puede levar el ancla aunque la haya fondeado otro)',en:'Full control (can lift the anchor even if another set it)'},
   pin_level_self:{es:'Sólo sus acciones (sólo puede levar el ancla que él mismo fondeó)',en:'Self-only (can only lift the anchor they set themselves)'},
   pin_level_label:{es:'Nivel de invitado',en:'Guest level'},
-  pin_notes_label:{es:'Notas (opcional, 120 caracteres)',en:'Notes (optional, 120 chars)'},
+  pin_notes_label:{es:'Notas (opcional, 500 caracteres)',en:'Notes (optional, 500 chars)'},
   pin_notes_placeholder:{es:'p. ej. tripulación de charter',en:'e.g. charter crew'},
   pin_expiry_label:{es:'Validez',en:'Expiry'},
   pin_expiry_never:{es:'Sin caducidad',en:'No expiry'},
@@ -4791,6 +4819,7 @@ var _i18n={
   /* Rev594: sesiones PIN activas. */
   cfg_sessions_title:{es:'Usuarios activos',en:'Active users'},
   cfg_sessions_help:{es:'Usuarios con sesión abierta ahora mismo (dispositivo + IP). Solo lo ve el maestro. Puede cerrar cualquier sesión.',en:'Users with an open session right now (device + IP). Master only. You can close any session.'},
+  cfg_pins_help:{es:'Cuentas PIN configuradas en el barco. El maestro puede editar sus notas, nivel de acceso y caducidad, o eliminarlas. Añade un usuario para dar acceso a tripulación o invitados.',en:'PIN accounts configured on the boat. The master can edit notes, access level and expiry, or delete them. Add a user to grant access to crew or guests.'},
   cfg_sessions_empty:{es:'No hay usuarios activos.',en:'No active users.'},
   cfg_sessions_me:{es:'(tu sesión actual)',en:'(your current session)'},
   cfg_sessions_revoke:{es:'Revocar',en:'Revoke'},
@@ -4928,6 +4957,10 @@ var _i18n={
   menu_meteo:{es:'Previsión Meteo',en:'Weather forecast'},
   m_meteo_short:{es:'Meteo',en:'Weather'},
   menu_instrucciones:{es:'Instrucciones y aviso legal',en:'Instructions & disclaimer'},
+  /* Rev646 (Sprint I-4): captura de diagnóstico 1-botón. */
+  menu_diag:{es:'🐛 Enviar diagnóstico',en:'🐛 Send diagnostic'},
+  diag_copied:{es:'Diagnóstico copiado al portapapeles. Pégalo en el chat o email al desarrollador.',en:'Diagnostic copied to clipboard. Paste it into the chat or email to the developer.'},
+  diag_failed:{es:'No se pudo capturar el diagnóstico.',en:'Could not capture diagnostic.'},
   menu_config_sk:{es:'Signal K',en:'Signal K'},
   /* Rev311: shelter / abrigo */
   panel_cartas_capas:{es:'Cartas y Capas',en:'Charts & Layers'},
@@ -6363,6 +6396,12 @@ function closePopup(id){
     _selectedAisMmsi=null;
     _selectedAisDisappearedAt=null;
   }
+  /* Rev647: si cerrábamos Windy desde el header inyectado (Atrás naranja),
+     reabrir el chooser si el usuario había llegado por esa ruta. */
+  if(id==='windy-pop' && window._windyFromChooser){
+    window._windyFromChooser = false;
+    setTimeout(function(){ try{ m_openWindyChooser(); }catch(_){} }, 100);
+  }
 }
 function openPopup(id){document.getElementById(id).classList.add('open');}
 
@@ -7703,6 +7742,8 @@ function processPollData(s){
       if(s.setSystemTimePluginActive) _ihmShowStsBanner();
       else _ihmHideStsBanner();
     }
+    /* Rev655: cache del estado de fetch de marea para el visor. */
+    if(s.tideFetch){ window._tideFetchBE = s.tideFetch; }
     fitSbarFont();
     if(firstPoll&&bPos){
       firstPoll=false;
@@ -12271,7 +12312,33 @@ function fetchCurvas(){
     var stId=(d&&d.station&&d.station.id)?d.station.id:'';
     return(stId?fetch(A+'/stationRef?id='+stId).then(function(r2){return r2.ok?r2.json():null}).catch(function(){return null}):Promise.resolve(null)).then(function(ref){_cvStationRef=ref;return d;});
   }).then(function(d){
-    if(!d||!d.extremes||d.extremes.length<2){el.innerHTML='<div style="padding:20px;opacity:.5">'+T('sin_datos')+'</div>';return;}
+    if(!d||!d.extremes||d.extremes.length<2){
+      /* Rev655 (Sprint I-1 feedback Carlos): en vez del "Sin datos" seco,
+         mostramos el estado real del fetch + botón para forzar reintento.
+         El status viene del state SSE (_tideFetchBE) actualizado en processPollData. */
+      var tf = window._tideFetchBE || {};
+      var _lang2 = (typeof _lang==='string')?_lang:'es';
+      var statusTxt = '';
+      if (tf.status === 'fetching'){
+        var srcTxt = tf.source ? (' ('+tf.source+')') : '';
+        statusTxt = (_lang2==='en')
+          ? '🔄 Downloading tide data'+srcTxt+' — attempt '+(tf.attempts||1)+'/'+(tf.maxAttempts||5)+'…'
+          : '🔄 Descargando datos de marea'+srcTxt+' — intento '+(tf.attempts||1)+'/'+(tf.maxAttempts||5)+'…';
+      } else if (tf.status === 'failed'){
+        var errShort = tf.lastError ? String(tf.lastError).slice(0,80) : '';
+        statusTxt = (_lang2==='en')
+          ? '❌ Could not fetch tide data. '+errShort
+          : '❌ No se pudo descargar la marea. '+errShort;
+      } else {
+        statusTxt = T('sin_datos');
+      }
+      el.innerHTML = '<div style="padding:20px;text-align:center">'
+        + '<div style="opacity:.75;margin-bottom:16px;font-size:16px">'+statusTxt+'</div>'
+        + '<button onclick="m_forceTideRefresh()" style="background:var(--org);color:#0a1929;padding:12px 22px;font-size:16px;font-weight:900;border-radius:10px;border:none;cursor:pointer">'
+        + ((_lang2==='en')?'↻ Retry now':'↻ Reintentar ahora')
+        + '</button></div>';
+      return;
+    }
     var sorted=d.extremes.slice().sort(function(a,b){return new Date(a.time)-new Date(b.time);});
     var nowMs=Date.now();
     var before=sorted.filter(function(e){return new Date(e.time).getTime()<=nowMs;});
@@ -12399,12 +12466,83 @@ function fetchCurvas(){
     }
   }).catch(function(){el.innerHTML='<div style="color:var(--red);padding:10px">Error</div>';});
 }
-function toggleWindy(){
+/* Rev646 (Sprint I-2): Windy multifunción. Antes hardcodeaba overlay=wind.
+   Ahora acepta la capa: 'wind' (Viento), 'satellite' (Satélite), 'radar'
+   (Radar). Persiste la última selección en localStorage. La opción por
+   defecto es 'wind'. El botón del menú lanza un mini-selector inline con
+   las tres opciones; toggleWindy() sin argumento abre la última usada. */
+function toggleWindy(overlay){
+  if (!overlay) {
+    try { overlay = localStorage.getItem('ihm-windy-overlay') || 'wind'; } catch(_) { overlay = 'wind'; }
+  } else {
+    try { localStorage.setItem('ihm-windy-overlay', overlay); } catch(_){}
+  }
+  /* Mapa overlay → título del popup en el idioma activo. */
+  var titleMap = {
+    wind:      { es:'🌀 Windy — Viento',    en:'🌀 Windy — Wind' },
+    satellite: { es:'🌀 Windy — Satélite',  en:'🌀 Windy — Satellite' },
+    radar:     { es:'🌀 Windy — Radar',     en:'🌀 Windy — Radar' },
+  };
+  var t = titleMap[overlay] || titleMap.wind;
+  try {
+    var titleEl = document.querySelector('#windy-pop h4');
+    if (titleEl) titleEl.textContent = (_lang==='en') ? t.en : t.es;
+  } catch(_){}
   var lat=bPos?bPos.lat:42.24,lng=bPos?bPos.lng:-8.72;
   var z=map?map.getZoom():14;
-  var src='https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&metricWind=kt&zoom='+Math.min(z,15)+'&overlay=wind&product=ecmwf&level=surface&lat='+lat.toFixed(4)+'&lon='+lng.toFixed(4)+'&detailLat='+lat.toFixed(4)+'&detailLon='+lng.toFixed(4)+'&marker=true&pressure=true&calendar=now&lang='+(_lang==='en'?'en':'es');
+  var src='https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&metricWind=kt&zoom='+Math.min(z,15)+'&overlay='+encodeURIComponent(overlay)+'&product=ecmwf&level=surface&lat='+lat.toFixed(4)+'&lon='+lng.toFixed(4)+'&detailLat='+lat.toFixed(4)+'&detailLon='+lng.toFixed(4)+'&marker=true&pressure=true&calendar=now&lang='+(_lang==='en'?'en':'es');
   document.getElementById('windy-frame').src=src;
   openPopup('windy-pop');
+}
+/* Rev647: cierra el popup Windy y, si venías desde el chooser, vuelve a
+   mostrarlo para permitir cambiar de capa sin regresar al visor. */
+function m_windyClose(){
+  closePopup('windy-pop');
+  if (window._windyFromChooser) {
+    window._windyFromChooser = false;
+    setTimeout(function(){ m_openWindyChooser(); }, 100);
+  }
+}
+/* Rev646: al pulsar el ítem "Windy" del menú, en vez de abrir directamente
+   la última capa usada, mostramos un mini-desplegable con las 3 opciones.
+   El usuario elige una vez y esa queda como default para próximos clicks
+   rápidos (larga vida a la persistencia en localStorage). */
+function m_openWindyChooser(){
+  try { document.getElementById('m-menu').classList.remove('open'); } catch(_){}
+  var pop = document.getElementById('windy-chooser-pop');
+  if (pop) { openPopup('windy-chooser-pop'); return; }
+  pop = document.createElement('div');
+  pop.className = 'popup-overlay';
+  pop.id = 'windy-chooser-pop';
+  pop.onclick = function(){ closePopup('windy-chooser-pop'); };
+  var box = document.createElement('div');
+  box.className = 'popup-box';
+  box.style.cssText = 'min-width:300px;max-width:420px;text-align:center';
+  box.onclick = function(ev){ ev.stopPropagation(); };
+  var h = document.createElement('h4');
+  h.style.cssText = 'font-size:18px;margin-bottom:12px';
+  h.textContent = (_lang==='en') ? '🌀 Windy — choose layer' : '🌀 Windy — elige capa';
+  box.appendChild(h);
+  var layers = [
+    { key:'wind',      es:'💨 Viento',    en:'💨 Wind' },
+    { key:'satellite', es:'🛰️ Satélite',  en:'🛰️ Satellite' },
+    { key:'radar',     es:'📡 Radar',     en:'📡 Radar' },
+  ];
+  var lastOverlay = 'wind';
+  try { lastOverlay = localStorage.getItem('ihm-windy-overlay') || 'wind'; } catch(_){}
+  layers.forEach(function(l){
+    var btn = document.createElement('button');
+    btn.className = 'popup-close';
+    var isDefault = (l.key === lastOverlay);
+    btn.style.cssText = 'display:block;width:100%;margin:8px 0;padding:16px;font-size:17px;font-weight:800;border-radius:10px;'
+      + 'background:'+(isDefault?'#ff9800':'rgba(255,255,255,.1)')+';color:'+(isDefault?'#0a1929':'#fff')+';';
+    btn.textContent = (_lang==='en') ? l.en : l.es;
+    btn.onclick = function(){ closePopup('windy-chooser-pop'); window._windyFromChooser = true; toggleWindy(l.key); };
+    box.appendChild(btn);
+  });
+  pop.appendChild(box);
+  document.body.appendChild(pop);
+  openPopup('windy-chooser-pop');
 }
 function centerOnAnchor(){
   _followBoat=true;document.getElementById('btn-anchor-center').style.borderColor='#f44336';
@@ -15035,17 +15173,25 @@ function m_applyAccessState(){
           ckEl.style.display = 'block';
         }
       }
-      /* Rev591: línea de caducidad. */
+      /* Rev591: línea de caducidad.
+         Rev646 (Sprint I-3, feedback Carlos "En Mi sesión, la información
+         de tu PIN no caduca es redundante y no aporta para el master, quítalo
+         para usuario master"): si es master, ocultamos la línea "Tu PIN no
+         caduca" — es implícito y añade ruido. Los invitados sí la ven porque
+         para ellos SÍ es información útil (saben que su acceso es permanente). */
       var expEl = document.getElementById('m-uc-session-expiry');
       if(expEl){
         var ms = _accessCtx.expiresMs;
         if(typeof ms !== 'number' || ms <= 0){
-          /* Sin caducidad: solo informativo, sin marco llamativo. */
-          expEl.style.display = 'block';
-          expEl.style.background = 'rgba(58,168,86,.10)';
-          expEl.style.border = '1px solid rgba(58,168,86,.35)';
-          expEl.style.color = '#9c9';
-          expEl.textContent = T('cfg_session_expiry_never');
+          if (_accessCtx.isMaster) {
+            expEl.style.display = 'none';
+          } else {
+            expEl.style.display = 'block';
+            expEl.style.background = 'rgba(58,168,86,.10)';
+            expEl.style.border = '1px solid rgba(58,168,86,.35)';
+            expEl.style.color = '#9c9';
+            expEl.textContent = T('cfg_session_expiry_never');
+          }
         } else {
           var now = Date.now();
           var days = Math.floor((ms - now) / 86400000);
@@ -15518,6 +15664,129 @@ function m_openMareas(){
 /* Rev244: Instrucciones ahora abren el modal completo de TidesView
    (con búsqueda, secciones, changelog) vía iframe + ?showInstructions=1.
    Sustituye al popup README.md anterior. */
+/* Rev646→Rev647 (Sprint I-4, feedback Carlos: "integral de todas las
+   funciones + eliminar datos sensibles con XXXX + avisar al usuario"):
+   captura diagnóstico completo. Muestra preview con el JSON sanitizado y
+   confirmación explícita antes de copiar al portapapeles. */
+/* Rev655 (Sprint I-1): botón "↻ Reintentar ahora" fuerza fetch de marea.
+   Llama a POST /api/tide/force-refresh, refresca la ventana Curvas si estaba
+   abierta, y muestra el estado tras 1s. Agnóstico a IHM u Open-Meteo — el
+   backend usa el provider correcto según la estación seleccionada. */
+function m_forceTideRefresh(){
+  var btn = event && event.currentTarget;
+  if(btn){ btn.disabled = true; btn.style.opacity = '0.5'; btn.textContent = (_lang==='en')?'⏳ Fetching…':'⏳ Descargando…'; }
+  fetch(A+'/tide/force-refresh', { method:'POST', headers:{'Content-Type':'application/json'} })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      /* Refresca curvas si están abiertas. */
+      try { if(typeof fetchCurvas==='function') setTimeout(fetchCurvas, 300); } catch(_){}
+      /* Feedback */
+      var msg;
+      if (j && j.ok){
+        msg = (_lang==='en')
+          ? '✅ Loaded '+j.extremesCount+' tide extremes in '+j.ms+' ms'
+          : '✅ Cargados '+j.extremesCount+' extremos de marea en '+j.ms+' ms';
+      } else {
+        var e = j?.error || 'unknown';
+        msg = (_lang==='en')
+          ? '❌ Failed: '+e
+          : '❌ Fallo: '+e;
+      }
+      try { if(typeof showAlert==='function') showAlert(msg); else alert(msg); } catch(_) { alert(msg); }
+    })
+    .catch(function(){
+      try { if(typeof showAlert==='function') showAlert((_lang==='en')?'❌ Network error':'❌ Error de red'); } catch(_){}
+    })
+    .finally && Promise.resolve().finally(function(){
+      if(btn){ btn.disabled = false; btn.style.opacity = '1'; btn.textContent = (_lang==='en')?'↻ Retry now':'↻ Reintentar ahora'; }
+    });
+}
+function m_captureDiagnostic(){
+  fetch(A+'/diagnostic',{cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if (!j) throw new Error('no data');
+      j.client = {
+        userAgent: navigator.userAgent,
+        language: _lang,
+        localTime: new Date().toString(),
+        viewport: { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio },
+      };
+      var txt = JSON.stringify(j, null, 2);
+      _mShowDiagnosticPreview(txt);
+    })
+    .catch(function(){
+      try { if (typeof showAlert==='function') showAlert(T('diag_failed')); else alert(T('diag_failed')); } catch(_) { alert(T('diag_failed')); }
+    });
+}
+function _mShowDiagnosticPreview(txt){
+  var existing = document.getElementById('m-diag-preview-pop');
+  if (existing) existing.parentNode.removeChild(existing);
+  var overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
+  overlay.id = 'm-diag-preview-pop';
+  overlay.onclick = function(){ closePopup('m-diag-preview-pop'); };
+  var box = document.createElement('div');
+  box.className = 'popup-box';
+  /* Rev653 (feedback Carlos "aumenta mucho los tamaños"): modal más ancho
+     con tipografía notablemente más grande. Antes 760px+13px, ahora 960px+22px. */
+  box.style.cssText = 'width:min(960px,96vw);max-height:92vh;display:flex;flex-direction:column;padding:22px 26px';
+  box.onclick = function(ev){ ev.stopPropagation(); };
+  var h = document.createElement('h4');
+  h.style.cssText = 'font-size:28px;margin:0 0 14px 0;line-height:1.15';
+  h.textContent = (_lang==='en') ? '🐛 Diagnostic — review before copying' : '🐛 Diagnóstico — revisa antes de copiar';
+  box.appendChild(h);
+  var info = document.createElement('div');
+  info.style.cssText = 'font-size:20px;color:#cfd8dc;margin-bottom:16px;line-height:1.5';
+  info.innerHTML = (_lang==='en')
+    ? 'The following JSON contains technical data of the plugin, dependencies, IMU, wave engine, config and SK paths.<br>'
+      + '<b style="color:#ffd54f">Sensitive data has been REDACTED:</b> GPS coords rounded to 0.1° (~11 km precision), Telegram token/chat_id masked as XXXX, PIN hashes and MMSI removed. If you spot something you still don\'t want to share, edit it out before pasting.'
+    : 'Este JSON contiene datos técnicos del plugin, dependencias, IMU, motor de olas, configuración y paths de SK.<br>'
+      + '<b style="color:#ffd54f">Datos sensibles ya REDACTADOS:</b> coordenadas GPS redondeadas a 0,1° (~11 km de precisión), token/chat_id de Telegram enmascarados como XXXX, hashes de PIN y MMSI eliminados. Si ves algo que aún no quieres compartir, edítalo antes de pegarlo.';
+  box.appendChild(info);
+  var pre = document.createElement('pre');
+  pre.style.cssText = 'flex:1;min-height:280px;max-height:60vh;overflow:auto;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:14px;font-size:16px;line-height:1.4;font-family:ui-monospace,Menlo,Consolas,monospace;color:#cde;white-space:pre;word-break:normal;margin:0 0 16px 0';
+  pre.textContent = txt;
+  box.appendChild(pre);
+  var actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:12px';
+  var cancel = document.createElement('button');
+  cancel.className = 'popup-close';
+  cancel.style.cssText = 'flex:1;background:rgba(255,255,255,.1);padding:18px;font-size:20px;font-weight:800;border-radius:10px';
+  cancel.textContent = (_lang==='en') ? 'Cancel' : 'Cancelar';
+  cancel.onclick = function(){ closePopup('m-diag-preview-pop'); };
+  var copy = document.createElement('button');
+  copy.style.cssText = 'flex:1.5;background:var(--org);color:#0a1929;padding:18px;font-size:22px;font-weight:900;border-radius:10px;border:none;cursor:pointer';
+  copy.textContent = (_lang==='en') ? '📋 Copy JSON' : '📋 Copiar JSON';
+  copy.onclick = function(){
+    var doCopy;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      doCopy = navigator.clipboard.writeText(txt);
+    } else {
+      doCopy = new Promise(function(resolve, reject){
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = txt; ta.style.position='fixed'; ta.style.opacity='0';
+          document.body.appendChild(ta); ta.select();
+          document.execCommand('copy'); document.body.removeChild(ta);
+          resolve();
+        } catch(e) { reject(e); }
+      });
+    }
+    doCopy.then(function(){
+      closePopup('m-diag-preview-pop');
+      try { if (typeof showAlert==='function') showAlert(T('diag_copied')); else alert(T('diag_copied')); } catch(_) { alert(T('diag_copied')); }
+    }).catch(function(){
+      try { if (typeof showAlert==='function') showAlert(T('diag_failed')); else alert(T('diag_failed')); } catch(_) { alert(T('diag_failed')); }
+    });
+  };
+  actions.appendChild(cancel);
+  actions.appendChild(copy);
+  box.appendChild(actions);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  openPopup('m-diag-preview-pop');
+}
 function m_openInstructions(){
   var overlay = document.getElementById('m-instructions-overlay');
   if (!overlay) {
