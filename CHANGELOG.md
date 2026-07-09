@@ -1,5 +1,135 @@
 # Changelog
 
+## [2.6.0] - 2026-07-09
+
+### English
+
+**Sprint J — worldwide tides & setup wizard**
+
+Big release focused on two things: making the plugin usable **outside Spain** (until now IHM was the only real source) and giving new installs a proper onboarding path.
+
+#### 🌍 Multi-source global tides — IHM + signalk-tides + NEAPS + Open-Meteo
+
+The plugin is no longer Spain-only. From this release it embeds a full worldwide tide engine and integrates seamlessly with the official openwatersio ecosystem.
+
+**Automatic engine chain (Auto mode)**:
+
+1. **🇪🇸 IHM (Spain official)** if you are within 300 km of any Spanish IHM station. Highest accuracy on the Spanish coast (Instituto Hidrográfico de la Marina, yearly harmonic coefficients from the official PDF).
+2. **🔗 [signalk-tides](https://github.com/openwatersio/signalk-tides) (official plugin) if installed** on the same SignalK server. Auto-detected by probing `/signalk/v2/api/resources/tides` and validating the payload (`datum`, `units`, `station.latitude/longitude`, and `noaa/*` or `ticon/*` station id) so we never confuse it with our own resource provider. When signalk-tides is present, we consume it via its REST endpoint — its own configuration and station picker remain the single source of truth.
+3. **📡 NEAPS embedded** as automatic offline fallback. Uses the [openwatersio/neaps](https://github.com/openwatersio/neaps) engine (MIT) with `@neaps/tide-database` (~7600 stations from NOAA + TICON-4 combining GESLA-4 records worldwide). Sub-minute time accuracy and millimetre-level height accuracy per NEAPS's own CI validation.
+4. **🌐 Open-Meteo global** as last-resort net when everything else is unreachable.
+
+**Manual mode**: pick your own engine (🇪🇸 IHM / 📡 NEAPS / 🌐 Open-Meteo — signalk-tides only shown when installed) and search a station by **city name**. Every search runs through geocoding (Open-Meteo Geocoding API first for speed and rate-limit friendliness, Nominatim as fallback), so typing `Sydney` finds Fort Denison in Australia, not Sydney BC in Canada. Ships also with the ~67 official IHM ports for direct picking.
+
+**IHM availability aware**: if your GPS position is > 300 km from any Spanish IHM station, the IHM option disappears from the manual picker (with an explanation) so you don't waste time on a source that has no data for your area.
+
+**Correct handling of specific NEAPS stations** (Rev696): the cache-key sanitization for station IDs containing `/` (e.g. `neaps/ticon/willamette_river_at_portland_or-14211720-usa-usgs`) was breaking silently and falling back to the nearest station by GPS. Fixed — the picker now delivers exactly the station you chose.
+
+#### 🧙 Setup wizard (9 steps)
+
+New guided onboarding for fresh installs. Automatically shown when `wizardCompleted !== true`, also re-launchable from **Menu → Configuration → 🧙 Re-launch wizard**.
+
+- **Step 1 — Language** (Español / English) with persistence via `/api/settings`.
+- **Step 2 — Units** (metric nautical, metric plain, imperial US, imperial US nautical, imperial UK, imperial UK nautical) applied instantly.
+- **Step 3 — Boat data**: draft (SignalK `design.draft` as single source of truth if available, otherwise editable in the wizard **and** injected as a SK delta so it becomes the SoT), safety margin under keel, bow roller height above waterline.
+- **Step 4 — System check**: `espeak`, `fonts-noto-color-emoji`, Node ≥ 20, SignalK Server ≥ 2.0, `signalk-derived-data`, tide DB freshness with `↻ Update now`, plugin cache size, MBTiles folder size, internet reachability, USB speaker detection, `@signalk/set-system-time` warning.
+- **Step 5 — Connected sensors**: USB devices filtered to relevant (Audio, GPS, SDR for AIS), I²C sensors in plain Spanish (`🧭 IMU (gyro + accelerometer)` with technical chip `MPU-6050/9250 · 0x68`), ALSA audio outputs, SignalK data presence hints.
+- **Step 6 — Tides & weather**: the new Auto/Manual picker described above with `📊 Current data` button per source to compare values side by side.
+- **Step 7 — Offline charts**: MBTiles folder path with size per file + total, `📋 Copy path`, link to the official SignalK charts plugin.
+- **Step 8 — Master user**: alias + PIN (4-8 digits) + confirm form. When there is no master yet, `/access/pin-set` accepts creation without cookie. Once created, the step shows the master alias and a button to open the full user-control modal.
+- **Step 9 — Summary**: eight clickable cards (each entire card is a button, no redundant CTAs) that jump to the corresponding step in-place — the wizard never bounces you to an external modal that then dumps you at the viewer.
+
+**Footer**: three big equal-size buttons (🏠 Home to exit straight to the viewer, ← back, → next / ✓ finish).
+
+#### 🎯 Coherent tide state across wizard and TidesView
+
+Before this release the wizard's "default engine" and TidesView's Auto/Manual + station dropdown could contradict each other. Now:
+
+- `POST /api/manual` always keeps `tideEnginePreference`, `manualOverride`, `manualStationId` and `favoriteStationId` in sync. Choosing NEAPS Portland from the wizard picker updates the pref. Choosing IHM Vigo in Manual clears any residual virtual favourite.
+- The IHM resolver (`src/sources/ihm.ts`) no longer purges the manual selection when the id starts with `neaps/`, `sktides/` or matches any known virtual id.
+- If a specific NEAPS station is selected and fails (rare — cache-key error, missing harmonics), the fallback is controlled: try NEAPS nearest-by-GPS, then synthetic — never IHM without asking.
+- On startup, if `manualOverride=false` and `tideEnginePreference` is still stuck at `neaps`/`openmeteo`/etc from a previous session, it is reset to `"auto"` so a fresh boot always tries IHM first when possible.
+
+#### 🔧 Backend surface additions
+
+- `GET /api/tide/engines-available` — reports which engines are usable for the current GPS position.
+- `GET /api/tide/stations-search?engine=<ihm|neaps|openmeteo>&q=<text>` — city search with geocoding fallback.
+- `GET /api/tide/providers-status` — status per provider (available / active).
+- `GET /api/tide/engine-pref`, `POST /api/tide/engine-pref` — read/write the default engine.
+- `GET /api/tide/preview?engine=<x>` — ad-hoc query of any provider without changing global state (used by the wizard's "📊 Current data" buttons).
+- `POST /api/sk-inject/draft` — injects `design.draft` as a SignalK delta from the wizard.
+- `GET /api/wizard/state`, `POST /api/wizard/step`, `POST /api/wizard/finish`, `POST /api/wizard/restart`, `GET /api/wizard/system-check`, `GET /api/wizard/hardware-check` — wizard state machine + audits.
+
+#### 🐛 Fixes bundled in this release
+
+- SignalK path `environment.tide.stationName` now includes a source badge (`📡 NEAPS · Vigo`, `🌐 Open-Meteo global`, `🔗 sktides · <station>`) so at a glance you know where the numbers come from — the TICON-4 database happens to have a station called *Vigo* in Spain, which was indistinguishable from the IHM one without the prefix.
+- `updateForecast()` now also updates `_tideFetchState.source` and `.lastAttemptMs`, so the debug status of the wizard is always consistent with what the provider actually just served.
+- The tide-cache health check (system-check) no longer looks at a legacy `stationsList.fetchedAt` key that was never actually written by any provider — it reads `_tideFetchState.lastAttemptMs` directly, so `↻ Update now` reflects the real state.
+
+### Español
+
+**Sprint J — mareas mundiales y asistente de instalación**
+
+Release grande centrada en dos cosas: hacer usable el plugin **fuera de España** (hasta ahora IHM era la única fuente real) y darle a las instalaciones nuevas un onboarding decente.
+
+#### 🌍 Mareas mundiales multi-fuente — IHM + signalk-tides + NEAPS + Open-Meteo
+
+El plugin deja de ser sólo-España. Desde esta versión embebe un motor de mareas mundial completo y se integra a la perfección con el ecosistema oficial de openwatersio.
+
+**Cadena automática de motor (modo Auto)**:
+
+1. **🇪🇸 IHM (España oficial)** si estás a menos de 300 km de una estación IHM española. Máxima precisión en costa española (Instituto Hidrográfico de la Marina, coeficientes armónicos anuales del PDF oficial).
+2. **🔗 [signalk-tides](https://github.com/openwatersio/signalk-tides) (plugin oficial) si lo tienes instalado** en el mismo servidor SignalK. Autodetectado consultando `/signalk/v2/api/resources/tides` y validando el payload (`datum`, `units`, `station.latitude/longitude` y `station.id` con prefijo `noaa/*` o `ticon/*`) para no confundirlo con nuestro propio resource provider. Cuando signalk-tides está presente lo consumimos por su REST — su propia configuración y selector de estación siguen siendo la única fuente de verdad.
+3. **📡 NEAPS embebido** como fallback automático offline. Usa el motor [openwatersio/neaps](https://github.com/openwatersio/neaps) (MIT) con `@neaps/tide-database` (~7600 estaciones NOAA + TICON-4 que combinan registros GESLA-4 globales). Precisión sub-minuto en tiempo y milimétrica en altura según la CI del propio NEAPS.
+4. **🌐 Open-Meteo global** como última red cuando todo lo demás falla.
+
+**Modo Manual**: eliges tú el motor (🇪🇸 IHM / 📡 NEAPS / 🌐 Open-Meteo — signalk-tides sólo aparece si está instalado) y buscas una estación por **nombre de ciudad**. Cada búsqueda pasa por geocoding (Open-Meteo Geocoding primero por velocidad y respeto al rate-limit, Nominatim como fallback), así que escribir `Sydney` encuentra Fort Denison en Australia, no Sydney BC de Canadá. Se incluyen también las ~67 estaciones IHM oficiales españolas para elegir directamente.
+
+**Sensible a la cobertura IHM**: si tu GPS está a > 300 km de cualquier estación IHM española, la opción IHM desaparece del selector manual (con explicación) para que no pierdas el tiempo con una fuente que no tiene datos para tu zona.
+
+**Manejo correcto de estaciones NEAPS específicas** (Rev696): la sanitización del cache-key para IDs que contienen `/` (p.ej. `neaps/ticon/willamette_river_at_portland_or-14211720-usa-usgs`) fallaba en silencio y hacía fallback a la estación más cercana por GPS. Arreglado — el picker devuelve exactamente la estación que elegiste.
+
+#### 🧙 Asistente de configuración (9 pasos)
+
+Nuevo onboarding guiado para instalaciones nuevas. Se muestra automáticamente cuando `wizardCompleted !== true`, y también se relanza desde **Menú → Configuración → 🧙 Relanzar asistente**.
+
+- **Paso 1 — Idioma** (Español / English) con persistencia vía `/api/settings`.
+- **Paso 2 — Unidades** (métricas náuticas, métricas puras, imperiales US, imperiales US náuticas, imperiales UK, imperiales UK náuticas) aplicadas al instante.
+- **Paso 3 — Datos del barco**: calado (SignalK `design.draft` como fuente única de verdad si está disponible; si no, se edita en el asistente **y** se publica como delta SK para que quede como SoT), margen de seguridad bajo quilla, altura de la roldana sobre la línea de flotación.
+- **Paso 4 — Chequeo del sistema**: `espeak`, `fonts-noto-color-emoji`, Node ≥ 20, SignalK Server ≥ 2.0, `signalk-derived-data`, actualidad de la BD de mareas con `↻ Actualizar ahora`, tamaño de la cache del plugin, tamaño de la carpeta MBTiles, acceso a Internet, detección de altavoz USB, aviso sobre `@signalk/set-system-time`.
+- **Paso 5 — Sensores conectados**: dispositivos USB filtrados a los relevantes (audio, GPS, SDR para AIS), sensores I²C en cristiano (`🧭 IMU (giroscopio + acelerómetro)` con chip técnico `MPU-6050/9250 · 0x68`), salidas de audio ALSA, presencia de datos en SignalK.
+- **Paso 6 — Mareas y meteo**: el nuevo selector Auto/Manual descrito arriba con botón `📊 Datos actuales` por fuente para comparar valores lado a lado.
+- **Paso 7 — Cartas offline**: ruta de la carpeta MBTiles con tamaño por fichero + total, `📋 Copiar ruta`, link al plugin oficial de cartas SignalK.
+- **Paso 8 — Usuario maestro**: formulario alias + PIN (4-8 dígitos) + confirmar. Cuando aún no hay master, `/access/pin-set` acepta la creación sin cookie. Una vez creado, el paso muestra el alias del maestro y un botón para abrir el modal completo de control de usuarios.
+- **Paso 9 — Resumen**: ocho tarjetas clickables (la tarjeta entera es un botón, sin CTAs redundantes) que saltan al paso correspondiente in-situ — el asistente nunca te rebota a un modal externo que luego te tira al visor.
+
+**Footer**: tres botones grandes del mismo tamaño (🏠 Home para salir directamente al visor, ← atrás, → siguiente / ✓ finalizar).
+
+#### 🎯 Estado coherente entre asistente y TidesView
+
+Antes de esta release el "motor por defecto" del asistente y el selector Auto/Manual + dropdown de TidesView podían contradecirse. Ahora:
+
+- `POST /api/manual` mantiene siempre en sincronía `tideEnginePreference`, `manualOverride`, `manualStationId` y `favoriteStationId`. Elegir NEAPS Portland desde el asistente actualiza el pref. Elegir IHM Vigo en Manual limpia cualquier favorito virtual residual.
+- El resolver IHM (`src/sources/ihm.ts`) ya no purga la selección manual cuando el id empieza por `neaps/`, `sktides/` o coincide con cualquier id virtual conocido.
+- Si una estación NEAPS específica se selecciona y falla (raro — error de cache-key, armónicos ausentes), el fallback es controlado: prueba NEAPS más cercana por GPS, luego sintética — nunca IHM sin avisar.
+- En arranque, si `manualOverride=false` y `tideEnginePreference` sigue anclado en `neaps`/`openmeteo`/etc de una sesión anterior, se resetea a `"auto"` para que un boot nuevo siempre pruebe IHM primero cuando sea posible.
+
+#### 🔧 Endpoints backend añadidos
+
+- `GET /api/tide/engines-available` — reporta qué motores son usables para la posición GPS actual.
+- `GET /api/tide/stations-search?engine=<ihm|neaps|openmeteo>&q=<texto>` — búsqueda por ciudad con fallback de geocoding.
+- `GET /api/tide/providers-status` — estado por proveedor (disponible / activo).
+- `GET /api/tide/engine-pref`, `POST /api/tide/engine-pref` — leer/escribir el motor por defecto.
+- `GET /api/tide/preview?engine=<x>` — consulta ad-hoc de cualquier proveedor sin cambiar el estado global (usado por los botones "📊 Datos actuales" del asistente).
+- `POST /api/sk-inject/draft` — inyecta `design.draft` como delta SignalK desde el asistente.
+- `GET /api/wizard/state`, `POST /api/wizard/step`, `POST /api/wizard/finish`, `POST /api/wizard/restart`, `GET /api/wizard/system-check`, `GET /api/wizard/hardware-check` — máquina de estado del asistente + audits.
+
+#### 🐛 Fixes bundleados en esta release
+
+- El path SignalK `environment.tide.stationName` incluye ahora un badge de fuente (`📡 NEAPS · Vigo`, `🌐 Open-Meteo global`, `🔗 sktides · <estación>`) para que se sepa de un vistazo de dónde vienen los números — la base de datos TICON-4 resulta que tiene una estación llamada *Vigo* en España, que antes era indistinguible de la IHM sin el prefijo.
+- `updateForecast()` actualiza también `_tideFetchState.source` y `.lastAttemptMs`, así el estado de debug del asistente siempre es coherente con lo que el provider acaba de servir realmente.
+- El check de salud del cache de marea (system-check) ya no mira una key legacy `stationsList.fetchedAt` que ningún provider escribía en realidad — lee `_tideFetchState.lastAttemptMs` directamente, así `↻ Actualizar ahora` refleja el estado real.
+
 ## [2.5.4] - 2026-07-06
 
 ### English

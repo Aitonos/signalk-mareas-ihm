@@ -22,6 +22,8 @@ import {
   syntheticForecast,
 } from "./synthetic.js";
 import { openmeteoTideForecast } from "./openmeteo-tides.js";
+import { neapsTideForecast, neapsTideForecastByStationId, MAX_NEAPS_DISTANCE_KM } from "./neaps-tides.js";
+import { sktidesTideForecast, probeSignalkTides } from "./sktides-tides.js";
 
 // Lightweight haversine distance (meters). Avoids external deps (no runtime install surprises).
 function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -217,12 +219,48 @@ export default function (app: SignalKApp): TideSource {
         // El usuario puede elegirla en MANUAL (manualStationId) o en AUTO
         // (favoriteStationId). Ambas vías deben respetarse — antes solo
         // funcionaba MANUAL.
-        const manualOverride = Boolean(await cache.get("manualOverride"));
-        const manualStationId = String((await cache.get("manualStationId")) ?? "");
-        const favoriteStationIdEarly = String((await cache.get("favoriteStationId")) ?? "");
-        const effSynId = manualOverride && manualStationId
+        // Rev678 (feedback Carlos "IHM ver lo que da ahora no funciona"): si
+        // el caller pide override=ihm por params, saltamos TODOS los
+        // intercepts (manual, favorite, pref) y vamos directo a resolución
+        // IHM por proximidad. Se usa desde el endpoint /tide/preview para
+        // consultar IHM ad-hoc sin cambiar el estado global.
+        // Rev684 (feedback Carlos "IHM y NEAPS dan exactamente lo mismo y
+        // son los datos de NEAPS no los de IHM"): el override tampoco debe
+        // aplicar tideEnginePreference — antes con pref='neaps', /tide/preview
+        // ?engine=ihm devolvía NEAPS porque el pref pisaba la ruta IHM.
+        const overrideEngine = String((params as any)?.overrideEngine ?? "");
+        const manualOverride = overrideEngine === "ihm" ? false : Boolean(await cache.get("manualOverride"));
+        const manualStationId = overrideEngine === "ihm" ? "" : String((await cache.get("manualStationId")) ?? "");
+        const favoriteStationIdEarly = overrideEngine === "ihm" ? "" : String((await cache.get("favoriteStationId")) ?? "");
+        // Rev676 (feedback Carlos "siendo internacional no debiera ser IHM y
+        // hemos de poner el selector en el wizard"): motor por defecto
+        // configurable — cuando manual/favorite no fijan una estación, el
+        // pref decide la fuente forzada. `auto` mantiene comportamiento
+        // clásico (IHM cerca → sktides → NEAPS → openmeteo).
+        // Rev684: override=ihm también salta el pref (para /tide/preview).
+        const enginePref = overrideEngine === "ihm"
+          ? "auto"
+          : String((await cache.get("tideEnginePreference")) ?? "auto");
+        const enginePrefToSynId: Record<string, string> = {
+          ihm:       "",                  // ihm es la ruta por defecto sin override
+          sktides:   "sktides-plugin",
+          neaps:     "neaps-global",
+          openmeteo: "openmeteo-global",
+          auto:      "",
+        };
+        const prefSynId = enginePrefToSynId[enginePref] ?? "";
+        // Rev684 (feedback Carlos "cambio pref pero favoriteStationId=
+        // openmeteo-global sigue mandando"): PREF tiene prioridad sobre
+        // FAVORITE. Antes favorite ganaba y hacía que un residuo de una
+        // sesión anterior contradijera el motor forzado desde el wizard.
+        // Nueva precedencia:
+        //   1) manual explícito
+        //   2) motor forzado (pref !== auto)
+        //   3) favorite (residuo de station picker en auto)
+        //   4) GPS proximidad (más abajo)
+        const effSynId = (manualOverride && manualStationId)
           ? manualStationId
-          : (favoriteStationIdEarly || "");
+          : (prefSynId || favoriteStationIdEarly);
         if (effSynId === "openmeteo-global") {
           const lat = params.position?.latitude;
           const lon = params.position?.longitude;
@@ -237,10 +275,115 @@ export default function (app: SignalKApp): TideSource {
           // Sin GPS → no podemos usar Open-Meteo global. Caemos a "sin-marea".
           return syntheticForecast(getSyntheticStation("sin-marea")!, params.position, begin.valueOf());
         }
+        // Rev674 (feedback Carlos "híbrido C"): manual override sktides-plugin.
+        // Consume el plugin oficial `signalk-tides` de openwatersio vía REST.
+        if (effSynId === "sktides-plugin") {
+          const lat = params.position?.latitude;
+          const lon = params.position?.longitude;
+          if (typeof lat === "number" && typeof lon === "number") {
+            const r = await sktidesTideForecast(app, cache, lat, lon);
+            if (r) return r;
+            app.debug("[SKTIDES] manual override pero plugin no disponible; fallback NEAPS embebido");
+            try {
+              const n = await neapsTideForecast(app, cache, lat, lon);
+              if (n) return n;
+            } catch (e: any) { app.debug(`[NEAPS] fallback tras sktides fallido: ${e?.message ?? e}`); }
+            try { return await openmeteoTideForecast(app, cache, lat, lon); }
+            catch { return syntheticForecast(getSyntheticStation("sin-marea")!, params.position, begin.valueOf()); }
+          }
+          return syntheticForecast(getSyntheticStation("sin-marea")!, params.position, begin.valueOf());
+        }
+        // Rev686 (feedback Carlos "buscador de ciudades"): estación NEAPS
+        // concreta seleccionada desde el buscador (ej. "neaps/noaa/8443970").
+        // Rev694 (auditoría GPT+Gemini "el data path no debe corregir la
+        // selección"): si NEAPS byId falla, NO caemos al camino IHM (que
+        // haría stations.get(neaps/xxx) → null → resolveStation borra
+        // manualOverride). Fallback controlado: nearest NEAPS por GPS, y si
+        // no hay GPS, sin-marea. Nunca IHM salvaje.
+        if (effSynId.startsWith("neaps/")) {
+          const r = await neapsTideForecastByStationId(app, cache, effSynId);
+          if (r) return r;
+          app.debug(`[NEAPS] byId ${effSynId} sin datos; fallback nearest by GPS`);
+          const lat = params.position?.latitude;
+          const lon = params.position?.longitude;
+          if (typeof lat === "number" && typeof lon === "number") {
+            try {
+              const nearby = await neapsTideForecast(app, cache, lat, lon);
+              if (nearby) return nearby;
+            } catch (e: any) { app.debug(`[NEAPS] nearest fallback también falló: ${e?.message ?? e}`); }
+          }
+          // No IHM. Devolvemos sintética para que la UI muestre el error del user.
+          return syntheticForecast(getSyntheticStation("sin-marea")!, params.position, begin.valueOf());
+        }
+        // Rev673: NEAPS manual override — armónicos globales (~7600 estaciones
+        // NOAA + TICON-4). Precisión sub-minuto y milimétrica según su CI.
+        if (effSynId === "neaps-global") {
+          const lat = params.position?.latitude;
+          const lon = params.position?.longitude;
+          if (typeof lat === "number" && typeof lon === "number") {
+            try {
+              const r = await neapsTideForecast(app, cache, lat, lon);
+              if (r) return r;
+              app.debug("[NEAPS] sin estación cercana en manual override; fallback Open-Meteo");
+            } catch (e: any) {
+              app.debug(`[NEAPS] manual forecast failed: ${e?.message ?? e}. Fallback Open-Meteo.`);
+            }
+            try {
+              return await openmeteoTideForecast(app, cache, lat, lon);
+            } catch {
+              return syntheticForecast(getSyntheticStation("sin-marea")!, params.position, begin.valueOf());
+            }
+          }
+          return syntheticForecast(getSyntheticStation("sin-marea")!, params.position, begin.valueOf());
+        }
         if (isSyntheticStationId(effSynId)) {
           const synStation = getSyntheticStation(effSynId)!;
           return syntheticForecast(synStation, params.position, begin.valueOf());
         }
+        // Rev674 (feedback Carlos "híbrido C"): en modo AUTO, si el barco está
+        // fuera del rango IHM (>300 km), la cadena de fallback es:
+        //   (1) plugin oficial `signalk-tides` si está publicando localmente
+        //       — mantiene armónicos y config en un único sitio del usuario,
+        //   (2) NEAPS embebido (nuestro fallback si el user no instala el
+        //       plugin oficial),
+        //   (3) Open-Meteo (última red).
+        // Rev676: si el pref es 'ihm', el usuario ha pedido FORZAR IHM aunque
+        // esté lejos — saltamos este AUTO fallback y usamos el fallback IHM
+        // clásico (VIGO como última red).
+        // Rev678: idem si overrideEngine==='ihm' (preview ad-hoc).
+        if (enginePref !== "ihm"
+            && overrideEngine !== "ihm"
+            && params.position
+            && typeof params.position.latitude === "number"
+            && typeof params.position.longitude === "number") {
+          const { distanceMeters: ihmDistM } = stations.closestToWithDistance(params.position);
+          const ihmDistKm = ihmDistM / 1000;
+          if (Number.isFinite(ihmDistKm) && ihmDistKm > MAX_AUTO_DISTANCE_KM) {
+            const lat = params.position.latitude;
+            const lon = params.position.longitude;
+            // (1) signalk-tides plugin oficial.
+            try {
+              const sktidesAvailable = await probeSignalkTides(app);
+              if (sktidesAvailable) {
+                const r = await sktidesTideForecast(app, cache, lat, lon);
+                if (r) {
+                  app.debug(`[SKTIDES] AUTO fallback activo (IHM ${ihmDistKm.toFixed(0)} km > ${MAX_AUTO_DISTANCE_KM})`);
+                  return r;
+                }
+              }
+            } catch (e: any) { app.debug(`[SKTIDES] AUTO fallback falló (${e?.message ?? e})`); }
+            // (2) NEAPS embebido.
+            try {
+              const r = await neapsTideForecast(app, cache, lat, lon);
+              if (r) {
+                app.debug(`[NEAPS] AUTO fallback activo (IHM ${ihmDistKm.toFixed(0)} km > ${MAX_AUTO_DISTANCE_KM}); sktides no disponible`);
+                return r;
+              }
+            } catch (e: any) { app.debug(`[NEAPS] AUTO fallback falló (${e?.message ?? e})`); }
+            // (3) Open-Meteo → caemos al catch normal de abajo.
+          }
+        }
+        void MAX_NEAPS_DISTANCE_KM;
 
         const position = isUsablePosition(params.position, gpsMaxAgeMinutes)
           ? params.position!
@@ -330,7 +473,13 @@ async function resolveStation(
     // mediterraneo). El intercept del provider los maneja antes de llegar
     // aquí; si llegamos a este punto con uno de ellos es por una ruta
     // alternativa (p.ej. `lastForecast` aún sin poblar). Conservamos el ID.
-    if (!isSyntheticStationId(String(manualStationId)) && String(manualStationId) !== "openmeteo-global") {
+    // Rev680: los IDs virtuales (sin-marea, mediterráneo, openmeteo-global,
+    // neaps-global, sktides-plugin) los maneja el intercept del provider;
+    // aquí NO deben purgarse aunque no aparezcan en la lista IHM.
+    if (!isSyntheticStationId(String(manualStationId))
+        && String(manualStationId) !== "openmeteo-global"
+        && String(manualStationId) !== "neaps-global"
+        && String(manualStationId) !== "sktides-plugin") {
       // Rev144: id manual ya no existe (probable upgrade desde lista vieja).
       // Limpiar para evitar reintentos perpetuos contra ids muertos.
       await cache.set("manualStationId", null);
@@ -350,7 +499,11 @@ async function resolveStation(
       return fav;
     }
     // Rev150: NO purgar IDs sintéticos. El intercept del provider los maneja.
-    if (!isSyntheticStationId(String(favoriteStationId)) && String(favoriteStationId) !== "openmeteo-global") {
+    // Rev680: idem para favorito — no purgar IDs virtuales.
+    if (!isSyntheticStationId(String(favoriteStationId))
+        && String(favoriteStationId) !== "openmeteo-global"
+        && String(favoriteStationId) !== "neaps-global"
+        && String(favoriteStationId) !== "sktides-plugin") {
       // Rev144: idem para favorito.
       await cache.set("favoriteStationId", null);
     }

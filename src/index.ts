@@ -65,6 +65,39 @@ import {
   type AutoShelterResult,
 } from "./sources/coastline.js";
 import { isSyntheticStationId } from "./sources/synthetic.js";
+
+// Rev680 (feedback Carlos "aunque pongamos NEAPS en curvas siguen saliendo
+// datos de IHM"): las pseudo-estaciones no-IHM (sin-marea, mediterráneo,
+// openmeteo-global, neaps-global, sktides-plugin) no tienen entradas reales
+// en el catálogo IHM ni escriben en month_v2_<id>_<YYYY-MM>. Antes había 5
+// sitios comprobando "synthetic + openmeteo-global" a mano, olvidándose de
+// neaps-global y sktides-plugin — resultado: al elegir NEAPS en Curvas,
+// /api/extremes caía al camino IHM y devolvía Vigo. Centralizamos aquí.
+function isVirtualStationId(id: string | null | undefined): boolean {
+  if (!id) return false;
+  const s = String(id);
+  return isSyntheticStationId(s)
+      || s === "openmeteo-global"
+      || s === "neaps-global"
+      || s === "sktides-plugin"
+      || s.startsWith("neaps/")   // Rev686: estación NEAPS concreta por id.
+      || s.startsWith("sktides/");
+}
+
+// Rev685 (feedback Carlos "source=IHM cuando pref=neaps"): helper único para
+// derivar la etiqueta de fuente del forecast. Antes vivía sólo dentro de
+// _doTideFetch → updateForecast (que también actualiza lastForecast) dejaba
+// _tideFetchState.source stale, y el debug del wizard mostraba una fuente
+// que no correspondía a los datos actuales.
+function _deriveTideSourceLabel(fresh: any): string {
+  const sid = String(fresh?.station?.id ?? "");
+  if (sid === "openmeteo-global") return "Open-Meteo";
+  if (sid === "sin-marea" || sid === "mediterraneo") return "sintética";
+  if (sid.startsWith("sktides/")) return "signalk-tides";
+  if (sid.startsWith("neaps/")) return "NEAPS";
+  if (/^\d+$/.test(sid)) return "IHM";
+  return fresh?.station?.source || fresh?.source || "IHM";
+}
 import moment from "moment-timezone";
 
 type PositionValue = { latitude: number; longitude: number };
@@ -79,7 +112,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev656";
+const PLUGIN_REVISION = "Rev697";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1273,15 +1306,7 @@ export default function (app: SignalKApp): Plugin {
         if (fresh && Array.isArray(fresh.extremes) && fresh.extremes.length >= 2) {
           lastForecast = fresh;
           _tideFetchState.status = "ok";
-          // Rev656: derivar fuente del stationId (IHM ids son numéricos;
-          // openmeteo, sin-marea, mediterraneo son sintéticas).
-          const sid = String(fresh.station?.id ?? "");
-          let src: string;
-          if (sid === "openmeteo-global") src = "Open-Meteo";
-          else if (sid === "sin-marea" || sid === "mediterraneo") src = "sintética";
-          else if (/^\d+$/.test(sid)) src = "IHM";
-          else src = fresh.station?.source || fresh.source || "IHM";
-          _tideFetchState.source = src;
+          _tideFetchState.source = _deriveTideSourceLabel(fresh);
           _tideFetchState.lastError = null;
           return { ok: true, extremes: fresh.extremes.length };
         }
@@ -1567,6 +1592,17 @@ export default function (app: SignalKApp): Plugin {
       }
       if ((props as any).lang) {
         await ihmCache.set("lang", String((props as any).lang));
+      }
+      // Rev695 (feedback Carlos "Arranca en Auto NEAPS Vigo, si se puede
+      // siempre debe ser IHM"): en arranque, si no hay override manual y el
+      // pref residual no es "auto", volver a "auto". Antes un pref "neaps"
+      // guardado de sesiones antiguas seguía forzando NEAPS aunque el user
+      // estuviera en AUTO. Con pref=auto y AUTO, el motor elige IHM cerca.
+      const _mo = Boolean(await ihmCache.get("manualOverride"));
+      const _pref = String((await ihmCache.get("tideEnginePreference")) ?? "auto");
+      if (!_mo && _pref !== "auto") {
+        app.debug(`[STARTUP] pref residual "${_pref}" con manualOverride=false → reset a "auto"`);
+        await ihmCache.set("tideEnginePreference", "auto");
       }
     } catch {
       // ignore
@@ -1937,19 +1973,30 @@ try {
         // Rev150: si el favoriteStationId es sintético (openmeteo, sin-marea,
         // mediterraneo) gana sobre lastStation. Antes lastStation podía ser
         // una IHM antigua que pisara el favorito sintético del usuario.
-        const favIsSynthetic =
-          favoriteStationId &&
-          (isSyntheticStationId(String(favoriteStationId)) || String(favoriteStationId) === "openmeteo-global");
+        // Rev680: `isVirtualStationId` incluye synthetic + openmeteo-global +
+        // neaps-global + sktides-plugin. Antes se olvidaba neaps/sktides.
+        const favIsSynthetic = isVirtualStationId(favoriteStationId);
+        // Rev683 (feedback Carlos debug: pref=neaps, activeStationId=29):
+        // considerar tideEnginePreference. Si el user forzó una fuente en
+        // el wizard (sin manual/favorite), gana sobre el fallback IHM.
+        const enginePref683 = String((await ihmCache.get("tideEnginePreference")) ?? "auto");
+        const prefVirtualId683 =
+            enginePref683 === "neaps"     ? "neaps-global"
+          : enginePref683 === "sktides"   ? "sktides-plugin"
+          : enginePref683 === "openmeteo" ? "openmeteo-global"
+          : "";
         const desiredId =
           manualOverride && manualStationId
             ? String(manualStationId)
             : favIsSynthetic
               ? String(favoriteStationId)
-              : lastStation?.id
-                ? String(lastStation.id)
-                : favoriteStationId
-                  ? String(favoriteStationId)
-                  : DEFAULT_STATION_ID; // v1.1.0: fallback to Vigo on first boot
+              : prefVirtualId683
+                ? prefVirtualId683
+                : lastStation?.id
+                  ? String(lastStation.id)
+                  : favoriteStationId
+                    ? String(favoriteStationId)
+                    : DEFAULT_STATION_ID; // v1.1.0: fallback to Vigo on first boot
 
         const stMeta: any = desiredId ? byId.get(desiredId) : undefined;
         const effectiveStation = desiredId
@@ -1967,8 +2014,21 @@ try {
         // servimos esos extremes desde lastForecast — si el provider ya
         // corrió al menos una vez con la estación seleccionada.
         const sidEarly = String(effectiveStation.id);
-        if (isSyntheticStationId(sidEarly) || sidEarly === "openmeteo-global") {
-          if (lastForecast && Array.isArray(lastForecast.extremes) && String(lastForecast.station?.id ?? "") === sidEarly) {
+        // Rev681 (feedback Carlos "NEAPS en TidesView da sin datos"): las
+        // fuentes con estación variable devuelven id con prefijo (neaps/<x>,
+        // sktides/<x>). El match estricto contra `sidEarly` (neaps-global,
+        // sktides-plugin) fallaba y caíamos al fallback vacío. Ahora
+        // comparamos por familia: si el selector pide una fuente virtual y
+        // el forecast pertenece a esa fuente, coinciden.
+        const virtualMatches = (sel: string, fcId: string): boolean => {
+          if (!fcId) return false;
+          if (sel === fcId) return true;
+          if (sel === "neaps-global"   && fcId.startsWith("neaps/"))   return true;
+          if (sel === "sktides-plugin" && fcId.startsWith("sktides/")) return true;
+          return false;
+        };
+        if (isVirtualStationId(sidEarly)) {
+          if (lastForecast && Array.isArray(lastForecast.extremes) && virtualMatches(sidEarly, String(lastForecast.station?.id ?? ""))) {
             const tNowSyn = Date.now();
             const windowMsSyn = 48 * 3600 * 1000;
             const synWindow = lastForecast.extremes
@@ -1994,7 +2054,7 @@ try {
           } catch (e: any) {
             app.debug?.(`[/api/extremes] synthetic refresh failed: ${e?.message ?? e}`);
           }
-          if (lastForecast && Array.isArray(lastForecast.extremes) && String(lastForecast.station?.id ?? "") === sidEarly) {
+          if (lastForecast && Array.isArray(lastForecast.extremes) && virtualMatches(sidEarly, String(lastForecast.station?.id ?? ""))) {
             res.json({
               station: { id: sidEarly, name: String(lastForecast.station?.name ?? effectiveStation.name) },
               extremes: lastForecast.extremes.slice(0, 100),
@@ -2078,6 +2138,657 @@ try {
       });
     });
 
+    // Rev657 (Sprint J-1): cache del flag wizardCompleted para el state SSE
+    // (evita await ihmCache.get en cada tick del state loop).
+    let _wizardCompletedCache = false;
+    try { _wizardCompletedCache = !!((await ihmCache.get("wizardState")) as any)?.completed; } catch { /* ignore */ }
+
+    // Rev657 (Sprint J-1): motor del wizard de onboarding.
+    //
+    // Estado persistido en ihmCache:
+    //   wizardState: {
+    //     completed: boolean,
+    //     currentStepId: string | null,
+    //     stepsCompleted: string[],   // ids de steps ya OK/skipped
+    //     data: Record<string, any>,  // datos capturados por step (idioma, etc)
+    //     startedAtIso: string | null,
+    //     completedAtIso: string | null,
+    //   }
+    //
+    // Orden canónico de steps: language → locale → imu → tides → mbtiles →
+    // master → schema → done. Cada Rev del Sprint J añade su step; el motor
+    // aquí solo maneja el flujo.
+    // Rev660 (feedback Carlos "piensa bien todos los steps"): plan ampliado.
+    // Eliminado "locale" — no es causa raíz confirmada del bug IMU.
+    // Añadidos: units, boat (medidas), systemCheck (espeak/noto/versiones/
+    // set-system-time), sensorCheck (IMU/sonda/viento/GPS/presión), summary.
+    const WIZARD_STEPS_ORDER = [
+      "language",     // 1. Idioma
+      "units",        // 2. Sistema de unidades
+      "boat",         // 3. Datos del barco (LOA, beam, draft, fromBow, margen)
+      "systemCheck",  // 4. Dependencias del sistema (espeak, noto, versiones, plugins conflictivos)
+      "sensorCheck",  // 5. Sensores conectados (IMU/sonda/viento/GPS/presión/temp)
+      "tides",        // 6. Mareas + meteo
+      "mbtiles",      // 7. Cartas offline
+      "master",       // 8. Usuario master
+      "summary",      // 9. Resumen y finalizar
+    ];
+    async function _getWizardState(): Promise<any> {
+      const st = ((await ihmCache.get("wizardState")) as any) || {
+        completed: false,
+        currentStepId: WIZARD_STEPS_ORDER[0],
+        stepsCompleted: [],
+        data: {},
+        startedAtIso: null,
+        completedAtIso: null,
+      };
+      return st;
+    }
+    async function _saveWizardState(st: any): Promise<void> {
+      await ihmCache.set("wizardState", st);
+      _wizardCompletedCache = !!st?.completed;
+    }
+    // Rev661 (bug fix Carlos "Continuar cierra no avanza"): payload del estado
+    // enriquecido con stepsOrder + totalSteps. Los endpoints POST devuelven
+    // este payload para que el frontend no pierda esos campos entre calls.
+    function _wizardStatePayload(st: any): any {
+      return {
+        completed: !!st.completed,
+        currentStepId: st.currentStepId,
+        stepsCompleted: Array.isArray(st.stepsCompleted) ? st.stepsCompleted : [],
+        data: st.data ?? {},
+        totalSteps: WIZARD_STEPS_ORDER.length,
+        stepsOrder: WIZARD_STEPS_ORDER,
+        startedAtIso: st.startedAtIso,
+        completedAtIso: st.completedAtIso,
+      };
+    }
+    function _nextStepId(currentStepId: string): string | null {
+      const idx = WIZARD_STEPS_ORDER.indexOf(currentStepId);
+      if (idx < 0 || idx >= WIZARD_STEPS_ORDER.length - 1) return null;
+      return WIZARD_STEPS_ORDER[idx + 1];
+    }
+    function _prevStepId(currentStepId: string): string | null {
+      const idx = WIZARD_STEPS_ORDER.indexOf(currentStepId);
+      if (idx <= 0) return null;
+      return WIZARD_STEPS_ORDER[idx - 1];
+    }
+    // Rev660 (Sprint J-4): chequeo del sistema — dependencias externas y
+    // plugins conflictivos. Cada check tiene status ("ok" | "warn" | "error")
+    // + mensaje + acción (comando shell copia-pega). El frontend renderiza
+    // como lista con iconos y muestra la acción cuando falla.
+    expressApp.get("/signalk-mareas-ihm/api/wizard/system-check", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      // Rev664 (feedback Carlos "en cristiano y luego mínima explicación y
+      // nombre técnico"): label en español natural + technical con el
+      // nombre técnico como sub-etiqueta. Frontend renderiza label grande,
+      // technical pequeño al lado en monospaced.
+      const checks: Array<{ id: string; label: string; technical?: string; status: "ok" | "warn" | "error"; message: string; action?: string }> = [];
+      const cp = await import("child_process");
+      const which = (bin: string): string | null => {
+        try {
+          const out = cp.execSync(`command -v ${bin} 2>/dev/null`, { timeout: 1000 }).toString().trim();
+          return out || null;
+        } catch { return null; }
+      };
+      // 1. espeak
+      const espeakPath = which("espeak") || which("espeak-ng");
+      checks.push({
+        id: "espeak",
+        label: "Voz para alarmas",
+        technical: "espeak",
+        status: espeakPath ? "ok" : "error",
+        message: espeakPath ? `Instalado en ${espeakPath}` : "No instalado — las alarmas de voz no sonarán.",
+        action: espeakPath ? undefined : "sudo apt install -y espeak",
+      });
+      // 2. fonts-noto-color-emoji
+      let hasNoto = false;
+      try {
+        const out = cp.execSync("fc-list 2>/dev/null | grep -i 'noto color emoji'", { timeout: 2000 }).toString().trim();
+        hasNoto = out.length > 0;
+      } catch { /* ignore */ }
+      checks.push({
+        id: "noto-emoji",
+        label: "Fuente de iconos (emoji en color)",
+        technical: "fonts-noto-color-emoji",
+        status: hasNoto ? "ok" : "warn",
+        message: hasNoto ? "Instalada" : "No instalada — los iconos de los botones pueden salir como cuadrados en Chromium.",
+        action: hasNoto ? undefined : "sudo apt install -y fonts-noto-color-emoji && fc-cache -fv",
+      });
+      // 3. Node version >= 20
+      const nodeMajor = Number(process.version.replace(/^v/, "").split(".")[0]);
+      checks.push({
+        id: "node-version",
+        label: "Versión de Node.js (≥ 20)",
+        technical: "node",
+        status: nodeMajor >= 20 ? "ok" : "error",
+        message: `Versión actual: ${process.version}. ${nodeMajor >= 20 ? "OK" : "Necesitas actualizar."}`,
+        action: nodeMajor >= 20 ? undefined : "Actualiza Node.js con nvm o desde el repo de Debian testing.",
+      });
+      // 4. SignalK Server version >= 2.0
+      let skVersion: string | null = null;
+      try {
+        const skPkg = esmRequire("signalk-server/package.json") as any;
+        skVersion = skPkg?.version ?? null;
+      } catch { /* ignore */ }
+      const skMajor = skVersion ? Number(skVersion.split(".")[0]) : null;
+      checks.push({
+        id: "sk-version",
+        label: "Versión de SignalK Server (≥ 2.0)",
+        technical: "signalk-server",
+        status: (skMajor != null && skMajor >= 2) ? "ok" : "error",
+        message: skVersion ? `Versión actual: ${skVersion}` : "Versión desconocida",
+        action: (skMajor != null && skMajor >= 2) ? undefined : "Actualiza OpenPlotter a V4 (trae SK 2.x).",
+      });
+      // Rev663/Rev664 (feedback Carlos "signalk-derived-data me dice que no
+      // lo tengo instalado pero sí"): mi detección solo miraba el path
+      // exacto plugin-config-data/signalk-derived-data.json. Ahora escaneo
+      // el directorio en busca de cualquier json que contenga "derived" en
+      // el nombre, y compruebo también la carpeta node_modules del scan de
+      // plugins instalados como fallback.
+      let derivedActive: boolean | null = null;
+      let derivedInstalled = false;
+      try {
+        const fsX = await import("fs");
+        const pathX = await import("path");
+        const homedirX = (await import("os")).homedir();
+        const pcdCandidates = [
+          pathX.join(homedirX, ".signalk", "plugin-config-data"),
+          "/home/pi/.signalk/plugin-config-data",
+        ];
+        for (const dir of pcdCandidates) {
+          if (!fsX.existsSync(dir)) continue;
+          try {
+            const files = fsX.readdirSync(dir);
+            for (const f of files) {
+              if (/derived[-_]data/i.test(f) && f.endsWith(".json")) {
+                try {
+                  const cfg = JSON.parse(fsX.readFileSync(pathX.join(dir, f), "utf8"));
+                  derivedActive = typeof cfg?.enabled === "boolean" ? cfg.enabled : true;
+                } catch { derivedActive = true; }
+                break;
+              }
+            }
+          } catch { /* ignore */ }
+          if (derivedActive !== null) break;
+        }
+        // También comprobar node_modules por si está instalado pero nunca
+        // se ha configurado (no genera archivo en plugin-config-data).
+        const nmCandidates = [
+          pathX.join(homedirX, ".signalk", "node_modules", "signalk-derived-data"),
+          "/home/pi/.signalk/node_modules/signalk-derived-data",
+        ];
+        for (const p of nmCandidates) {
+          if (fsX.existsSync(p)) { derivedInstalled = true; break; }
+        }
+      } catch { /* ignore */ }
+      // Estado: si activo → ok. Si instalado pero desactivado → warn con
+      // acción "activa". Si no instalado → warn con acción "instalar".
+      const derivedStatus: "ok" | "warn" = derivedActive === true ? "ok" : "warn";
+      const derivedMessage = derivedActive === true
+        ? "Activo — proporciona viento real, VMG y otros datos derivados."
+        : derivedInstalled
+          ? "Instalado pero desactivado. Actívalo en el Plugin Config de SK."
+          : "No instalado. Faltarán datos derivados como viento real o VMG.";
+      const derivedAction = derivedActive === true
+        ? undefined
+        : derivedInstalled
+          ? "SK → Server → Plugin Config → 'signalk-derived-data' → activar → guardar → reiniciar SK."
+          : "Instálalo desde el AppStore de SK: busca 'signalk-derived-data'.";
+      checks.push({
+        id: "derived-data",
+        label: "Datos derivados (viento real, VMG…)",
+        technical: "signalk-derived-data",
+        status: derivedStatus,
+        message: derivedMessage,
+        action: derivedAction,
+      } as any);
+
+      // 5. @signalk/set-system-time DEBE estar desactivado
+      checks.push({
+        id: "set-system-time",
+        label: "Plugin de sincronización horaria desactivado",
+        technical: "@signalk/set-system-time",
+        status: _setSystemTimePluginActive ? "error" : "ok",
+        message: _setSystemTimePluginActive
+          ? "ACTIVO — corrompe el IMU cada 60 s (olas fantasma, saltos de actitud)."
+          : "Desactivado — correcto.",
+        action: _setSystemTimePluginActive ? "SK → Server → Plugin Config → 'Set System Time' → OFF → guardar → reiniciar SK" : undefined,
+      });
+      // Rev666 (feedback Carlos "actualizar ahora dice OK pero el status sigue
+      // antiguo"): el check leía `ihmCache.get("stationsList").fetchedAt` que
+      // NUNCA se persistía en disco (key legacy que no escribimos). Ahora lee
+      // `_tideFetchState.lastAttemptMs` que SÍ se actualiza en cada
+      // `_doTideFetch()` (incluido el force-refresh manual). Umbrales:
+      // <24h ok, 24-72h warn, >72h/failed error.
+      try {
+        const lastMs = _tideFetchState.lastAttemptMs || 0;
+        const status = _tideFetchState.status;
+        let ageStr = "unknown";
+        let tideStatus: "ok" | "warn" | "error" = "warn";
+        if (lastMs > 0) {
+          const ageMs = Date.now() - lastMs;
+          const ageH = ageMs / 3_600_000;
+          if (status === "failed") tideStatus = "error";
+          else if (ageH < 24 && status === "ok") tideStatus = "ok";
+          else if (ageH < 72) tideStatus = "warn";
+          else tideStatus = "error";
+          if (ageH < 1) ageStr = `hace ${Math.round(ageMs / 60000)} min`;
+          else if (ageH < 48) ageStr = `hace ${Math.round(ageH)} h`;
+          else ageStr = `hace ${Math.round(ageH / 24)} días`;
+        } else {
+          tideStatus = status === "failed" ? "error" : "warn";
+        }
+        const src = _tideFetchState.source || "desconocida";
+        const errMsg = _tideFetchState.lastError ? ` — ${_tideFetchState.lastError}` : "";
+        checks.push({
+          id: "tide-cache",
+          label: "Actualización de datos de marea",
+          technical: "tide cache",
+          status: tideStatus,
+          message: lastMs > 0
+            ? `Fuente: ${src} · última descarga ${ageStr}${errMsg}`
+            : "Sin descarga de marea todavía. Se descargará en el primer intento.",
+          action: tideStatus === "error"
+            ? "Pulsa 'Actualizar ahora', o revisa la conexión a Internet."
+            : undefined,
+        });
+      } catch { /* ignore */ }
+
+      // Rev663 (feedback Carlos "ni del tamaño de datos en cache (mapas) o
+      // de la carpeta Mbtiles"): tamaño del cache del plugin y del dir
+      // mbtiles configurado. `du -sh` cuenta bytes en disco. Umbrales:
+      // ok <200MB, warn 200-1000MB, error >1GB.
+      const dirSize = (dir: string): { bytes: number | null; human: string | null } => {
+        try {
+          const out = cp.execSync(`du -sb "${dir}" 2>/dev/null`, { timeout: 5000 }).toString().trim();
+          const m = out.match(/^(\d+)/);
+          if (!m) return { bytes: null, human: null };
+          const bytes = Number(m[1]);
+          let human: string;
+          if (bytes > 1024 * 1024 * 1024) human = `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+          else if (bytes > 1024 * 1024) human = `${Math.round(bytes / 1024 / 1024)} MB`;
+          else if (bytes > 1024) human = `${Math.round(bytes / 1024)} KB`;
+          else human = `${bytes} B`;
+          return { bytes, human };
+        } catch { return { bytes: null, human: null }; }
+      };
+      try {
+        const pluginCacheDir = (await import("path")).join(app.getDataDirPath(), "ihm");
+        const sizeInfo = dirSize(pluginCacheDir);
+        if (sizeInfo.bytes != null) {
+          const mb = sizeInfo.bytes / 1024 / 1024;
+          checks.push({
+            id: "plugin-cache-size",
+            label: "Espacio usado por el plugin",
+            technical: "plugin data dir",
+            status: mb < 200 ? "ok" : mb < 1024 ? "warn" : "error",
+            message: `${sizeInfo.human} en ${pluginCacheDir}`,
+            action: mb >= 1024 ? `Considera limpiarlo: rm -rf ${pluginCacheDir}/* (pierde la cache; se volverá a descargar)` : undefined,
+          });
+        }
+      } catch { /* ignore */ }
+      try {
+        const mbDir = ((await ihmCache.get("mbtilesDir")) as string) || "/home/pi/charts";
+        const fsX = await import("fs");
+        if (fsX.existsSync(mbDir)) {
+          const sizeInfo = dirSize(mbDir);
+          if (sizeInfo.bytes != null) {
+            const mb = sizeInfo.bytes / 1024 / 1024;
+            checks.push({
+              id: "mbtiles-size",
+              label: "Espacio usado por cartas offline",
+              technical: "mbtiles folder",
+              status: "ok",
+              message: `${sizeInfo.human} en ${mbDir}`,
+              action: mb > 10240 ? `Muy grande (${sizeInfo.human}). Si tu tarjeta SD es pequeña, considera moverlo a un USB externo.` : undefined,
+            });
+          }
+        } else {
+          checks.push({
+            id: "mbtiles-size",
+            label: "Carpeta de cartas offline",
+            technical: "mbtiles folder",
+            status: "warn",
+            message: `No encontrada: ${mbDir}`,
+            action: `Crea la carpeta o configúrala en el Plugin Config de SK → mbtilesDir.`,
+          });
+        }
+      } catch { /* ignore */ }
+
+      // Rev665 (feedback Carlos "Si no estuviera el Altavoz USB lo marcas
+      // en rojo y explicas por qué es necesario"): check dedicado — para
+      // redundancia y garantía de que las alarmas suenen siempre, se
+      // recomienda un altavoz USB además del HDMI/jack. Si no hay ningún
+      // USB audio detectado, error rojo con explicación.
+      try {
+        let alsaRaw = "";
+        try { alsaRaw = cp.execSync("aplay -l 2>/dev/null", { timeout: 2000 }).toString(); } catch { /* ignore */ }
+        const usbSpeakerFound = /card\s+\d+:\s*[^\n]*(usb|jieli|cmedia)/i.test(alsaRaw);
+        checks.push({
+          id: "usb-speaker",
+          label: "Altavoz USB para alarmas",
+          technical: "USB audio card",
+          status: usbSpeakerFound ? "ok" : "error",
+          message: usbSpeakerFound
+            ? "Detectado — las alarmas de voz tienen salida dedicada."
+            : "No hay altavoz USB. Se recomienda uno dedicado para que las alarmas suenen SIEMPRE aunque el HDMI/monitor se apague o el jack esté ocupado. Es la salvaguarda crítica para vigilancia de fondeo, AIS y varada.",
+          action: usbSpeakerFound ? undefined : "Conecta un altavoz USB (~15 €) y confígúralo en el panel Alarmas → Volumen + salida. Los altavoces USB baratos con chip Jieli funcionan bien.",
+        });
+      } catch { /* ignore */ }
+
+      // Rev663 (feedback Carlos "o el acceso a internet"): ping HTTPS a los
+      // servicios que usa el plugin. Reusamos el mismo mecanismo del
+      // diagnóstico integral. Timeout corto (2s) para no colgar el step.
+      try {
+        const https = await import("https");
+        const pingHost = (host: string): Promise<{ ok: boolean; ms: number | null }> => {
+          const t0 = Date.now();
+          return new Promise((resolve) => {
+            const req = https.request(
+              { host, port: 443, path: "/", method: "GET", timeout: 2000 },
+              (r: any) => { resolve({ ok: true, ms: Date.now() - t0 }); r.destroy(); }
+            );
+            req.on("error", () => resolve({ ok: false, ms: null }));
+            req.on("timeout", () => { req.destroy(); resolve({ ok: false, ms: null }); });
+            req.end();
+          });
+        };
+        const [ihmR, omR] = await Promise.all([
+          pingHost("ideihm.covam.es"),
+          pingHost("api.open-meteo.com"),
+        ]);
+        const bothOk = ihmR.ok && omR.ok;
+        const anyOk  = ihmR.ok || omR.ok;
+        checks.push({
+          id: "internet",
+          label: "Acceso a Internet (IHM y Open-Meteo)",
+          technical: "https ping",
+          status: bothOk ? "ok" : anyOk ? "warn" : "error",
+          message: bothOk
+            ? `IHM ${ihmR.ms} ms · Open-Meteo ${omR.ms} ms`
+            : anyOk
+              ? `Parcial: IHM ${ihmR.ok?ihmR.ms+' ms':'FALLO'} · Open-Meteo ${omR.ok?omR.ms+' ms':'FALLO'}`
+              : "Sin conexión a IHM ni a Open-Meteo. La marea y la meteo no se podrán refrescar.",
+          action: !anyOk ? "Revisa tu WiFi / 4G / Tailscale del barco." : undefined,
+        });
+      } catch { /* ignore */ }
+
+      // 6. RAM libre > 500 MB
+      try {
+        const os = await import("os");
+        const freeMB = Math.round(os.freemem() / 1024 / 1024);
+        checks.push({
+          id: "free-ram",
+          label: "Memoria RAM libre del sistema",
+          technical: "free memory",
+          status: freeMB > 500 ? "ok" : "warn",
+          message: `${freeMB} MB libres`,
+          action: freeMB > 500 ? undefined : "Considera cerrar otros servicios para dejar respirar a SK.",
+        });
+      } catch { /* ignore */ }
+      res.json({ checks });
+    });
+
+    // Rev662 (feedback Carlos "echo de menos control de hardware disponible
+    // y su presencia en Signal K, y altavoz externo USB"): endpoint que
+    // devuelve el hardware físico detectado + comparación con las paths SK
+    // que llegan + salidas de audio ALSA (para altavoz USB).
+    expressApp.get("/signalk-mareas-ihm/api/wizard/hardware-check", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const cp = await import("child_process");
+      const runSafe = (cmd: string, timeoutMs = 2000): string => {
+        try { return cp.execSync(cmd, { timeout: timeoutMs }).toString(); } catch { return ""; }
+      };
+      const info: any = { usb: [], i2c: [], audio: [], skHint: {} };
+      // Rev663 (feedback Carlos "solo debemos hacer check sobre lo que
+      // realmente necesita el plugin"): filtramos lsusb a los dispositivos
+      // RELEVANTES para nuestro plugin: audio USB (altavoz para voces de
+      // alarma), GPS USB, serial USB (para adaptadores NMEA). El resto
+      // (hubs, bluetooth, cámaras, teclados, etc) NO nos sirve.
+      try {
+        const raw = runSafe("lsusb 2>/dev/null");
+        const allUsb = raw.split("\n").filter(Boolean).map((line: string) => {
+          const m = line.match(/^Bus\s+\d+\s+Device\s+\d+:\s+ID\s+([0-9a-f:]+)\s+(.+)$/i);
+          return { id: m ? m[1] : "", desc: m ? m[2] : line };
+        });
+        // Rev664 (feedback Carlos "solo GPS USB, SDR USB (AIS por SDR),
+        // altavoces USB"): filtramos a las 3 categorías útiles para el
+        // plugin. Eliminado el catch-all de "serial adapter" que salía
+        // como ruido (los adaptadores USB-serie normales no aportan info).
+        // Rev666 (feedback Carlos "USB identificas mal el SDR"): whitelist por
+        // ID de dispositivos SDR conocidos (0bda:2832, 0bda:2838 RTL-SDR),
+        // más regex ampliado con RTL283x, adalm-pluto, sdrplay, limeSDR,
+        // bladeRF. Y guard para excluir WiFi/WLAN Realtek (RTL8188 etc) que
+        // matcheaban antes con "realtek.*rtl".
+        const sdrKnownIds = new Set([
+          "0bda:2832", // RTL2832U
+          "0bda:2838", // RTL2838 DVB-T
+          "0ccd:00a9", // Terratec T Stick
+          "1d50:6089", // HackRF One
+          "1d50:60a1", // Airspy
+          "0403:6014", // FTDI (usado en HackRF prototipos)
+        ]);
+        info.usb = allUsb
+          .map((d: any) => {
+            const desc = d.desc;
+            const isWifi = /wireless|wlan|wi[- ]?fi|802\.11/i.test(desc);
+            const looksLikeAudio = !isWifi && /audio|speaker|mic\b|\bdac\b|sound|jieli|cmedia|c-media|headphone|realtek.*audio/i.test(desc);
+            const looksLikeGps   = /u-?blox|\bgps\b|garmin|globalsat|navsync|prolific.*serial.*gps/i.test(desc);
+            const looksLikeSdr   = sdrKnownIds.has(d.id) || (!isWifi && /rtl[- ]?sdr|rtl283[0-9]|dvb[- ]?t|nooelec|nesdr|hackrf|airspy|sdrplay|lime[- ]?sdr|bladerf|adalm[- ]?pluto/i.test(desc));
+            if (!looksLikeAudio && !looksLikeGps && !looksLikeSdr) return null;
+            // Prioridad: SDR > GPS > Audio (SDR es el más específico).
+            const category = looksLikeSdr ? "sdr" : looksLikeGps ? "gps" : "audio";
+            return { ...d, category };
+          })
+          .filter(Boolean);
+      } catch { /* ignore */ }
+      // I2C devices (i2cdetect -y 1). Requiere permisos; si falla se salta.
+      try {
+        const raw = runSafe("i2cdetect -y 1 2>/dev/null", 3000);
+        const addrs: string[] = [];
+        raw.split("\n").forEach((line: string) => {
+          // Filas tipo "10: -- -- -- -- 15 -- -- -- ..."
+          const parts = line.split(/\s+/).filter(Boolean);
+          if (parts.length && /^[0-9a-f]{2}:$/i.test(parts[0])) {
+            for (let i = 1; i < parts.length; i++) {
+              if (/^[0-9a-f]{2}$/i.test(parts[i])) addrs.push("0x" + parts[i]);
+            }
+          }
+        });
+        // Rev666 (feedback Carlos "I²C sigue en marciano, no identificas cada
+        // sensor diciendo lo que es"): partimos el hint en dos campos:
+        // `label` en cristiano (Acelerómetro, Barómetro…) para mostrar como
+        // título en la UI, y `chip` con el modelo/dirección técnicos para el
+        // badge lateral. El icono contextual (🧭, 🌡️…) también ayuda.
+        const knownI2c: Record<string, { icon: string; label: string; chip: string }> = {
+          "0x1c": { icon: "🧭", label: "Acelerómetro", chip: "MMA845x" },
+          "0x1d": { icon: "🧭", label: "Acelerómetro", chip: "MMA845x" },
+          "0x28": { icon: "🧭", label: "IMU (giroscopio + acelerómetro)", chip: "BNO055" },
+          "0x29": { icon: "🧭", label: "IMU (giroscopio + acelerómetro)", chip: "BNO055" },
+          "0x48": { icon: "📊", label: "Convertidor analógico-digital", chip: "ADS1015/1115" },
+          "0x49": { icon: "📊", label: "Convertidor analógico-digital", chip: "ADS1015/1115" },
+          "0x68": { icon: "🧭", label: "IMU (giroscopio + acelerómetro)", chip: "MPU-6050/9250" },
+          "0x69": { icon: "🧭", label: "IMU (giroscopio + acelerómetro)", chip: "MPU-6050/9250" },
+          "0x76": { icon: "🌡️", label: "Barómetro / termómetro", chip: "BME280/BMP280" },
+          "0x77": { icon: "🌡️", label: "Barómetro / termómetro", chip: "BME280/BMP280" },
+        };
+        info.i2c = addrs.map((a: string) => {
+          const k = knownI2c[a.toLowerCase()];
+          if (k) return { addr: a, icon: k.icon, label: k.label, chip: `${k.chip} · ${a}` };
+          return { addr: a, icon: "❓", label: "Dispositivo I²C desconocido", chip: a };
+        });
+      } catch { /* ignore */ }
+      // ALSA audio outputs (aplay -l). Fuente clave para altavoz USB.
+      try {
+        const raw = runSafe("aplay -l 2>/dev/null", 2000);
+        const lines = raw.split("\n").filter(Boolean);
+        for (const line of lines) {
+          const m = line.match(/^card\s+(\d+):\s+(\S+)\s*\[(.+?)\],\s*device\s+(\d+):\s*(.+?)(\s*\[.+?\])?$/i);
+          if (m) {
+            const [, card, alias, cardName, device, deviceName] = m;
+            const isUsb = /usb|jieli|generic/i.test(cardName + " " + alias);
+            info.audio.push({
+              card: `hw:${card},${device}`,
+              cardName: cardName.trim(),
+              alias: alias.trim(),
+              deviceName: deviceName.trim(),
+              isUsb,
+            });
+          }
+        }
+      } catch { /* ignore */ }
+      // SK hint — qué paths de IMU/GPS/depth están llegando ahora mismo
+      // para que el user vea si el hardware detectado está mapeado en SK.
+      const skHas = (path: string) => {
+        try {
+          const raw = app.getSelfPath(path);
+          const shape = _classifyShape(raw);
+          return shape.hasValue && shape.sampleValue != null;
+        } catch { return false; }
+      };
+      // Rev663 (feedback Carlos): "attitude" es solo un cálculo derivado;
+      // lo que realmente delata al IMU es que llegue la aceleración cruda.
+      // Renombrado a "acelerómetro" en la UI para no confundir.
+      // Rev663 (feedback Carlos "no haces mención de AIS"): incluimos AIS
+      // mirando el número de MMSI conocidos en la base local del plugin.
+      // 0 targets = sin feed AIS operativo; >0 = feed llegando.
+      const aisTargets = _aisKnownDB ? Object.keys(_aisKnownDB).length : 0;
+      info.skHint = {
+        hasAccel:    skHas("navigation.acceleration") || skHas("navigation.attitude"),
+        hasGps:      skHas("navigation.position"),
+        hasDepth:    skHas("environment.depth.belowKeel") || skHas("environment.depth.belowSurface"),
+        hasWind:     skHas("environment.wind.speedApparent"),
+        hasPressure: skHas("environment.outside.pressure"),
+        hasTempWater:skHas("environment.water.temperature"),
+        hasTempAir:  skHas("environment.outside.temperature"),
+        hasAis:      aisTargets > 0,
+        aisTargets:  aisTargets,
+      };
+      // Currently selected audio output for alarms (si el plugin ha guardado alguno).
+      try {
+        const saved = await ihmCache.get("audioOutput") as any;
+        info.selectedAudioCard = saved?.card || null;
+      } catch { info.selectedAudioCard = null; }
+      res.json(info);
+    });
+
+    // Rev660 (Sprint J-5): chequeo de sensores conectados via SK. Lista de
+    // paths con age y valor actual, para que el user vea de un vistazo qué
+    // llega y qué falta.
+    expressApp.get("/signalk-mareas-ihm/api/wizard/sensor-check", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const sensors: Array<{ id: string; label: string; path: string; status: "ok" | "warn" | "missing"; sample?: any; ageMs?: number | null; }> = [];
+      const check = (id: string, label: string, path: string, requireFresh = 10_000) => {
+        try {
+          const raw = app.getSelfPath(path);
+          const shape = _classifyShape(raw);
+          if (!shape.hasValue || shape.sampleValue == null) {
+            sensors.push({ id, label, path, status: "missing", sample: null, ageMs: null });
+            return;
+          }
+          const age = shape.ageMs;
+          const stale = age != null && age > requireFresh;
+          sensors.push({ id, label, path, status: stale ? "warn" : "ok", sample: shape.sampleValue, ageMs: age });
+        } catch { sensors.push({ id, label, path, status: "missing", sample: null, ageMs: null }); }
+      };
+      check("gps",          "GPS position",           "navigation.position");
+      check("sog",          "Speed over Ground",      "navigation.speedOverGround");
+      check("heading",      "Heading",                "navigation.headingTrue");
+      check("depth",        "Depth (below keel)",     "environment.depth.belowKeel");
+      check("windDir",      "Wind direction (true)",  "environment.wind.directionTrue");
+      check("windSpeed",    "Wind speed (apparent)",  "environment.wind.speedApparent");
+      check("pressure",     "Barometric pressure",    "environment.outside.pressure");
+      check("waterTemp",    "Water temperature",      "environment.water.temperature", 60_000);
+      check("attitude",     "IMU attitude",           "navigation.attitude");
+      check("gpsSats",      "GPS satellites",         "navigation.gnss.satellites", 60_000);
+      check("gpsHDOP",      "GPS HDOP (precision)",   "navigation.gnss.horizontalDilution", 60_000);
+      res.json({ sensors });
+    });
+
+    expressApp.get("/signalk-mareas-ihm/api/wizard/state", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const st = await _getWizardState();
+      res.json({
+        completed: !!st.completed,
+        currentStepId: st.currentStepId,
+        stepsCompleted: Array.isArray(st.stepsCompleted) ? st.stepsCompleted : [],
+        data: st.data ?? {},
+        totalSteps: WIZARD_STEPS_ORDER.length,
+        stepsOrder: WIZARD_STEPS_ORDER,
+        startedAtIso: st.startedAtIso,
+        completedAtIso: st.completedAtIso,
+      });
+    });
+    expressApp.post("/signalk-mareas-ihm/api/wizard/step", async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        const body = req.body || {};
+        const stepId = String(body.stepId || "");
+        const action = String(body.action || "");
+        const data = body.data;
+        if (!stepId || WIZARD_STEPS_ORDER.indexOf(stepId) < 0) {
+          res.status(400).json({ error: "invalid stepId" });
+          return;
+        }
+        if (!["complete", "skip", "back"].includes(action)) {
+          res.status(400).json({ error: "invalid action" });
+          return;
+        }
+        const st = await _getWizardState();
+        if (!st.startedAtIso) st.startedAtIso = new Date().toISOString();
+        st.data = st.data || {};
+        if (data && typeof data === "object") {
+          st.data[stepId] = { ...(st.data[stepId] ?? {}), ...data };
+        }
+        st.stepsCompleted = Array.isArray(st.stepsCompleted) ? st.stepsCompleted : [];
+        if (action === "back") {
+          const prev = _prevStepId(stepId);
+          st.currentStepId = prev || WIZARD_STEPS_ORDER[0];
+        } else {
+          if (!st.stepsCompleted.includes(stepId)) st.stepsCompleted.push(stepId);
+          const next = _nextStepId(stepId);
+          st.currentStepId = next;
+        }
+        await _saveWizardState(st);
+        // Rev661: payload enriquecido con stepsOrder + totalSteps.
+        res.json({ ok: true, state: _wizardStatePayload(st) });
+      } catch (e: any) {
+        res.status(500).json({ error: String(e?.message || e) });
+      }
+    });
+    expressApp.post("/signalk-mareas-ihm/api/wizard/finish", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        const st = await _getWizardState();
+        st.completed = true;
+        st.completedAtIso = new Date().toISOString();
+        st.currentStepId = null;
+        await _saveWizardState(st);
+        res.json({ ok: true });
+      } catch (e: any) {
+        res.status(500).json({ error: String(e?.message || e) });
+      }
+    });
+    expressApp.post("/signalk-mareas-ihm/api/wizard/restart", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        const fresh = {
+          completed: false,
+          currentStepId: WIZARD_STEPS_ORDER[0],
+          stepsCompleted: [],
+          data: {},
+          startedAtIso: new Date().toISOString(),
+          completedAtIso: null,
+        };
+        await _saveWizardState(fresh);
+        // Rev661: payload enriquecido.
+        res.json({ ok: true, state: _wizardStatePayload(fresh) });
+      } catch (e: any) {
+        res.status(500).json({ error: String(e?.message || e) });
+      }
+    });
+
     // Rev655 (Sprint I-1 opción B): fuerza un fetch del forecast de marea.
     // Usa el mismo provider (IHM u Open-Meteo según la estación seleccionada
     // y el modo — no hardcodeamos fuente). Devuelve estado + count.
@@ -2098,13 +2809,455 @@ try {
     });
     expressApp.get("/signalk-mareas-ihm/api/tide/fetch-status", (_req: any, res: any) => {
       res.set("Cache-Control", "no-store");
+      // Rev689 (feedback Carlos "aún ID 29 MAL, vuelve al número ID al rato"):
+      // devolvemos el nombre REAL de la estación resuelta por el provider en
+      // el último forecast. Para IDs virtuales (neaps-global, sktides-plugin,
+      // openmeteo-global) `lastForecast.station.name` es el nombre humano
+      // ("Vigo", "Portland", "Open-Meteo global"), no un ID técnico.
+      const st: any = (lastForecast && lastForecast.station) || null;
       res.json({
         status: _tideFetchState.status,
         attempts: _tideFetchState.attempts,
         lastAttemptMs: _tideFetchState.lastAttemptMs,
         lastError: _tideFetchState.lastError,
         source: _tideFetchState.source,
+        stationName: st?.name ?? null,
+        stationId:   st?.id   ?? null,
         maxAttempts: _tideRetryDelays.length,
+      });
+    });
+
+    // Rev677 (feedback Carlos "puede decirme qué da NEAPS ahora para pleamar
+    // y próxima bajamar y posición del momento?"): preview ad-hoc de una
+    // fuente concreta SIN cambiar la config global. Útil para comparar
+    // resultados entre IHM y NEAPS lado a lado. Devuelve las próximas 4
+    // extremes + nivel interpolado en el momento actual.
+    expressApp.get("/signalk-mareas-ihm/api/tide/preview", async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const engine = String(req?.query?.engine ?? "").toLowerCase();
+      const validEngines = new Set(["ihm", "sktides", "neaps", "openmeteo"]);
+      if (!validEngines.has(engine)) {
+        return res.status(400).json({ error: `engine must be one of ${[...validEngines].join("|")}` });
+      }
+      const posValue = app.getSelfPath("navigation.position.value") || (await ihmCache.get("position")) || null;
+      const lat = isPositionValue(posValue) ? posValue.latitude : undefined;
+      const lon = isPositionValue(posValue) ? posValue.longitude : undefined;
+      if (!Number.isFinite(lat!) || !Number.isFinite(lon!)) {
+        return res.status(400).json({ error: "no vessel position available" });
+      }
+      try {
+        let extremes: Array<{ time: string; value: number; type: "High" | "Low" }> = [];
+        let stationName = "";
+        let stationId = "";
+        if (engine === "neaps") {
+          const mod = await import("./sources/neaps-tides.js");
+          const r = await mod.neapsTideForecast(app as any, ihmCache as any, lat!, lon!);
+          if (!r) return res.json({ ok: false, error: "no NEAPS station within range" });
+          extremes = r.extremes as any;
+          stationName = r.station.name;
+          stationId = r.station.id ?? "";
+        } else if (engine === "openmeteo") {
+          const mod = await import("./sources/openmeteo-tides.js");
+          const r = await mod.openmeteoTideForecast(app as any, ihmCache as any, lat!, lon!);
+          extremes = r.extremes as any;
+          stationName = r.station.name;
+          stationId = r.station.id ?? "";
+        } else if (engine === "sktides") {
+          const mod = await import("./sources/sktides-tides.js");
+          const r = await mod.sktidesTideForecast(app as any, ihmCache as any, lat!, lon!);
+          if (!r) return res.json({ ok: false, error: "signalk-tides plugin not available" });
+          extremes = r.extremes as any;
+          stationName = r.station.name;
+          stationId = r.station.id ?? "";
+        } else if (engine === "ihm") {
+          // Rev678 (feedback Carlos "cambia el mensaje inútil"): consulta IHM
+          // ad-hoc via el provider actual, con override que ignora manual/
+          // favorite/pref. El provider devuelve extremes IHM crudos.
+          const p = await ensureProvider();
+          if (!p) return res.json({ ok: false, error: "IHM provider not ready" });
+          const r = await (p as any)({
+            position: { latitude: lat, longitude: lon, timestamp: new Date().toISOString() },
+            overrideEngine: "ihm",
+          }) as any;
+          if (!r || !Array.isArray(r.extremes) || r.extremes.length < 2) {
+            return res.json({ ok: false, error: "no IHM data (probably out of Spain coverage)" });
+          }
+          extremes = r.extremes;
+          stationName = r.station?.name ?? "IHM";
+          stationId = r.station?.id ?? "";
+        }
+        // Nivel interpolado (linear entre extremes vecinos) para el momento
+        // actual. Rebase ya aplicado por cada provider.
+        const nowMs = Date.now();
+        const sorted = [...extremes].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+        let currentLevel: number | null = null;
+        for (let i = 0; i < sorted.length - 1; i++) {
+          const t0 = new Date(sorted[i].time).getTime();
+          const t1 = new Date(sorted[i + 1].time).getTime();
+          if (t0 <= nowMs && nowMs <= t1) {
+            const f = (nowMs - t0) / (t1 - t0);
+            const cosPhase = Math.cos(Math.PI * f); // ½·(v0+v1) + ½·(v0-v1)·cos
+            currentLevel = 0.5 * (sorted[i].value + sorted[i + 1].value)
+                         + 0.5 * (sorted[i].value - sorted[i + 1].value) * cosPhase;
+            break;
+          }
+        }
+        const upcoming = sorted.filter(e => new Date(e.time).getTime() >= nowMs).slice(0, 4);
+        res.json({
+          ok: true,
+          engine,
+          stationId,
+          stationName,
+          nowIso: new Date(nowMs).toISOString(),
+          currentLevelM: currentLevel != null ? Math.round(currentLevel * 100) / 100 : null,
+          upcoming: upcoming.map(e => ({
+            time: e.time,
+            type: e.type,
+            valueM: Math.round(e.value * 100) / 100,
+          })),
+        });
+      } catch (e: any) {
+        res.status(500).json({ error: e?.message ?? String(e) });
+      }
+    });
+
+    // Rev686 (feedback Carlos "si IHM no está disponible para la zona debe
+    // desaparecer del listado"): reporta qué motores tienen datos utilizables
+    // para la posición actual del barco. IHM depende de la distancia a la
+    // estación IHM más cercana (< MAX_AUTO_DISTANCE_KM). NEAPS depende de si
+    // hay estación NEAPS dentro de umbral. Openmeteo y sktides no dependen
+    // de posición (openmeteo es global, sktides depende de que esté
+    // instalado el plugin oficial en el server).
+    expressApp.get("/signalk-mareas-ihm/api/tide/engines-available", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const posValue = app.getSelfPath("navigation.position.value") || (await ihmCache.get("position")) || null;
+      const lat = isPositionValue(posValue) ? posValue.latitude : null;
+      const lon = isPositionValue(posValue) ? posValue.longitude : null;
+      const cached = (await ihmCache.get("stationsList")) as any;
+      const stations: any[] = Array.isArray(cached?.stations)
+        ? cached.stations
+        : Array.isArray(cached)
+          ? cached
+          : [];
+      let ihmDistKm: number | null = null;
+      if (Number.isFinite(lat!) && Number.isFinite(lon!) && stations.length) {
+        const nearest = pickNearestStationWithDistance({ latitude: lat!, longitude: lon! }, stations);
+        if (nearest) ihmDistKm = nearest.distanceMeters / 1000;
+      }
+      let neapsAvail = false;
+      let neapsDistKm: number | null = null;
+      if (Number.isFinite(lat!) && Number.isFinite(lon!)) {
+        try {
+          const mod = await import("neaps");
+          const s: any = mod.nearestStation({ latitude: lat!, longitude: lon! });
+          if (s && typeof s.distance === "number") {
+            neapsDistKm = s.distance / 1000;
+            neapsAvail = neapsDistKm <= 80; // MAX_NEAPS_DISTANCE_KM
+          }
+        } catch { /* module unavail */ }
+      }
+      let sktidesAvail = false;
+      try {
+        const mod = await import("./sources/sktides-tides.js");
+        sktidesAvail = await mod.probeSignalkTides(app as any);
+      } catch { /* ignore */ }
+      res.json({
+        position: { lat, lon },
+        engines: {
+          ihm:       { available: ihmDistKm != null && ihmDistKm <= MAX_AUTO_DISTANCE_KM, distanceKm: ihmDistKm },
+          sktides:   { available: sktidesAvail },
+          neaps:     { available: neapsAvail, distanceKm: neapsDistKm },
+          openmeteo: { available: true },
+        },
+      });
+    });
+
+    // Rev686 (feedback Carlos "buscador de ciudades y que el resultado dé el
+    // valor más cercano en NEAPS, Open o IHM"): busca estaciones por texto
+    // dentro del motor elegido. IHM tiene ~67 estaciones cacheadas locales;
+    // NEAPS ~7600 en su BD embebida. Open-Meteo no tiene estaciones (es
+    // global por lat/lon), devuelve una entrada sintética. sktides no lo
+    // exponemos (el plugin oficial ya tiene su propio buscador).
+    // Rev688 (feedback Carlos "sin coincidencias debiera decirme más cercana
+    // a Santoña"): geocoding público via Nominatim (OSM, sin key) para
+    // convertir un nombre de ciudad en lat/lon y buscar la estación IHM/NEAPS
+    // más cercana a esa ubicación (no al GPS del barco, que es otra cosa).
+    // Cache in-memory 10 min por query para no molestar a Nominatim.
+    const _geocodeCache = new Map<string, { ts: number; lat: number; lon: number; display: string } | null>();
+    const _geocodeTtlMs = 10 * 60 * 1000;
+    async function _nominatimGeocode(q: string): Promise<{ lat: number; lon: number; display: string } | null> {
+      const key = q.trim().toLowerCase();
+      if (!key) return null;
+      const cached = _geocodeCache.get(key);
+      if (cached && (Date.now() - cached.ts) < _geocodeTtlMs) return cached ? { lat: cached.lat, lon: cached.lon, display: cached.display } : null;
+      // Rev694 (auditoría Gemini "Nominatim bloquea autocompletado"): intentamos
+      // primero Open-Meteo Geocoding — mismo dominio Open-Meteo que ya usamos
+      // para mareas, sin rate limit agresivo. Fallback a Nominatim si falla.
+      try {
+        const omUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&format=json&language=es`;
+        const c1 = new AbortController();
+        const t1 = setTimeout(() => c1.abort(), 4000);
+        const r1 = await fetch(omUrl, { signal: c1.signal }).finally(() => clearTimeout(t1));
+        if (r1.ok) {
+          const j: any = await r1.json();
+          const first = Array.isArray(j?.results) ? j.results[0] : null;
+          if (first && Number.isFinite(Number(first.latitude)) && Number.isFinite(Number(first.longitude))) {
+            const display = [first.name, first.admin1, first.country].filter(Boolean).join(", ");
+            const payload = { ts: Date.now(), lat: Number(first.latitude), lon: Number(first.longitude), display };
+            _geocodeCache.set(key, payload);
+            return { lat: payload.lat, lon: payload.lon, display };
+          }
+        }
+      } catch { /* fall through to Nominatim */ }
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&addressdetails=0`;
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 6000);
+        const r = await fetch(url, {
+          signal: controller.signal,
+          headers: { "User-Agent": "signalk-mareas-ihm/2.5 (webapp geocoding)" },
+        }).finally(() => clearTimeout(t));
+        if (!r.ok) { _geocodeCache.set(key, null); return null; }
+        const arr = await r.json() as any[];
+        if (!Array.isArray(arr) || !arr.length) { _geocodeCache.set(key, null); return null; }
+        const first = arr[0];
+        const lat = Number(first.lat);
+        const lon = Number(first.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) { _geocodeCache.set(key, null); return null; }
+        const payload = { ts: Date.now(), lat, lon, display: String(first.display_name || q) };
+        _geocodeCache.set(key, payload);
+        return { lat, lon, display: payload.display };
+      } catch {
+        _geocodeCache.set(key, null);
+        return null;
+      }
+    }
+
+    expressApp.get("/signalk-mareas-ihm/api/tide/stations-search", async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const engine = String(req?.query?.engine ?? "").toLowerCase();
+      const q = String(req?.query?.q ?? "").trim().toLowerCase();
+      const MAX = 20;
+      try {
+        if (engine === "ihm") {
+          const cached = (await ihmCache.get("stationsList")) as any;
+          let stations: any[] = Array.isArray(cached?.stations)
+            ? cached.stations
+            : Array.isArray(cached)
+              ? cached
+              : [];
+          if (!stations.length) stations = HARDCODED_STATIONS as any[];
+          const posValue = app.getSelfPath("navigation.position.value") || (await ihmCache.get("position")) || null;
+          const lat = isPositionValue(posValue) ? posValue.latitude : undefined;
+          const lon = isPositionValue(posValue) ? posValue.longitude : undefined;
+          const filtered = q
+            ? stations.filter((s: any) => String(s.name ?? s.puerto ?? "").toLowerCase().includes(q))
+            : stations;
+          const withDist = filtered.map((s: any) => {
+            const sLat = s.lat ?? s.latitude;
+            const sLon = s.lon ?? s.longitude;
+            let distanceKm: number | null = null;
+            if (Number.isFinite(lat!) && Number.isFinite(lon!) && Number.isFinite(sLat) && Number.isFinite(sLon)) {
+              distanceKm = haversineMeters(
+                { latitude: lat!, longitude: lon! },
+                { latitude: sLat, longitude: sLon }
+              ) / 1000;
+            }
+            return {
+              id: String(s.id),
+              name: String(s.name ?? s.puerto ?? ""),
+              lat: sLat, lon: sLon,
+              distanceKm,
+            };
+          });
+          withDist.sort((a: any, b: any) => (a.distanceKm ?? 9e9) - (b.distanceKm ?? 9e9));
+          // Rev688: geocoding fallback — si el texto no matcheó ninguna
+          // estación IHM (p.ej. "Santoña"), geocodificamos la ciudad y
+          // devolvemos la IHM más cercana a esas coords + `geocodeHint`
+          // para que el frontend explique "Sin datos para Santoña, más
+          // cercana: X (Y km)".
+          if (q && withDist.length === 0) {
+            const geo = await _nominatimGeocode(q);
+            if (geo) {
+              const withGeoDist = stations.map((s: any) => {
+                const sLat = s.lat ?? s.latitude;
+                const sLon = s.lon ?? s.longitude;
+                let distanceKm: number | null = null;
+                if (Number.isFinite(sLat) && Number.isFinite(sLon)) {
+                  distanceKm = haversineMeters(
+                    { latitude: geo.lat, longitude: geo.lon },
+                    { latitude: sLat, longitude: sLon }
+                  ) / 1000;
+                }
+                return {
+                  id: String(s.id),
+                  name: String(s.name ?? s.puerto ?? ""),
+                  lat: sLat, lon: sLon,
+                  distanceKm,
+                };
+              });
+              withGeoDist.sort((a: any, b: any) => (a.distanceKm ?? 9e9) - (b.distanceKm ?? 9e9));
+              return res.json({
+                engine, q,
+                results: withGeoDist.slice(0, 5),
+                geocodeHint: { query: q, resolvedTo: geo.display, lat: geo.lat, lon: geo.lon },
+              });
+            }
+          }
+          return res.json({ engine, q, results: withDist.slice(0, MAX) });
+        }
+        if (engine === "neaps") {
+          const mod = await import("@neaps/tide-database");
+          if (!q) {
+            // Sin query, devuelve las N más cercanas al barco.
+            const posValue = app.getSelfPath("navigation.position.value") || (await ihmCache.get("position")) || null;
+            if (isPositionValue(posValue)) {
+              const near = (mod as any).near({
+                latitude: posValue.latitude,
+                longitude: posValue.longitude,
+                maxDistance: 500,
+                maxResults: MAX,
+                includeAll: true,
+              }) as any[];
+              return res.json({ engine, q, results: near.map(([s, dKm]: any) => ({
+                id: `neaps/${s.id}`,
+                name: String(s.name),
+                lat: s.latitude, lon: s.longitude,
+                distanceKm: dKm,
+              })) });
+            }
+            return res.json({ engine, q, results: [] });
+          }
+          // Rev692 (feedback Carlos "Sydney y Auckland no salen, si busco
+          // Sydney me sale Sydney BC de Canadá"): la búsqueda por TEXTO de
+          // NEAPS es literal por nombre de estación (a menudo "Fort Denison"
+          // o "Sydney Harbour" en lugar de "Sydney"). Es mucho más útil hacer
+          // SIEMPRE geocoding: "sydney" → Sydney AU → estaciones NEAPS más
+          // cercanas. Text search se conserva como respaldo si Nominatim
+          // no encuentra la ciudad.
+          const geoNeaps = await _nominatimGeocode(q);
+          if (geoNeaps) {
+            try {
+              const near = (mod as any).near({
+                latitude: geoNeaps.lat,
+                longitude: geoNeaps.lon,
+                maxDistance: 500,
+                maxResults: 10,
+                includeAll: true,
+              }) as any[];
+              if (Array.isArray(near) && near.length) {
+                return res.json({
+                  engine, q,
+                  results: near.map(([s, dKm]: any) => ({
+                    id: `neaps/${s.id}`,
+                    name: String(s.name),
+                    lat: s.latitude, lon: s.longitude,
+                    distanceKm: dKm,
+                  })),
+                  geocodeHint: { query: q, resolvedTo: geoNeaps.display, lat: geoNeaps.lat, lon: geoNeaps.lon },
+                });
+              }
+            } catch { /* fall through to text search */ }
+          }
+          // Fallback: búsqueda por texto (matching nombre de estación).
+          const found = (mod as any).search(q, { maxResults: MAX, includeAll: true }) as any[];
+          const posValue = app.getSelfPath("navigation.position.value") || (await ihmCache.get("position")) || null;
+          const lat2 = isPositionValue(posValue) ? posValue.latitude : undefined;
+          const lon2 = isPositionValue(posValue) ? posValue.longitude : undefined;
+          const results = found.map((s: any) => {
+            let distanceKm: number | null = null;
+            if (Number.isFinite(lat2!) && Number.isFinite(lon2!)) {
+              distanceKm = haversineMeters(
+                { latitude: lat2!, longitude: lon2! },
+                { latitude: s.latitude, longitude: s.longitude }
+              ) / 1000;
+            }
+            return {
+              id: `neaps/${s.id}`,
+              name: String(s.name),
+              lat: s.latitude, lon: s.longitude,
+              distanceKm,
+            };
+          });
+          results.sort((a: any, b: any) => (a.distanceKm ?? 9e9) - (b.distanceKm ?? 9e9));
+          return res.json({ engine, q, results });
+        }
+        if (engine === "openmeteo") {
+          // Open-Meteo es global por lat/lon del barco; no tiene "estaciones".
+          return res.json({
+            engine, q,
+            results: [{
+              id: "openmeteo-global",
+              name: "Open-Meteo global (usa tu posición GPS)",
+              lat: null, lon: null, distanceKm: null,
+            }],
+          });
+        }
+        return res.status(400).json({ error: `engine must be one of ihm|neaps|openmeteo` });
+      } catch (e: any) {
+        res.status(500).json({ error: e?.message ?? String(e) });
+      }
+    });
+
+    // Rev676 (feedback Carlos "habría que elegir el motor predeterminado
+    // — siendo internacional no debiera ser IHM"): endpoint GET/POST para el
+    // motor por defecto. Valores: 'auto' (comportamiento clásico, IHM cerca
+    // → sktides → NEAPS → openmeteo) o cualquiera de las 4 fuentes forzadas.
+    // Se persiste en ihmCache bajo la key "tideEnginePreference". Si el user
+    // pone un manualStationId, ese gana siempre; el motor por defecto sólo se
+    // aplica cuando NO hay estación manual.
+    const VALID_ENGINE_PREFS = ["auto", "ihm", "sktides", "neaps", "openmeteo"] as const;
+    type EnginePref = typeof VALID_ENGINE_PREFS[number];
+    expressApp.get("/signalk-mareas-ihm/api/tide/engine-pref", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const stored = String((await ihmCache.get("tideEnginePreference")) ?? "auto");
+      const pref: EnginePref = (VALID_ENGINE_PREFS as readonly string[]).includes(stored)
+        ? (stored as EnginePref)
+        : "auto";
+      res.json({ pref });
+    });
+    expressApp.post("/signalk-mareas-ihm/api/tide/engine-pref", requireControlAccess, async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const raw = String(req?.body?.pref ?? "").toLowerCase();
+      if (!(VALID_ENGINE_PREFS as readonly string[]).includes(raw)) {
+        return res.status(400).json({ error: `pref must be one of ${VALID_ENGINE_PREFS.join("|")}` });
+      }
+      await ihmCache.set("tideEnginePreference", raw);
+      // Rev679 (feedback Carlos "ahora no quiere IHM ni en automático ni en
+      // manual"): cambiar el motor por defecto es una decisión GLOBAL y debe
+      // sobreescribir residuos de sesiones anteriores. Limpiamos
+      // favoriteStationId (que en AUTO ganaba sobre el pref) y desactivamos
+      // manualOverride. Si el user quiere una estación concreta, la
+      // seleccionará después desde Curvas.
+      await ihmCache.set("favoriteStationId", "");
+      await ihmCache.set("manualOverride", false);
+      await ihmCache.set("manualStationId", "");
+      // Fuerza un fetch nuevo con la nueva pref.
+      _doTideFetch(true).catch(() => {});
+      res.json({ ok: true, pref: raw });
+    });
+
+    // Rev674 (feedback Carlos "híbrido C"): estado de las 4 fuentes de marea
+    // para que la UI del asistente muestre cuál está disponible y cuál está
+    // activa. IHM y Open-Meteo siempre están disponibles (con internet);
+    // NEAPS embebido siempre (offline por armónicos locales); signalk-tides
+    // depende de que el plugin oficial esté instalado en el server.
+    expressApp.get("/signalk-mareas-ihm/api/tide/providers-status", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const active = _tideFetchState.source || null;
+      let sktidesAvailable = false;
+      try {
+        const mod = await import("./sources/sktides-tides.js");
+        sktidesAvailable = await mod.probeSignalkTides(app as any);
+      } catch { /* module error → treat as unavailable */ }
+      res.json({
+        active,
+        providers: {
+          ihm:      { available: true,             active: active === "IHM" },
+          sktides:  { available: sktidesAvailable, active: active === "signalk-tides" },
+          neaps:    { available: true,             active: active === "NEAPS" },
+          openmeteo:{ available: true,             active: active === "Open-Meteo" },
+        },
       });
     });
 
@@ -3317,11 +4470,26 @@ try {
         // renderizar un separador visual antes de ellas. Si fueran al
         // principio se convertirían en nearbyStations[0] = "más cercana"
         // en modo AUTO, lo cual no tiene sentido para "Sin marea".
-        const synthetic = [
-          { id: "openmeteo-global", name: "🌍 Open-Meteo global (mareas mundiales)", inRange: false, distance: null, tz: "Europe/Madrid", synthetic: true },
-          { id: "mediterraneo",     name: "Mediterráneo (Δ ≈ 0.2 m sinusoidal)",     inRange: false, distance: null, tz: "Europe/Madrid", synthetic: true },
-          { id: "sin-marea",        name: "Sin marea / Offshore (Δ 0 m)",            inRange: false, distance: null, tz: "Europe/Madrid", synthetic: true },
+        // Rev676 (feedback Carlos "en curvas y TidesView incluir Tides o
+        // NEAPS como dos variantes"): expuesto ambos como pseudo-estaciones
+        // seleccionables. Ambas rutas ya están cableadas en ihm.ts como
+        // manual override. Se ocultan las que no están disponibles ahora
+        // mismo — signalk-tides sólo aparece si el plugin oficial responde.
+        const sktidesMod = await import("./sources/sktides-tides.js");
+        const sktidesAvail = await sktidesMod.probeSignalkTides(app as any);
+        const synthetic: any[] = [
+          { id: "neaps-global",    name: "📡 NEAPS (armónicos globales)",           inRange: false, distance: null, tz: "Europe/Madrid", synthetic: true },
+          { id: "openmeteo-global",name: "🌍 Open-Meteo global (mareas mundiales)", inRange: false, distance: null, tz: "Europe/Madrid", synthetic: true },
+          { id: "mediterraneo",    name: "Mediterráneo (Δ ≈ 0.2 m sinusoidal)",     inRange: false, distance: null, tz: "Europe/Madrid", synthetic: true },
+          { id: "sin-marea",       name: "Sin marea / Offshore (Δ 0 m)",            inRange: false, distance: null, tz: "Europe/Madrid", synthetic: true },
         ];
+        if (sktidesAvail) {
+          synthetic.unshift({
+            id: "sktides-plugin",
+            name: "🔗 signalk-tides (plugin oficial)",
+            inRange: false, distance: null, tz: "Europe/Madrid", synthetic: true,
+          });
+        }
         res.json([...stationsWithRange, ...synthetic]);
       } catch (e: any) {
         res.status(500).json({ error: e?.message ?? String(e) });
@@ -3499,6 +4667,40 @@ try {
         };
         await ihmCache.set("caladoConfig", config);
         res.json(config);
+      } catch (e: any) {
+        res.status(500).json({ error: e?.message ?? String(e) });
+      }
+    });
+
+    // Rev670 (feedback Carlos "si somos capaces de inyectar el dato a
+    // Configuración de server en SK, hagámoslo"): publica design.draft como
+    // delta SK para que el server lo tenga como single source of truth. El
+    // plugin (y cualquier otro consumidor de SK) lo verá al vuelo. La
+    // persistencia en el settings.json del server queda a cargo del server
+    // (con retention normal el delta reaparecerá tras reboot al re-publicar
+    // desde el plugin cache).
+    expressApp.post("/signalk-mareas-ihm/api/sk-inject/draft", requireControlAccess, async (req: any, res: any) => {
+      try {
+        const drRaw = req?.body?.draft;
+        const dr = Number(drRaw);
+        if (!isFinite(dr) || dr < 0 || dr > 30) {
+          return res.status(400).json({ error: "draft must be finite in [0, 30] m" });
+        }
+        // Publicar delta. En SK, design.draft es un objeto {maximum, current}
+        // pero el consumo simple espera un número o un maximum. Publicamos
+        // ambos para compatibilidad.
+        try {
+          app.handleMessage(plugin.id, {
+            updates: [{
+              values: [
+                { path: "design.draft", value: { maximum: dr, current: dr } },
+              ],
+            }],
+          } as any);
+        } catch (e: any) {
+          return res.status(500).json({ error: "SK delta publish failed: " + (e?.message ?? e) });
+        }
+        res.json({ ok: true, draft: dr });
       } catch (e: any) {
         res.status(500).json({ error: e?.message ?? String(e) });
       }
@@ -6002,12 +7204,45 @@ expressApp.get("/signalk-mareas-ihm/mareas", (_req: any, res: any) => {
 });
 
 // MBTiles catalog
-expressApp.get("/signalk-mareas-ihm/api/mbtiles", (_req: any, res: any) => {
-  const list = Array.from(tilesets.values()).map(ts => ({
-    ...ts.meta,
-    tileUrl: `/signalk-mareas-ihm/tiles/${ts.meta.id}/{z}/{x}/{y}.${ts.meta.format}`
-  }));
-  res.json({ tilesets: list, mbtilesDir, defaultId: list[0]?.id ?? null });
+expressApp.get("/signalk-mareas-ihm/api/mbtiles", async (_req: any, res: any) => {
+  // Rev670 (feedback Carlos "en cartas offline dar información del tamaño que
+  // ocupan"): tamaño de cada .mbtiles + total del directorio.
+  const fs = await import("fs");
+  const pathMod = await import("path");
+  const cp2 = await import("child_process");
+  const humanBytes = (b: number | null): string | null => {
+    if (b == null || !isFinite(b)) return null;
+    if (b > 1024 * 1024 * 1024) return `${(b / 1024 / 1024 / 1024).toFixed(2)} GB`;
+    if (b > 1024 * 1024) return `${Math.round(b / 1024 / 1024)} MB`;
+    if (b > 1024) return `${Math.round(b / 1024)} KB`;
+    return `${b} B`;
+  };
+  const list = Array.from(tilesets.values()).map(ts => {
+    let sizeBytes: number | null = null;
+    try {
+      const fp = pathMod.join(mbtilesDir, ts.meta.filename);
+      sizeBytes = fs.statSync(fp).size;
+    } catch { /* ignore */ }
+    return {
+      ...ts.meta,
+      tileUrl: `/signalk-mareas-ihm/tiles/${ts.meta.id}/{z}/{x}/{y}.${ts.meta.format}`,
+      sizeBytes,
+      sizeHuman: humanBytes(sizeBytes),
+    };
+  });
+  let dirSizeBytes: number | null = null;
+  try {
+    const out = cp2.execSync(`du -sb "${mbtilesDir}" 2>/dev/null`, { timeout: 3000 }).toString().trim();
+    const m = out.match(/^(\d+)/);
+    if (m) dirSizeBytes = Number(m[1]);
+  } catch { /* ignore */ }
+  res.json({
+    tilesets: list,
+    mbtilesDir,
+    defaultId: list[0]?.id ?? null,
+    dirSizeBytes,
+    dirSizeHuman: humanBytes(dirSizeBytes),
+  });
 });
 
 // MBTiles config (change directory)
@@ -6810,6 +8045,10 @@ function getAnchorWatchState() {
       source: _tideFetchState.source,
       maxAttempts: _tideRetryDelays.length,
     },
+    // Rev657 (Sprint J-1): flag rápido para que el visor decida si abrir el
+    // wizard fullscreen o no. El estado completo se pide vía /api/wizard/state
+    // cuando el frontend lo necesita.
+    wizardCompleted: _wizardCompletedCache,
     // Rev478 (C-17): schemaVersion=2 introduce campo `grounding` (FSM) y
     // `gpsAgeMs`. Frontend cacheado con expected=1 debe forzar reload.
     schemaVersion: SSE_SCHEMA_VERSION,
@@ -11594,12 +12833,28 @@ expressApp.get("/signalk-mareas-ihm/api/stationRef", stationRefHandler);
         const manualOverride = Boolean(await ihmCache.get("manualOverride"));
         const manualStationId = (await ihmCache.get("manualStationId")) as any;
         const favoriteStationId = (await ihmCache.get("favoriteStationId")) as any;
+        // Rev683 (feedback Carlos "sigue sin sincronía"): considerar
+        // tideEnginePreference al calcular activeStationId. Cuando el user
+        // fuerza NEAPS/sktides/openmeteo desde el wizard, el "id activo"
+        // debe ser la pseudo-estación correspondiente (neaps-global, etc.)
+        // — antes caía al fallback Vigo IHM y TidesView pintaba IHM.
+        const enginePref = String((await ihmCache.get("tideEnginePreference")) ?? "auto");
+        const prefToVirtualId: Record<string, string> = {
+          sktides:   "sktides-plugin",
+          neaps:     "neaps-global",
+          openmeteo: "openmeteo-global",
+        };
+        const prefVirtualId = prefToVirtualId[enginePref] || "";
 
         // Active station (manual / lastStation / GPS proximity / empty)
         let activeStationId = "";
 
         if (manualOverride && manualStationId != null && String(manualStationId).trim() !== "") {
           activeStationId = String(manualStationId).trim();
+        } else if (prefVirtualId) {
+          // Rev683: motor forzado desde el wizard toma prioridad sobre el
+          // favorite/nearest.
+          activeStationId = prefVirtualId;
         } else {
           // AUTO: 1) favoriteStationId (user-selected in AUTO) 2) GPS nearest 3) lastStation fallback
 
@@ -11650,11 +12905,41 @@ expressApp.get("/signalk-mareas-ihm/api/stationRef", stationRefHandler);
           }
         }
 
+        // Rev688 (feedback Carlos "debe decir el nombre no el número"):
+        // resolver el nombre humano de la estación activa (el ID técnico es
+        // irrelevante para el usuario).
+        let activeStationName = "";
+        try {
+          const sid = String(activeStationId ?? "");
+          if (sid === "openmeteo-global") activeStationName = "Open-Meteo global";
+          else if (sid === "sin-marea") activeStationName = "Sin marea";
+          else if (sid === "mediterraneo") activeStationName = "Mediterráneo (sintético)";
+          else if (sid === "neaps-global") activeStationName = "NEAPS (más cercana al GPS)";
+          else if (sid === "sktides-plugin") activeStationName = "signalk-tides";
+          else if (sid.startsWith("neaps/") || sid.startsWith("sktides/")) {
+            activeStationName = sid.replace(/^(neaps|sktides)\//, "").replace(/[/_-]/g, " ");
+          } else {
+            // Estación IHM numérica — mirar en la lista cacheada + HARDCODED.
+            const stationsCached2 = (await ihmCache.get("stationsList")) as any;
+            const arr2: any[] = Array.isArray(stationsCached2?.stations)
+              ? stationsCached2.stations
+              : Array.isArray(stationsCached2) ? stationsCached2 : [];
+            const found = arr2.find((s: any) => String(s.id) === sid);
+            if (found) activeStationName = String(found.name ?? found.puerto ?? sid);
+            else {
+              const hc = (HARDCODED_STATIONS as any[]).find((s: any) => String(s.id) === sid);
+              activeStationName = hc ? String(hc.name) : sid;
+            }
+          }
+        } catch { activeStationName = String(activeStationId); }
+
         res.json({
           manualOverride,
           manualStationId: manualStationId != null ? String(manualStationId) : "",
           favoriteStationId: favoriteStationId != null ? String(favoriteStationId) : "",
           activeStationId,
+          activeStationName,
+          enginePref, // Rev683: expuesto para debug + sincronía wizard/TidesView.
         });
       } catch (e: any) {
         res.status(500).json({ error: e?.message ?? String(e) });
@@ -11671,7 +12956,51 @@ expressApp.get("/signalk-mareas-ihm/api/stationRef", stationRefHandler);
 
         await ihmCache.set("manualOverride", manualOverride);
         await ihmCache.set("manualStationId", manualStationId); // clear if empty
-        if (favoriteStationId != null) await ihmCache.set("favoriteStationId", String(favoriteStationId));
+        // Rev694 (auditoría GPT+Gemini "no puede quedar una favorita
+        // automática debajo de una selección manual"): al entrar en MANUAL
+        // se limpia siempre favoriteStationId aunque el body no lo mande.
+        // Antes quedaba residual (ej. favoriteStationId=30 de una sesión
+        // anterior) y el provider lo usaba como fallback cuando la manual
+        // NEAPS fallaba.
+        if (manualOverride) {
+          await ihmCache.set("favoriteStationId", "");
+        } else if (favoriteStationId != null) {
+          await ihmCache.set("favoriteStationId", String(favoriteStationId));
+        }
+
+        // Rev684 (feedback Carlos "TidesView e IHM y NEAPS dan lo mismo"):
+        // el user cambió el station picker desde TidesView. Sincronizamos el
+        // tideEnginePreference para que el wizard refleje la misma decisión
+        // y no haya dos fuentes-de-verdad contradictorias.
+        //   - Manual+virtual → pref = ese motor.
+        //   - Auto+virtual como favorite → pref = ese motor + favorite limpio.
+        //   - Manual+IHM → pref = 'ihm'.
+        //   - Auto+IHM favorite → pref = 'auto' (no forzamos motor, el user
+        //     eligió una estación IHM concreta y ya está en favorite).
+        //   - Auto sin favorite → pref = 'auto'.
+        const virtualToPref: Record<string, string> = {
+          "sktides-plugin":   "sktides",
+          "neaps-global":     "neaps",
+          "openmeteo-global": "openmeteo",
+        };
+        // Rev690 (feedback Carlos "elijo NEAPS Portland y vuelve a Auto Vigo
+        // con ID 29"): las estaciones NEAPS/sktides específicas vienen con
+        // prefijo (neaps/xxx, sktides/xxx). Antes caían a `newPref='ihm'` y
+        // el provider las servía como IHM → volvía a Vigo IHM.
+        let newPref = "auto";
+        if (manualOverride && manualStationId) {
+          if (manualStationId.startsWith("neaps/"))        newPref = "neaps";
+          else if (manualStationId.startsWith("sktides/")) newPref = "sktides";
+          else                                             newPref = virtualToPref[manualStationId] || "ihm";
+        } else if (favoriteStationId && virtualToPref[String(favoriteStationId)]) {
+          // Auto + virtual → convertimos a pref y limpiamos favorite.
+          newPref = virtualToPref[String(favoriteStationId)];
+          await ihmCache.set("favoriteStationId", "");
+        }
+        // Rev691: log del flujo para diagnosticar "elijo NEAPS Portland y
+        // vuelve a Auto IHM". Aparecerá en el log de SK server.
+        app.debug(`[POST /manual] manualOverride=${manualOverride} manualStationId="${manualStationId}" favoriteStationId="${favoriteStationId}" → newPref="${newPref}"`);
+        await ihmCache.set("tideEnginePreference", newPref);
 
         // Al cambiar a AUTO (manualOverride=false):
         // - Si el usuario está eligiendo una FAVORITA desde AUTO, la respetamos y la aplicamos ya.
@@ -11731,8 +13060,7 @@ expressApp.get("/signalk-mareas-ihm/api/stationRef", stationRefHandler);
         let activeStationId = "";
         if (manualOverride && manualStationId) {
           activeStationId = manualStationId;
-        } else if (favoriteStationId &&
-                   (isSyntheticStationId(String(favoriteStationId)) || String(favoriteStationId) === "openmeteo-global")) {
+        } else if (isVirtualStationId(favoriteStationId)) {
           activeStationId = String(favoriteStationId);
         } else {
           const last = (await ihmCache.get("lastStation")) as any;
@@ -11818,6 +13146,18 @@ expressApp.get("/signalk-mareas-ihm/api/stationRef", stationRefHandler);
           }
         }
 
+        // Rev685: mantener _tideFetchState.source en sincronía con
+        // lastForecast también cuando el fetch viene por updateForecast
+        // (POST /api/manual) — antes solo _doTideFetch lo actualizaba y el
+        // debug del wizard mostraba source stale (IHM) cuando el forecast ya
+        // era NEAPS. Además marcamos lastAttemptMs para el widget de "última
+        // descarga hace X".
+        if (lastForecast) {
+          _tideFetchState.source = _deriveTideSourceLabel(lastForecast);
+          _tideFetchState.status = "ok";
+          _tideFetchState.lastAttemptMs = Date.now();
+          _tideFetchState.lastError = null;
+        }
         app.setPluginStatus("Mareas actualizadas: " + source.title);
         updateTides();
       } catch (e: unknown) {
@@ -12540,8 +13880,22 @@ async function updateTides(now = new Date()) {
       // distintos podia producir resultados pisados. Wrapper garantiza orden.
       try { await requestGroundingEvaluation(); } catch { /* non-critical */ }
 
+// Rev682 (feedback Carlos "dice sin datos en cabecera debajo de Vigo"): si
+// la fuente activa es NEAPS, sktides o Open-Meteo prefijamos el nombre para
+// que TidesView y el widget del bottom bar dejen claro DE DÓNDE vienen los
+// datos. Sin esto el header pintaba p.ej. "Vigo" para NEAPS también (por su
+// estación TICON-4 más cercana) y era indistinguible del IHM oficial.
+const _stFcId = String(lastForecast.station.id ?? "");
+const _stFcName = cleanStationName(lastForecast.station.name);
+const stationNameForDelta =
+    _stFcId.startsWith("neaps/")   ? `📡 NEAPS · ${_stFcName}`
+  : _stFcId.startsWith("sktides/") ? `🔗 sktides · ${_stFcName}`
+  : _stFcId === "openmeteo-global" ? `🌐 Open-Meteo global`
+  : _stFcId === "mediterraneo"     ? `〰 Mediterráneo (sintético)`
+  : _stFcId === "sin-marea"        ? `— Sin marea (sintético)`
+  : _stFcName;
 const values: any[] = [
-        { path: "environment.tide.stationName" as Path, value: cleanStationName(lastForecast.station.name) },
+        { path: "environment.tide.stationName" as Path, value: stationNameForDelta },
         { path: "environment.tide.stationId" as Path, value: String(lastForecast.station.id) },
         { path: "environment.tide.pluginVersion" as Path, value: PLUGIN_VERSION },
         { path: "environment.tide.pluginIteration" as Path, value: PLUGIN_ITERATION },

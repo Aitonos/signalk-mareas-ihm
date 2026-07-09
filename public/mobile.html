@@ -2569,6 +2569,12 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <!-- Rev619 (feedback Carlos): bloque Mi sesión + Control de usuarios
          MOVIDOS a su propio modal m-user-control-pop (ver abajo). Config
          queda solo con Unidades / BBar / Botones / Diagnóstico. -->
+    <!-- Rev657 (Sprint J-1): entrada para relanzar el wizard desde Config. -->
+    <div class="m-cfg-section">
+      <div class="m-cfg-h2">🧙 <span data-i18n="cfg_wizard_h">Asistente de configuración</span></div>
+      <div class="m-cfg-help" data-i18n="cfg_wizard_help">Ejecuta de nuevo el asistente que te guía por la configuración inicial (idioma, locale, IMU, mareas, cartas, PIN).</div>
+      <button class="m-uc-btn-primary" onclick="m_wizardOpenManually()" data-i18n="cfg_wizard_btn">🧙 Relanzar asistente</button>
+    </div>
     <!-- Seccion Unidades -->
     <div class="m-cfg-section">
       <div class="m-cfg-h2" data-i18n="cfg_units">📏 Unidades</div>
@@ -3173,6 +3179,40 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
      dimensiona al contenido con height:auto y max-height suave. El CSS
      de #m-drop-confirm-pop en el bloque mobile-ui override es quien
      gobierna posición/tamaños; aquí sólo estructura y contenido mínimo. -->
+<!-- Rev657 (Sprint J-1): modal fullscreen del wizard de onboarding. Se abre
+     al primer arranque si `wizardCompleted !== true` en el state SSE. Router
+     interno de steps: language, locale, imu, tides, mbtiles, master, schema.
+     El contenido del step se renderiza en #m-wizard-body por m_wizardRender(). -->
+<div class="popup-overlay" id="m-wizard-pop" onclick="event.stopPropagation()">
+  <div class="popup-box" style="width:100vw;height:100dvh;max-width:none;max-height:none;padding:0;display:flex;flex-direction:column;border-radius:0" onclick="event.stopPropagation()">
+    <!-- Rev665 (feedback Carlos "el header ya lo tiene el sistema, no
+         crees uno nuevo"): eliminado el header custom. El `_mInjectModalHeader`
+         inyecta automáticamente la franja naranja con Atrás + título tomado
+         del h4. Aquí solo declaramos el h4 con "🧙 Asistente de configuración"
+         (el paso lo pinta cada renderer al inicio del body). El botón
+         Reiniciar va inline en el body al final. -->
+    <h4 data-i18n="wizard_global_title" style="text-align:center;margin:0;padding:20px 22px 0 22px">🧙 Asistente de configuración</h4>
+    <!-- Barra de progreso justo tras el header inyectado. -->
+    <div style="height:6px;background:rgba(255,255,255,.10);overflow:hidden;flex-shrink:0">
+      <div id="m-wizard-progress-bar" style="height:100%;background:var(--org);width:0%;transition:width .3s ease"></div>
+    </div>
+    <!-- Elemento oculto para llevar contabilidad del step actual sin usarlo. -->
+    <div id="m-wizard-step-idx" style="display:none"></div>
+    <!-- Cuerpo dinámico. -->
+    <div id="m-wizard-body" style="flex:1;overflow-y:auto;padding:28px 26px"></div>
+    <!-- Rev681 (feedback Carlos "Añade abajo izquierda botón Home naranja
+         mismo tamaño que las flechas — te saca directamente al visor sin
+         hacer atrás atrás atrás"): 🏠 a la izquierda, flechas ← → a la
+         derecha. Los tres del mismo tamaño 96x72. -->
+    <div style="padding:18px 26px;border-top:2px solid rgba(255,255,255,.15);display:flex;gap:16px;justify-content:space-between;align-items:center;flex-shrink:0">
+      <button id="m-wizard-home-btn" onclick="m_wizardHomeExit()" style="background:var(--org);color:#0a1929;width:96px;height:72px;font-size:38px;font-weight:900;line-height:1;border-radius:14px;border:2px solid #ffcf80;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px rgba(255,152,0,.35),0 6px 20px rgba(255,152,0,.55)" title="Salir al visor">🏠</button>
+      <div style="display:flex;gap:16px">
+        <button id="m-wizard-back-btn" onclick="m_wizardBack()" style="background:rgba(255,255,255,.10);border:2px solid rgba(255,255,255,.35);color:#fff;width:96px;height:72px;font-size:44px;font-weight:900;line-height:1;border-radius:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;text-shadow:0 0 2px #fff,0 0 2px #fff" title="Atrás">←</button>
+        <button id="m-wizard-next-btn" onclick="m_wizardNext()" style="background:var(--org);color:#0a1929;width:96px;height:72px;font-size:44px;font-weight:900;line-height:1;border-radius:14px;border:2px solid #ffcf80;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px rgba(255,152,0,.35),0 6px 20px rgba(255,152,0,.55);text-shadow:0 0 2px #0a1929,0 0 2px #0a1929" title="Siguiente">→</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="popup-overlay" id="m-drop-confirm-pop" onclick="closePopup('m-drop-confirm-pop')">
   <div class="popup-box" onclick="event.stopPropagation()">
     <button class="m-drop-x" onclick="m_dropConfirmClose()">✕</button>
@@ -4921,6 +4961,15 @@ var _i18n={
   menu_config:{es:'Configuración',en:'Settings'},
   cfg_title:{es:'⚙️ Configuración',en:'⚙️ Settings'},
   cfg_units:{es:'📏 Unidades',en:'📏 Units'},
+  /* Rev657 (Sprint J-1): entrada del wizard en Config. */
+  cfg_wizard_h:{es:'Asistente de configuración',en:'Configuration wizard'},
+  cfg_wizard_help:{es:'Ejecuta de nuevo el asistente que te guía por la configuración inicial (idioma, locale, IMU, mareas, cartas, PIN).',en:'Re-run the wizard that walks you through the initial setup (language, locale, IMU, tides, charts, PIN).'},
+  cfg_wizard_btn:{es:'🧙 Relanzar asistente',en:'🧙 Re-launch wizard'},
+  /* Rev663 (feedback Carlos): i18n del botón del header + del título global. */
+  wizard_restart_btn:{es:'🔄 Reiniciar asistente',en:'🔄 Restart wizard'},
+  wizard_restart_btn_short:{es:'🔄 Reiniciar',en:'🔄 Restart'},
+  wizard_back_short:{es:'Atrás',en:'Back'},
+  wizard_global_title:{es:'🧙 Asistente de configuración',en:'🧙 Configuration wizard'},
   cfg_units_help:{es:'Elige el sistema de unidades para todo el visor: profundidad, velocidad, distancia, temperatura y presión.',en:'Choose the unit system for the whole viewer: depth, speed, distance, temperature and pressure.'},
   cfg_u_mn:{es:'Métricas náuticas (m · kn · NM · °C · hPa)',en:'Metric nautical (m · kn · NM · °C · hPa)'},
   cfg_u_m:{es:'Métricas (m · m/s · km · °C · hPa)',en:'Metric (m · m/s · km · °C · hPa)'},
@@ -7744,6 +7793,11 @@ function processPollData(s){
     }
     /* Rev655: cache del estado de fetch de marea para el visor. */
     if(s.tideFetch){ window._tideFetchBE = s.tideFetch; }
+    /* Rev657 (Sprint J-1): si el wizard aún no se ha completado, ofrecerlo.
+       Solo se dispara una vez por sesión (no molesta si el usuario lo saltó). */
+    if(typeof s.wizardCompleted === 'boolean' && !s.wizardCompleted){
+      try{ if(typeof m_wizardMaybeOpen==='function') m_wizardMaybeOpen(); }catch(_){}
+    }
     fitSbarFont();
     if(firstPoll&&bPos){
       firstPoll=false;
@@ -13631,6 +13685,15 @@ function _mInjectModalHeader(overlay){
         if (typeof fetchMeteo === 'function') fetchMeteo();
       }, 60);
     }
+    /* Rev668 (feedback Carlos "Atrás debe llevar a Configuración no al visor"):
+       si el asistente se lanzó desde Config → Relanzar, al pulsar ← del
+       header reabrimos Config para no descartar al usuario en el visor. */
+    if (overlay._mFromConfig) {
+      overlay._mFromConfig = false;
+      setTimeout(function(){
+        if (typeof m_openConfig === 'function') m_openConfig();
+      }, 60);
+    }
   };
   box.insertBefore(hdr, box.firstChild);
 }
@@ -15701,6 +15764,1720 @@ function m_forceTideRefresh(){
       if(btn){ btn.disabled = false; btn.style.opacity = '1'; btn.textContent = (_lang==='en')?'↻ Retry now':'↻ Reintentar ahora'; }
     });
 }
+/* ═══════════════════════════════════════════════════════════════════════════
+   Rev657 (Sprint J-1): motor del wizard de onboarding.
+
+   Al primer arranque (wizardCompleted !== true en state SSE) se abre el modal
+   fullscreen `m-wizard-pop`. Router interno por currentStepId → función de
+   render `m_wizardStep_<id>()`. Cada step llama a m_wizardNext() cuando el
+   usuario avanza, o m_wizardBack() para retroceder. Al llegar al último y
+   completar, m_wizardFinish() marca completed=true y cierra.
+
+   Steps del Sprint J:
+   - language (Rev657): idioma ES/EN.
+   - locale   (Rev658): comprobar es_ES.UTF-8.
+   - imu      (Rev659): probe pypilot + I2C.
+   - tides    (Rev660): fuente mareas + meteo.
+   - mbtiles  (Rev661): escanear cartas + charts-plugin.
+   - master   (Rev662): usuario master opcional.
+   - schema   (Rev663): unificar configs del plugin.
+   ═══════════════════════════════════════════════════════════════════════════ */
+var _wizardState = null; /* cache local del estado del backend */
+var _wizardOpenedOnce = false;
+function m_wizardMaybeOpen(){
+  /* Se llama tras cada state SSE. Solo abre si NO se ha completado, no está
+     ya abierto, y no lo hemos abierto ya en esta sesión (evita re-abrir tras
+     un skip). */
+  if (_wizardOpenedOnce) return;
+  var pop = document.getElementById('m-wizard-pop');
+  if (!pop || pop.classList.contains('open')) return;
+  fetch(A+'/wizard/state',{cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if (!j || j.completed) return;
+      _wizardOpenedOnce = true;
+      _wizardState = j;
+      m_wizardRender();
+      openPopup('m-wizard-pop');
+    })
+    .catch(function(){});
+}
+function m_wizardOpenManually(){
+  /* Rev660 (feedback Carlos): cerrar Config antes de abrir el wizard —
+     el modal de Config quedaba abierto detrás y al terminar el wizard el
+     user veía "el menú" (era Config). Si el wizard ya se ha completado,
+     saltamos directamente al step summary (checklist con accesos a cada
+     modal de gestión); si no, continuamos donde se dejó. */
+  /* Rev668 (feedback Carlos "Atrás debe llevar a Configuración no al visor"):
+     recuerda que el asistente se abrió desde Config; al salir por back en el
+     step 1 o por finalizar, reabrimos Config. */
+  window._wizardOpenedFromConfig = true;
+  try { closePopup('m-config-pop'); } catch(_){}
+  fetch(A+'/wizard/state',{cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      var defaultOrder = ['language','units','boat','systemCheck','sensorCheck','tides','mbtiles','master','summary'];
+      _wizardState = j || {currentStepId:'language', stepsCompleted:[], data:{}, totalSteps:defaultOrder.length, stepsOrder:defaultOrder};
+      if (_wizardState.completed){
+        /* Salta al step summary sin hacer restart. Marca en memoria local. */
+        _wizardState.currentStepId = 'summary';
+      }
+      _wizardOpenedOnce = true;
+      m_wizardRender();
+      /* Rev668: marca al overlay para que el ← del header auto-inyectado
+         reabra Config al salir (patrón _mFromConfig). */
+      var ov = document.getElementById('m-wizard-pop');
+      if (ov) ov._mFromConfig = true;
+      openPopup('m-wizard-pop');
+    });
+}
+function m_wizardRender(){
+  if (!_wizardState) return;
+  var stepsOrder = _wizardState.stepsOrder || ['language','locale','imu','tides','mbtiles','master','schema'];
+  var currentStepId = _wizardState.currentStepId || stepsOrder[0];
+  var idx = stepsOrder.indexOf(currentStepId);
+  var total = stepsOrder.length;
+  /* Header */
+  var idxEl = document.getElementById('m-wizard-step-idx');
+  if (idxEl) idxEl.textContent = ((_lang==='en')?'Step ':'Paso ') + (idx+1) + ' / ' + total;
+  /* Rev664: título del step ya no va en el header. Se pinta como H2 en
+     el body por cada renderer al inicio del contenido. */
+  var titles = {
+    language:    {es:'👋 Idioma',                       en:'👋 Language'},
+    units:       {es:'📏 Sistema de unidades',          en:'📏 Unit system'},
+    boat:        {es:'⚓ Datos del barco',              en:'⚓ Boat data'},
+    systemCheck: {es:'🔧 Chequeo del sistema',          en:'🔧 System check'},
+    sensorCheck: {es:'📡 Sensores conectados',          en:'📡 Connected sensors'},
+    tides:       {es:'🌊 Mareas y meteo',               en:'🌊 Tides & weather'},
+    mbtiles:     {es:'🗺️ Cartas offline',                en:'🗺️ Offline charts'},
+    master:      {es:'🔒 Usuario maestro',              en:'🔒 Master user'},
+    summary:     {es:'✅ Resumen y finalizar',          en:'✅ Summary & finish'},
+  };
+  var t = titles[currentStepId] || {es:'—',en:'—'};
+  window._wizardCurrentStepTitle = (_lang==='en')?t.en:t.es;
+  /* Progreso */
+  var pct = Math.round((idx / total) * 100);
+  var barEl = document.getElementById('m-wizard-progress-bar');
+  if (barEl) barEl.style.width = pct + '%';
+  /* Body */
+  var body = document.getElementById('m-wizard-body');
+  if (body){
+    var renderFn = window['m_wizardStep_' + currentStepId];
+    if (typeof renderFn === 'function'){
+      try { renderFn(body); } catch(e){ body.innerHTML = '<div style="color:var(--red)">Render error: '+e.message+'</div>'; }
+    } else {
+      body.innerHTML = '<div style="opacity:.5;padding:40px 0;text-align:center;font-size:18px">'
+        + ((_lang==='en')?'Step under construction':'Paso en construcción')
+        + '</div>';
+    }
+  }
+  /* Botones — Rev666: solo iconos ← y →, sin texto ni Saltar. En el último
+     paso el "→" cambia a "✓" para indicar Finalizar. */
+  var backBtn = document.getElementById('m-wizard-back-btn');
+  if (backBtn) backBtn.style.visibility = (idx === 0) ? 'hidden' : 'visible';
+  var nextBtn = document.getElementById('m-wizard-next-btn');
+  if (nextBtn){
+    var isLast = idx === total - 1;
+    nextBtn.textContent = isLast ? '✓' : '→';
+    nextBtn.title = isLast ? ((_lang==='en')?'Finish':'Finalizar')
+                           : ((_lang==='en')?'Next':'Siguiente');
+  }
+}
+function m_wizardNext(data){
+  if (!_wizardState) return;
+  /* Rev661: fallback defensivo si el backend no envió stepsOrder (bug
+     detectado por Carlos: los POST /wizard/step no incluían stepsOrder →
+     el frontend calculaba isLast=true por [].indexOf===[]:length-1 y
+     cerraba el wizard en cualquier Continuar). Además guardo el fallback
+     al estado local para futuras llamadas. */
+  var defaultOrder = ['language','units','boat','systemCheck','sensorCheck','tides','mbtiles','master','summary'];
+  var stepsOrder = (_wizardState.stepsOrder && _wizardState.stepsOrder.length) ? _wizardState.stepsOrder : defaultOrder;
+  _wizardState.stepsOrder = stepsOrder;
+  var currentStepId = _wizardState.currentStepId;
+  var isLast = stepsOrder.indexOf(currentStepId) === stepsOrder.length - 1;
+  fetch(A+'/wizard/step',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({stepId:currentStepId, action:'complete', data: data||{}}),
+  })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if (!j || !j.state){ return; }
+      _wizardState = j.state;
+      if (isLast){
+        m_wizardFinish();
+      } else {
+        m_wizardRender();
+      }
+    });
+}
+/* Rev665: helper — línea de progreso + título grande del step al inicio del
+   body. El h4 del popup se queda con "🧙 Asistente de configuración" fijo. */
+function m_wizardBodyTitle(){
+  var idx = 0, total = 0;
+  try {
+    if (_wizardState && _wizardState.stepsOrder){
+      total = _wizardState.stepsOrder.length;
+      idx = _wizardState.stepsOrder.indexOf(_wizardState.currentStepId) + 1;
+    }
+  } catch(_){}
+  var stepLabel = ((_lang==='en')?'Step ':'Paso ') + idx + ' / ' + total;
+  return '<div style="font-size:20px;font-weight:800;color:#9ad;letter-spacing:.6px;margin-bottom:8px">' + stepLabel + '</div>'
+       + '<h2 style="font-size:32px;font-weight:900;color:#fff;margin:0 0 26px 0;line-height:1.15">'
+       + (window._wizardCurrentStepTitle || '—')
+       + '</h2>';
+}
+/* Rev665: botón "Reiniciar asistente" que va inline abajo del body de cada
+   step (ya no en el header custom eliminado). */
+function m_wizardBodyRestartBtn(){
+  return '<div style="margin-top:36px;text-align:center;border-top:1px solid rgba(255,255,255,.10);padding-top:22px">'
+       + '<button onclick="m_wizardRestartConfirm()" style="background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.25);color:#cfd8dc;padding:14px 24px;font-size:17px;font-weight:800;border-radius:10px;cursor:pointer">'
+       + ((_lang==='en')?'🔄 Restart wizard':'🔄 Reiniciar asistente')
+       + '</button></div>';
+}
+/* Rev665: refresca la BD de mareas desde el step systemCheck. */
+function m_wizardForceTideRefresh(){
+  /* Rev678 (feedback Carlos "actualizar ahora da ventana de éxito sin CSS
+     propio y al cerrar me lleva a la vista mal"): reemplazamos el alert()
+     nativo por un toast inline dentro del step actual, y re-renderizamos el
+     step ACTIVO (no systemCheck a pelo — cuando el botón vive en el step
+     tides, tenemos que volver a tides). */
+  var pushStatus = function(msg, color){
+    var host = document.getElementById('m-wiz-tides-pref-status')
+            || document.getElementById('m-wiz-mbt-status')
+            || document.getElementById('m-wiz-units-status')
+            || document.getElementById('m-wiz-boat-status');
+    if (host){ host.textContent = msg; host.style.color = color; }
+  };
+  fetch(A+'/tide/force-refresh',{method:'POST',headers:{'Content-Type':'application/json'}})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){
+      var ok = j && j.ok;
+      var msg = ok
+        ? ((_lang==='en')?'✓ Loaded '+j.extremesCount+' extremes in '+j.ms+' ms':'✓ Cargados '+j.extremesCount+' extremos en '+j.ms+' ms')
+        : ((_lang==='en')?'✗ Refresh failed':'✗ Actualización fallida');
+      pushStatus(msg, ok?'#3aa856':'#e53935');
+      /* Rerender del step ACTUAL — no del systemCheck a ciegas. */
+      if (typeof m_wizardRender==='function') m_wizardRender();
+    });
+}
+/* Rev664: botón "Atrás" del header — si estamos en el primer paso, cierra
+   el wizard (comportamiento estándar de modales). Si no, retrocede.
+   Rev668: si el asistente se lanzó desde Config (Menú → Configuración →
+   Relanzar), al salir por el back del paso 1 reabrimos Config para no
+   descartar al usuario en el visor. */
+function m_wizardExitTo(){
+  var fromConfig = window._wizardOpenedFromConfig;
+  window._wizardOpenedFromConfig = false;
+  var ov = document.getElementById('m-wizard-pop');
+  if (ov) ov._mFromConfig = false;
+  closePopup('m-wizard-pop');
+  if (fromConfig){
+    setTimeout(function(){ if (typeof m_openConfig==='function') m_openConfig(); }, 60);
+  }
+}
+/* Rev681 (feedback Carlos "botón Home que te saca directamente al visor sin
+   hacer atrás atrás atrás"): salir SIEMPRE al visor, ignorando el back-stack
+   a Config. Cierra menús, modales y overlays intermedios que pudieran haber
+   quedado abiertos. */
+function m_wizardHomeExit(){
+  window._wizardOpenedFromConfig = false;
+  var ov = document.getElementById('m-wizard-pop');
+  if (ov) ov._mFromConfig = false;
+  try { closePopup('m-wizard-pop'); } catch(_){}
+  try { closePopup('m-config-pop'); } catch(_){}
+  try { closePopup('m-menu'); } catch(_){}
+  try { closePopup('m-user-control-pop'); } catch(_){}
+  try { closePopup('calc-pop'); } catch(_){}
+  try { closePopup('curvas-pop'); } catch(_){}
+}
+function m_wizardHeaderBack(){
+  if (!_wizardState) { m_wizardExitTo(); return; }
+  var stepsOrder = _wizardState.stepsOrder || [];
+  var idx = stepsOrder.indexOf(_wizardState.currentStepId);
+  if (idx <= 0){ m_wizardExitTo(); return; }
+  m_wizardBack();
+}
+function m_wizardBack(){
+  if (!_wizardState) return;
+  var currentStepId = _wizardState.currentStepId;
+  fetch(A+'/wizard/step',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({stepId:currentStepId, action:'back'}),
+  })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if (j && j.state){ _wizardState = j.state; m_wizardRender(); }
+    });
+}
+function m_wizardSkipStep(){
+  if (!_wizardState) return;
+  var currentStepId = _wizardState.currentStepId;
+  fetch(A+'/wizard/step',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({stepId:currentStepId, action:'skip'}),
+  })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if (j && j.state){
+        _wizardState = j.state;
+        if (!_wizardState.currentStepId){ m_wizardFinish(); }
+        else { m_wizardRender(); }
+      }
+    });
+}
+function m_wizardSkipAll(){
+  /* Rev658/Rev662: legacy alias. El botón del header ya usa
+     m_wizardRestartConfirm(). Se conserva por compatibilidad. */
+  m_wizardRestartConfirm();
+}
+function m_wizardRestartConfirm(){
+  /* Rev662 (feedback Carlos): confirmación custom antes de resetear el
+     asistente al paso 1. Reusable via m_confirmDialog(). */
+  var title = (_lang==='en') ? '🔄 Restart configuration wizard?' : '🔄 ¿Reiniciar el asistente de Configuración?';
+  var msg = (_lang==='en')
+    ? 'The wizard will go back to step 1 (Language). Your saved settings are NOT deleted — you just re-visit each step.'
+    : 'El asistente vuelve al paso 1 (Idioma). Los ajustes guardados NO se borran — sólo revisas cada paso otra vez.';
+  m_confirmDialog(title, msg, function(){ m_wizardRestartFromStart(); });
+}
+/* Rev658: modal de confirmación reusable con estilo del plugin. */
+function m_confirmDialog(title, msg, onConfirm){
+  var existing = document.getElementById('m-confirm-pop');
+  if (existing) existing.parentNode.removeChild(existing);
+  var overlay = document.createElement('div');
+  overlay.className = 'popup-overlay';
+  overlay.id = 'm-confirm-pop';
+  overlay.style.cssText = 'z-index:2147483645';
+  overlay.onclick = function(){ closePopup('m-confirm-pop'); };
+  var box = document.createElement('div');
+  box.className = 'popup-box';
+  box.style.cssText = 'width:min(560px,94vw);padding:26px 30px;text-align:center';
+  box.onclick = function(ev){ ev.stopPropagation(); };
+  var h = document.createElement('h4');
+  h.style.cssText = 'font-size:24px;margin:0 0 16px 0';
+  h.textContent = title;
+  box.appendChild(h);
+  var p = document.createElement('div');
+  p.style.cssText = 'font-size:18px;color:#cfd8dc;line-height:1.5;margin-bottom:26px';
+  p.textContent = msg;
+  box.appendChild(p);
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:14px;justify-content:center';
+  var cancel = document.createElement('button');
+  cancel.style.cssText = 'flex:1;background:rgba(255,255,255,.10);color:#fff;border:1px solid rgba(255,255,255,.25);padding:16px;font-size:18px;font-weight:800;border-radius:10px;cursor:pointer;min-width:120px';
+  cancel.textContent = (_lang==='en')?'Cancel':'Cancelar';
+  cancel.onclick = function(){ closePopup('m-confirm-pop'); };
+  var ok = document.createElement('button');
+  ok.style.cssText = 'flex:1;background:var(--org);color:#0a1929;border:none;padding:16px;font-size:19px;font-weight:900;border-radius:10px;cursor:pointer;min-width:120px';
+  ok.textContent = (_lang==='en')?'Yes':'Sí';
+  ok.onclick = function(){ closePopup('m-confirm-pop'); try{ onConfirm && onConfirm(); }catch(_){} };
+  row.appendChild(cancel);
+  row.appendChild(ok);
+  box.appendChild(row);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  openPopup('m-confirm-pop');
+}
+function m_wizardFinish(){
+  fetch(A+'/wizard/finish',{method:'POST'})
+    .then(function(){
+      /* Rev668: si veníamos de Config, reabrir Config al finalizar. */
+      var fromConfig = window._wizardOpenedFromConfig;
+      window._wizardOpenedFromConfig = false;
+      var ov = document.getElementById('m-wizard-pop');
+      if (ov) ov._mFromConfig = false;
+      closePopup('m-wizard-pop');
+      /* Aplicar cambios finales (idioma, etc). */
+      try { if(typeof m_wizardApplyChanges === 'function') m_wizardApplyChanges(); } catch(_){}
+      if (fromConfig){
+        setTimeout(function(){ if (typeof m_openConfig==='function') m_openConfig(); }, 80);
+      }
+    });
+}
+function m_wizardApplyChanges(){
+  /* Aplica cambios que dependen de los steps completados. Idioma se aplica
+     inmediatamente al elegirlo (setLang), aquí solo verificamos coherencia. */
+}
+
+/* Step Language: elige idioma UI del plugin. */
+window.m_wizardStep_language = function(body){
+  var welcome = (_lang==='en')
+    ? 'Welcome to <b>AnchorWatch Pro</b>. Choose your language to start the setup.'
+    : 'Te damos la bienvenida a <b>AnchorWatch Pro</b>. Elige tu idioma para empezar la configuración.';
+  var html = '';
+  html += m_wizardBodyTitle();
+  html += '<div style="max-width:640px;margin:20px auto;text-align:center">';
+  html += '<div style="font-size:22px;color:#cfd8dc;line-height:1.5;margin-bottom:36px">' + welcome + '</div>';
+  html += '<div style="display:flex;gap:20px;justify-content:center;flex-wrap:wrap">';
+  html += '<button onclick="m_wizardLangPick(\'es\')" id="m-wiz-lang-es" style="background:'+(_lang==='es'?'var(--org)':'rgba(255,255,255,.10)')+';color:'+(_lang==='es'?'#0a1929':'#fff')+';border:2px solid '+(_lang==='es'?'var(--org)':'rgba(255,255,255,.25)')+';padding:32px 40px;font-size:26px;font-weight:900;border-radius:16px;cursor:pointer;min-width:220px">🇪🇸 Español</button>';
+  html += '<button onclick="m_wizardLangPick(\'en\')" id="m-wiz-lang-en" style="background:'+(_lang==='en'?'var(--org)':'rgba(255,255,255,.10)')+';color:'+(_lang==='en'?'#0a1929':'#fff')+';border:2px solid '+(_lang==='en'?'var(--org)':'rgba(255,255,255,.25)')+';padding:32px 40px;font-size:26px;font-weight:900;border-radius:16px;cursor:pointer;min-width:220px">🇬🇧 English</button>';
+  html += '</div>';
+  html += '<div style="margin-top:44px;font-size:15px;color:#9ad;opacity:.8">'
+       + ((_lang==='en') ? 'You can change the language anytime from the menu.' : 'Puedes cambiar el idioma en cualquier momento desde el menú.')
+       + '</div>';
+  html += '</div>';
+  body.innerHTML = html;
+};
+window.m_wizardLangPick = function(lang){
+  try { setLang(lang); } catch(_){}
+  /* Actualiza los botones para reflejar la selección. */
+  m_wizardRender();
+};
+
+/* Rev659 (Sprint J-3): step IMU probe. Detecta si hay fuente de attitude
+   disponible (pypilot socket TCP + SK deltas + i2c raw) y muestra lecturas
+   en vivo (pitch, roll, heading) para que el usuario compruebe que el
+   sensor funciona. Si RMS con barco quieto es < 1° → OK. Si es > 5° con
+   barco quieto → warning: revisar montaje / calibración / set-system-time. */
+var _wizardImuLiveTimer = null;
+window.m_wizardStep_imu = function(body){
+  body.innerHTML = '<div id="m-wiz-imu-container" style="max-width:820px;margin:0 auto"></div>';
+  var container = document.getElementById('m-wiz-imu-container');
+  var refresh = function(){
+    Promise.all([
+      fetch(A+'/imu/status',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+      fetch(A+'/imu/debug',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+    ]).then(function(res){
+      var status = res[0], audit = res[1];
+      if (!container) return;
+      var srcActive = (status && status.active) ? status.active : null;
+      var srcType = srcActive?.type || 'none';
+      var srcAge = srcActive?.ageMs != null ? srcActive.ageMs : null;
+      var srcHz = srcActive?.sampleRateHz || 0;
+      var att = audit?.attitude || {};
+      var pitch = att.pitchDeg?.last;
+      var roll  = att.rollDeg?.last;
+      var head  = att.headingDeg?.last;
+      var pitchStd = att.pitchDeg?.std ?? null;
+      var rollStd  = att.rollDeg?.std ?? null;
+      var samples = att.samples || 0;
+      var isNoisy = (pitchStd != null && pitchStd > 5) || (rollStd != null && rollStd > 5);
+      var isNoData = srcType === 'none' || samples === 0;
+      /* Estado global */
+      var stateColor, stateTxt;
+      if (isNoData){
+        stateColor = '#e53935'; stateTxt = (_lang==='en')?'❌ No IMU data':'❌ Sin datos del IMU';
+      } else if (isNoisy){
+        stateColor = '#ffb23f'; stateTxt = (_lang==='en')?'⚠ Noisy readings':'⚠ Lecturas ruidosas';
+      } else {
+        stateColor = '#3aa856'; stateTxt = (_lang==='en')?'✅ IMU healthy':'✅ IMU sano';
+      }
+      var html = '';
+      html += '<div style="padding:20px;border-radius:14px;font-size:22px;font-weight:800;margin-bottom:22px;text-align:center;color:'+stateColor+';background:rgba(255,255,255,.06);border:2px solid '+stateColor+'">'
+        + stateTxt
+        + '<div style="font-size:15px;font-weight:600;margin-top:6px;opacity:.9">'
+        + ((_lang==='en')?'Source: ':'Fuente: ') + srcType
+        + (srcAge != null ? ' · ' + Math.round(srcAge) + ' ms ago' : '')
+        + ' · ' + srcHz.toFixed(1) + ' Hz'
+        + '</div></div>';
+      /* Live values */
+      if (!isNoData){
+        var fmt = function(v){ return v == null ? '—' : (v.toFixed(2) + '°'); };
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:22px">';
+        html += '<div style="padding:18px;background:rgba(0,0,0,.35);border-radius:12px;border:1px solid rgba(255,255,255,.15);text-align:center">'
+             + '<div style="font-size:14px;color:#9ad;font-weight:700;letter-spacing:.5px;margin-bottom:8px">PITCH</div>'
+             + '<div style="font-size:34px;font-weight:900;color:#fff;font-family:ui-monospace,Menlo,Consolas,monospace">' + fmt(pitch) + '</div>'
+             + '<div style="font-size:12px;color:#888;margin-top:4px">σ '+(pitchStd!=null?pitchStd.toFixed(2):'—')+'°</div>'
+             + '</div>';
+        html += '<div style="padding:18px;background:rgba(0,0,0,.35);border-radius:12px;border:1px solid rgba(255,255,255,.15);text-align:center">'
+             + '<div style="font-size:14px;color:#9ad;font-weight:700;letter-spacing:.5px;margin-bottom:8px">ROLL</div>'
+             + '<div style="font-size:34px;font-weight:900;color:#fff;font-family:ui-monospace,Menlo,Consolas,monospace">' + fmt(roll) + '</div>'
+             + '<div style="font-size:12px;color:#888;margin-top:4px">σ '+(rollStd!=null?rollStd.toFixed(2):'—')+'°</div>'
+             + '</div>';
+        html += '<div style="padding:18px;background:rgba(0,0,0,.35);border-radius:12px;border:1px solid rgba(255,255,255,.15);text-align:center">'
+             + '<div style="font-size:14px;color:#9ad;font-weight:700;letter-spacing:.5px;margin-bottom:8px">HEADING</div>'
+             + '<div style="font-size:34px;font-weight:900;color:#fff;font-family:ui-monospace,Menlo,Consolas,monospace">' + fmt(head) + '</div>'
+             + '<div style="font-size:12px;color:#888;margin-top:4px">'+samples+' samples</div>'
+             + '</div>';
+        html += '</div>';
+      }
+      /* Explicación / recomendación */
+      var expl = '';
+      if (isNoData){
+        expl = (_lang==='en')
+          ? 'No attitude data reaches the plugin. If you don\'t have an IMU installed, this is expected — skip to continue. If you DO have one (pypilot / raw i2c), check that pypilot is running and the "Pypilot IMU bridge" is enabled in this plugin\'s config.'
+          : 'No llegan datos de attitude al plugin. Si NO tienes IMU instalado, es lo esperado — pulsa "Saltar" para continuar. Si SÍ tienes uno (pypilot / i2c raw), comprueba que pypilot esté corriendo y que el "Pypilot IMU bridge" esté activado en la config del plugin.';
+      } else if (isNoisy){
+        expl = (_lang==='en')
+          ? 'The IMU is publishing but the standard deviation is high (>5°). With the boat still in port, values should barely move. Possible causes: (1) boat is actually moving; (2) IMU mounted on a flimsy surface that vibrates; (3) the SK plugin <b>@signalk/set-system-time</b> is active and corrupting the Kalman filter every 60 s (check the diagnostic).'
+          : 'El IMU está publicando pero la desviación estándar es alta (>5°). Con el barco quieto en puerto los valores apenas deberían moverse. Posibles causas: (1) el barco se mueve realmente; (2) el IMU está montado sobre una superficie fina que vibra; (3) el plugin de SK <b>@signalk/set-system-time</b> está activo y corrompe el filtro de Kalman cada 60 s (revisa el diagnóstico).';
+      } else {
+        expl = (_lang==='en')
+          ? 'Attitude values are stable. This means the plugin can measure roll, pitch and heading — and derive on-board wave state when at anchor. Watch the numbers move gently if you rock the boat.'
+          : 'Los valores de attitude están estables. Esto significa que el plugin puede medir el balance, el cabeceo y el rumbo — y derivar el estado del mar a bordo cuando estás fondeado. Verás los números moverse suavemente si mueves el barco.';
+      }
+      html += '<div style="font-size:16px;color:#cfd8dc;line-height:1.55">' + expl + '</div>';
+      container.innerHTML = html;
+    });
+  };
+  refresh();
+  if (_wizardImuLiveTimer) clearInterval(_wizardImuLiveTimer);
+  _wizardImuLiveTimer = setInterval(refresh, 1000);
+};
+/* Rev660 (feedback Carlos "si ya se ha pasado, vamos al summary como
+   primera pantalla, cada parte del checklist lleva a la ventana de
+   gestión"): step summary como dashboard/checklist.
+   Cada fila muestra estado (✅/⚠/❌) del item + botón "Configurar" que
+   abre el modal de gestión existente (Config, PIN, etc). Al final,
+   "🔄 Rehacer wizard desde el principio" para volver al onboarding. */
+/* Rev665: acciones del summary declaradas como funciones globales para que
+   los onclick de los botones funcionen sin trucos de .toString(). */
+/* Rev666 (feedback Carlos "llega a Configuración pero no a la página en
+   cuestión"): cada ítem del summary lleva a su pantalla de gestión concreta.
+   Para units abrimos Config y hacemos scrollIntoView del <select> de unidades.
+   Para language abrimos el menú lateral donde están las banderas ES/EN.
+   Para systemCheck/sensorCheck navegamos DENTRO del wizard al step
+   correspondiente (sin cerrar el modal). Para el resto, cada ítem tiene su
+   modal propio de gestión ya. */
+window.m_wizardSummaryGoto = function(target){
+  /* Rev669 (feedback Carlos "recuerda que solo nos movemos en el configurador,
+     y el configurador hace lo mismo que donde tengamos esos otros controles,
+     solo que los tenemos todo integrado"): TODOS los targets del summary
+     navegan DENTRO del asistente al step correspondiente. Nada de abrir
+     modales externos ni menús laterales — todo in-situ. */
+  if (!_wizardState) return;
+  var valid = ['language','units','boat','systemCheck','sensorCheck','tides','mbtiles','master'];
+  if (valid.indexOf(target) < 0) return;
+  _wizardState.currentStepId = target;
+  if (typeof m_wizardRender==='function') m_wizardRender();
+};
+window.m_wizardStep_summary = function(body){
+  var lang = _lang;
+  var items = [
+    { id:'language',    icon:'👋', label:(lang==='en')?'Language':'Idioma' },
+    { id:'units',       icon:'📏', label:(lang==='en')?'Units':'Unidades' },
+    { id:'boat',        icon:'⚓', label:(lang==='en')?'Boat data':'Datos del barco' },
+    { id:'systemCheck', icon:'🔧', label:(lang==='en')?'System check':'Chequeo del sistema' },
+    { id:'sensorCheck', icon:'📡', label:(lang==='en')?'Connected sensors':'Sensores conectados' },
+    { id:'tides',       icon:'🌊', label:(lang==='en')?'Tides & weather':'Mareas y meteo' },
+    { id:'mbtiles',     icon:'🗺️', label:(lang==='en')?'Offline charts':'Cartas offline' },
+    { id:'master',      icon:'🔒', label:(lang==='en')?'Master user':'Usuario maestro' },
+  ];
+  var html = '';
+  html += m_wizardBodyTitle();
+  html += '<div style="max-width:900px;margin:0 auto">';
+  html += '<div style="font-size:20px;color:#cfd8dc;line-height:1.55;margin-bottom:30px;text-align:center">'
+       + ((lang==='en')?'Configuration summary. Click any item to jump to its management screen.'
+                        :'Resumen de configuración. Pulsa cualquier ítem para ir directo a su pantalla de gestión.')
+       + '</div>';
+  /* Rev687 (feedback Carlos "quita el botón Configurar y haz que cada
+     cuadro sea en sí un botón, mucho más intuitivo y limpio como UX"): la
+     fila entera es clickable ahora. Sin CTA redundante. Hover indica que
+     es interactivo. */
+  items.forEach(function(it){
+    html += '<button onclick="m_wizardSummaryGoto(\''+it.id+'\')" style="width:100%;display:flex;align-items:center;gap:20px;padding:22px 26px;background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.15);border-radius:12px;margin-bottom:12px;cursor:pointer;text-align:left;transition:background .15s,border-color .15s,transform .05s" onmouseover="this.style.background=\'rgba(255,152,0,.10)\';this.style.borderColor=\'var(--org)\'" onmouseout="this.style.background=\'rgba(0,0,0,.30)\';this.style.borderColor=\'rgba(255,255,255,.15)\'" onmousedown="this.style.transform=\'scale(.99)\'" onmouseup="this.style.transform=\'scale(1)\'">'
+         + '<span style="font-size:38px;flex-shrink:0">'+it.icon+'</span>'
+         + '<span style="font-size:24px;font-weight:800;color:#fff;flex:1">'+it.label+'</span>'
+         + '<span style="font-size:28px;color:var(--org);font-weight:900">›</span>'
+         + '</button>';
+  });
+  /* Rev662: botón "Reiniciar asistente" movido al header — no duplicar aquí. */
+  html += '</div>';
+  body.innerHTML = html;
+};
+function m_wizardRestartFromStart(){
+  fetch(A+'/wizard/restart',{method:'POST'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if (j && j.state){
+        _wizardState = j.state;
+        m_wizardRender();
+      }
+    });
+}
+
+/* Placeholders para los steps que se implementan en próximas Rev. */
+/* Rev669 (feedback Carlos "corriendo el asistente hayamos rellenado todo lo
+   necesario IN-SITU, sin tener que navegar por distintos sitios"): steps
+   con formularios reales que POSTean a los mismos endpoints que la UI
+   externa. Nada de "en construcción". */
+window.m_wizardStep_units = function(body){
+  var lang = _lang;
+  var html = m_wizardBodyTitle();
+  html += '<div style="max-width:820px;margin:0 auto">';
+  html += '<div style="font-size:22px;color:#cfd8dc;line-height:1.55;margin-bottom:26px">'
+       + ((lang==='en')
+         ? 'Choose the unit system for the entire viewer: depth, speed, distance, temperature and pressure.'
+         : 'Elige el sistema de unidades para todo el visor: profundidad, velocidad, distancia, temperatura y presión.')
+       + '</div>';
+  var opts = [
+    ['metric_nautical',      (lang==='en')?'Metric nautical (m · kn · NM · °C · hPa)':'Métricas náuticas (m · kn · NM · °C · hPa)'],
+    ['metric',               (lang==='en')?'Metric (m · m/s · km · °C · hPa)':'Métricas (m · m/s · km · °C · hPa)'],
+    ['imperial_us_nautical', (lang==='en')?'Imperial US nautical (ft · kn · NM · °F · inHg)':'Imperiales náuticas US (ft · kn · NM · °F · inHg)'],
+    ['imperial_us',          (lang==='en')?'Imperial US (ft · mph · mi · °F · inHg)':'Imperiales US (ft · mph · mi · °F · inHg)'],
+    ['imperial_uk_nautical', (lang==='en')?'Imperial UK nautical (ft · kn · NM · °F · mbar)':'Imperiales náuticas UK (ft · kn · NM · °F · mbar)'],
+    ['imperial_uk',          (lang==='en')?'Imperial UK (ft · mph · mi · °F · mbar)':'Imperiales UK (ft · mph · mi · °F · mbar)'],
+  ];
+  var cur = (typeof _unitsSystem==='string')?_unitsSystem:'metric_nautical';
+  html += '<div style="display:flex;flex-direction:column;gap:12px">';
+  opts.forEach(function(o){
+    var sel = (o[0]===cur);
+    html += '<button onclick="m_wizardUnitsPick(\''+o[0]+'\')" style="text-align:left;padding:20px 22px;font-size:22px;font-weight:800;border-radius:12px;cursor:pointer;'
+         + (sel
+             ? 'background:var(--org);color:#0a1929;border:2px solid var(--org)'
+             : 'background:rgba(255,255,255,.06);color:#fff;border:2px solid rgba(255,255,255,.20)')
+         + '">'+(sel?'✓ ':'')+o[1]+'</button>';
+  });
+  html += '</div>';
+  html += '<div id="m-wiz-units-status" style="margin-top:20px;font-size:18px;color:#3aa856;font-weight:700"></div>';
+  html += '</div>';
+  body.innerHTML = html;
+};
+/* Rev677: consulta puntual a un motor concreto (sin cambiar la config
+   global) para comparar valores. Renderiza tabla con próxima pleamar,
+   próxima bajamar, nivel actual interpolado. */
+window.m_wizardTidePreview = function(engine){
+  var host = document.getElementById('m-wiz-preview-'+engine);
+  if (!host) return;
+  host.innerHTML = '<div style="color:#9ad;font-size:15px;padding:8px 0">'
+    + ((_lang==='en')?'🔎 Querying…':'🔎 Consultando…') + '</div>';
+  fetch(A+'/tide/preview?engine='+encodeURIComponent(engine),{cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+    .then(function(j){
+      if (!j){
+        host.innerHTML = '<div style="color:#e53935;font-size:15px">'+((_lang==='en')?'Query failed':'Consulta fallida')+'</div>';
+        return;
+      }
+      if (j.ok === false){
+        var hint = j.hint || j.error || ((_lang==='en')?'Not available':'No disponible');
+        host.innerHTML = '<div style="color:#ffb23f;font-size:15px;padding:8px 12px;background:rgba(255,178,63,.10);border-radius:6px">⚠ '+hint+'</div>';
+        return;
+      }
+      var fmt = function(iso){
+        try { var d=new Date(iso); return d.toLocaleString(_lang==='en'?'en-GB':'es-ES',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }
+        catch(_){ return iso; }
+      };
+      var html = '<div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:12px 14px;font-size:15px">'
+        + '<div style="color:#9ad;font-weight:800;margin-bottom:6px">'+((_lang==='en')?'Station: ':'Estación: ')+j.stationName+' <span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:400;font-size:13px;color:#888">('+j.stationId+')</span></div>';
+      if (j.currentLevelM != null){
+        html += '<div style="color:#e0eaf0;margin-bottom:8px">'+((_lang==='en')?'Level now: ':'Nivel ahora: ')
+             + '<b style="color:#fff;font-size:17px">'+j.currentLevelM.toFixed(2)+' m</b></div>';
+      }
+      if (j.upcoming && j.upcoming.length){
+        html += '<div style="color:#9ad;font-weight:700;margin-top:6px">'+((_lang==='en')?'Next extremes:':'Próximos extremos:')+'</div>';
+        html += '<table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:15px">';
+        j.upcoming.forEach(function(e){
+          var icon = e.type==='High' ? '🔺' : '🔻';
+          var label = e.type==='High' ? ((_lang==='en')?'High':'Pleamar') : ((_lang==='en')?'Low':'Bajamar');
+          html += '<tr><td style="padding:3px 6px;color:#fff">'+icon+' '+label+'</td>'
+               + '<td style="padding:3px 6px;color:#cfd8dc">'+fmt(e.time)+'</td>'
+               + '<td style="padding:3px 6px;color:#3aa856;font-weight:800;text-align:right">'+e.valueM.toFixed(2)+' m</td></tr>';
+        });
+        html += '</table>';
+      }
+      html += '</div>';
+      host.innerHTML = html;
+    });
+};
+/* Rev686 (feedback Carlos "en step debemos elegir modo. En Auto solo
+   override Estación. Manual con buscador de ciudades"): el picker real
+   del wizard replica el flujo del dropdown de TidesView. Consta de:
+   - Radio Auto/Manual.
+   - Si Manual: selector de motor (IHM si disponible + NEAPS + Open-Meteo).
+   - Buscador de estación por texto + lista clickable.
+   - Botón "Usar más cercana al GPS" como atajo. */
+/* Rev687 (feedback Carlos "manual no funciona"): el picker mantiene su modo
+   localmente hasta que el user aplica una estación. Antes, cambiar a manual
+   sin aplicar hacía re-render que releía del backend (manualOverride=false)
+   y volvía a auto — círculo vicioso. `pendingMode` sobreescribe el derivado
+   del backend hasta que la acción se completa. */
+window._wizardPickerState = { mode:'auto', pendingMode:null, engine:'ihm', q:'', results:[], selectedId:null };
+window.m_wizardTidesRenderPicker = function(pref, man){
+  var host = document.getElementById('m-wiz-tides-picker');
+  if (!host) return;
+  var lang = _lang;
+  var isManual = !!(man && man.manualOverride);
+  var mode = window._wizardPickerState.pendingMode || (isManual ? 'manual' : 'auto');
+  window._wizardPickerState.mode = mode;
+  /* Cargar engines-available para saber si IHM está a tiro. */
+  fetch(A+'/tide/engines-available',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}).then(function(av){
+    var eng = (av && av.engines) || {};
+    var ihmOk = !!(eng.ihm && eng.ihm.available);
+    var neapsOk = !!(eng.neaps && eng.neaps.available);
+    /* Si el motor guardado en state ya no está disponible, cambiar al primero. */
+    var st = window._wizardPickerState;
+    if (st.engine === 'ihm' && !ihmOk) st.engine = neapsOk ? 'neaps' : 'openmeteo';
+    var html = '';
+    /* Bloque modo */
+    html += '<div style="font-size:28px;color:#fff;font-weight:900;margin:0 0 12px 0">'+((lang==='en')?'Mode':'Modo')+'</div>';
+    html += '<div style="display:flex;gap:12px;margin-bottom:20px">';
+    html += '<button onclick="m_wizardPickerSetMode(\'auto\')" style="flex:1;padding:18px;font-size:22px;font-weight:900;border-radius:12px;cursor:pointer;'
+         + (mode==='auto'?'background:var(--org);color:#0a1929;border:2px solid var(--org)':'background:rgba(255,255,255,.06);color:#fff;border:2px solid rgba(255,255,255,.20)')+'">'
+         + (mode==='auto'?'✓ ':'') + '🎯 ' + ((lang==='en')?'AUTOMATIC':'AUTOMÁTICO') + '</button>';
+    html += '<button onclick="m_wizardPickerSetMode(\'manual\')" style="flex:1;padding:18px;font-size:22px;font-weight:900;border-radius:12px;cursor:pointer;'
+         + (mode==='manual'?'background:var(--org);color:#0a1929;border:2px solid var(--org)':'background:rgba(255,255,255,.06);color:#fff;border:2px solid rgba(255,255,255,.20)')+'">'
+         + (mode==='manual'?'✓ ':'') + '📍 ' + ((lang==='en')?'MANUAL':'MANUAL') + '</button>';
+    html += '</div>';
+    if (mode === 'auto'){
+      html += '<div style="padding:16px 20px;background:rgba(58,168,86,.10);border:1px solid rgba(58,168,86,.35);border-radius:12px;font-size:17px;color:#cfd8dc;line-height:1.55">'
+           + ((lang==='en')
+             ? 'The engine is picked by proximity to your GPS position. Priority order: IHM (Spain) → signalk-tides plugin → NEAPS → Open-Meteo. To force one, switch to MANUAL.'
+             : 'El motor se elige por cercanía a tu posición GPS. Prioridad: IHM (España) → plugin signalk-tides → NEAPS → Open-Meteo. Para forzar uno concreto, cambia a MANUAL.')
+           + '</div>';
+    } else {
+      /* MANUAL */
+      html += '<div style="font-size:22px;color:#fff;font-weight:800;margin:14px 0 10px 0">'+((lang==='en')?'Data source':'Fuente de datos')+'</div>';
+      html += '<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">';
+      var engineOpts = [];
+      if (ihmOk) engineOpts.push({id:'ihm',label:'🇪🇸 IHM (España)'});
+      engineOpts.push({id:'neaps',label:'📡 NEAPS'});
+      engineOpts.push({id:'openmeteo',label:'🌐 Open-Meteo'});
+      engineOpts.forEach(function(o){
+        var sel = (st.engine === o.id);
+        html += '<button onclick="m_wizardPickerSetEngine(\''+o.id+'\')" style="padding:14px 20px;font-size:19px;font-weight:800;border-radius:10px;cursor:pointer;'
+             + (sel?'background:var(--org);color:#0a1929;border:2px solid var(--org)':'background:rgba(255,255,255,.06);color:#fff;border:2px solid rgba(255,255,255,.20)')+'">'
+             + (sel?'✓ ':'') + o.label + '</button>';
+      });
+      html += '</div>';
+      if (!ihmOk){
+        html += '<div style="padding:10px 14px;background:rgba(255,178,63,.10);border:1px solid rgba(255,178,63,.30);border-radius:8px;font-size:15px;color:#ffb23f;margin-bottom:14px">'
+             + '⚠ ' + ((lang==='en')?'IHM is > 300 km away — not available for your area.':'IHM está a > 300 km — no disponible para tu zona.') + '</div>';
+      }
+      if (st.engine === 'openmeteo'){
+        html += '<div style="padding:16px 20px;background:rgba(154,170,204,.08);border:1px solid rgba(154,170,204,.25);border-radius:10px;font-size:17px;color:#cfd8dc;line-height:1.5">'
+             + ((lang==='en')?'Open-Meteo uses your GPS position directly. No station to pick.':'Open-Meteo usa tu posición GPS directamente. No hay estación que elegir.')
+             + '</div>'
+             + '<button onclick="m_wizardPickerApply(\'openmeteo-global\',\'Open-Meteo global\')" style="margin-top:12px;background:var(--org);color:#0a1929;border:none;padding:16px 24px;font-size:19px;font-weight:900;border-radius:10px;cursor:pointer">'
+             + '📌 ' + ((lang==='en')?'Use Open-Meteo':'Usar Open-Meteo') + '</button>';
+      } else {
+        /* IHM o NEAPS: buscador */
+        html += '<div style="font-size:19px;color:#fff;font-weight:800;margin:10px 0 8px 0">'+((lang==='en')?'Search station (city name)':'Buscar estación (nombre de ciudad)')+'</div>';
+        html += '<div style="display:flex;gap:10px;margin-bottom:12px">'
+             + '<input id="m-wiz-tides-q" type="text" value="'+(st.q||'')+'" placeholder="'+((lang==='en')?'e.g. Vigo, Portland, San Francisco…':'p.ej. Vigo, Cádiz, Portland…')+'" oninput="m_wizardPickerSearchDebounced()" style="flex:1;padding:14px 16px;font-size:19px;background:rgba(0,0,0,.35);color:#fff;border:2px solid rgba(255,255,255,.20);border-radius:10px">'
+             + '<button onclick="m_wizardPickerSearchNearest()" style="background:rgba(255,255,255,.10);color:#fff;border:1px solid rgba(255,255,255,.25);padding:14px 18px;font-size:17px;font-weight:700;border-radius:10px;cursor:pointer;white-space:nowrap">📍 ' + ((lang==='en')?'Nearest':'Más cercana') + '</button>'
+             + '</div>';
+        html += '<div id="m-wiz-tides-results" style="max-height:280px;overflow-y:auto"></div>';
+      }
+    }
+    host.innerHTML = html;
+    /* Rev694 (auditoría GPT+Gemini "el renderizado no debe iniciar I/O"):
+       ya NO llamamos a SearchNearest automáticamente en cada render — antes
+       cada polling volvía a repintar el dropdown con "más cercanas".
+       Sólo re-pintamos si tenemos resultados YA cargados (búsqueda explícita
+       previa del user) o un geocode hint pendiente. */
+    if (mode === 'manual' && (st.engine === 'ihm' || st.engine === 'neaps')){
+      if (st.q || st.geocodeHint || (st.results && st.results.length)) {
+        m_wizardPickerRenderResults();
+      }
+    }
+  });
+};
+window.m_wizardPickerSetMode = function(m){
+  window._wizardPickerState.mode = m;
+  if (m === 'auto'){
+    /* Volver a AUTO: limpiar manual + pref = auto. Backend confirmará. */
+    window._wizardPickerState.pendingMode = null;
+    fetch(A+'/manual',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({manualOverride:false, manualStationId:'', favoriteStationId:''})})
+      .then(function(){ setTimeout(function(){
+        var body = document.getElementById('m-wizard-body');
+        if (body && typeof m_wizardStep_tides==='function') m_wizardStep_tides(body);
+      }, 500); });
+  } else {
+    /* MANUAL local. Rev687: marcar pendingMode para que sobreviva re-renders
+       hasta que aplique una estación. Solo re-renderizamos el PICKER (no
+       todo el step) para no re-entrar en el fetch de /manual que borra el
+       mode. */
+    window._wizardPickerState.pendingMode = 'manual';
+    m_wizardTidesRenderPicker(null, { manualOverride: true });
+  }
+};
+window.m_wizardPickerSetEngine = function(e){
+  window._wizardPickerState.engine = e;
+  window._wizardPickerState.q = '';
+  window._wizardPickerState.results = [];
+  window._wizardPickerState.geocodeHint = null; // Rev688: cerrar dropdown de resultados anterior.
+  /* Rev687: solo re-renderiza el picker, no todo el step (evita re-derivar
+     el mode del backend). */
+  m_wizardTidesRenderPicker(null, { manualOverride: true });
+};
+var _wizardPickerSearchTimer = null;
+window.m_wizardPickerSearchDebounced = function(){
+  var input = document.getElementById('m-wiz-tides-q');
+  if (!input) return;
+  window._wizardPickerState.q = input.value;
+  if (_wizardPickerSearchTimer) clearTimeout(_wizardPickerSearchTimer);
+  _wizardPickerSearchTimer = setTimeout(m_wizardPickerSearch, 400);
+};
+window.m_wizardPickerSearch = function(){
+  var st = window._wizardPickerState;
+  fetch(A+'/tide/stations-search?engine='+encodeURIComponent(st.engine)+'&q='+encodeURIComponent(st.q||''),{cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+    .then(function(j){
+      window._wizardPickerState.results = (j && Array.isArray(j.results)) ? j.results : [];
+      window._wizardPickerState.geocodeHint = (j && j.geocodeHint) ? j.geocodeHint : null;
+      m_wizardPickerRenderResults();
+    });
+};
+window.m_wizardPickerSearchNearest = function(){
+  window._wizardPickerState.q = '';
+  var input = document.getElementById('m-wiz-tides-q'); if (input) input.value = '';
+  m_wizardPickerSearch();
+};
+window.m_wizardPickerRenderResults = function(){
+  var host = document.getElementById('m-wiz-tides-results');
+  if (!host) return;
+  var st = window._wizardPickerState;
+  var lang = _lang;
+  var html = '';
+  /* Rev688 (feedback Carlos "sin coincidencias debiera decir Más cercana"):
+     si el backend devolvió geocodeHint es porque no hubo match textual pero
+     resolvió la ciudad y devolvió las N estaciones más cercanas a ella. */
+  if (st.geocodeHint){
+    var g = st.geocodeHint;
+    html += '<div style="padding:14px 18px;margin-bottom:10px;background:rgba(255,178,63,.10);border:1px solid rgba(255,178,63,.35);border-radius:10px;font-size:16px;color:#ffb23f;line-height:1.5">'
+         + '⚠ ' + ((lang==='en')?'No exact match for':'Sin datos para') + ' <b>'+g.query+'</b>. '
+         + ((lang==='en')?'Nearest stations to':'Estaciones más cercanas a') + ' <span style="color:#cfd8dc">'+g.resolvedTo+'</span>:'
+         + '</div>';
+  }
+  if (!st.results.length){
+    host.innerHTML = html + '<div style="padding:16px;color:#888;font-size:16px;text-align:center">'+((lang==='en')?'No matches':'Sin coincidencias')+'</div>';
+    return;
+  }
+  /* Rev691 (feedback Carlos "selecciono Portland en NEAPS y se pone en Auto
+     IHM"): el escape de comillas en el onclick era frágil. Con ids que
+     traen "/" (neaps/noaa/8443970) y nombres con espacios/apóstrofes se
+     rompía el string HTML y m_wizardPickerApply recibía basura. Usamos
+     base64 + JSON para pasar el objeto entero de forma segura. */
+  st.results.forEach(function(r){
+    var dist = (r.distanceKm != null) ? '<span style="color:#9ad;font-size:15px;font-weight:700;margin-left:10px">('+r.distanceKm.toFixed(1)+' km)</span>' : '';
+    var b64 = btoa(unescape(encodeURIComponent(JSON.stringify({id:String(r.id), name:String(r.name)}))));
+    html += '<button onclick="m_wizardPickerApplyB64(\''+b64+'\')" style="width:100%;text-align:left;padding:14px 18px;margin-bottom:8px;background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.20);border-radius:10px;cursor:pointer;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:space-between">'
+         + '<span>📍 '+r.name+dist+'</span>'
+         + '<span style="font-size:13px;color:#666;font-family:ui-monospace,Menlo,Consolas,monospace">'+r.id+'</span>'
+         + '</button>';
+  });
+  host.innerHTML = html;
+};
+window.m_wizardPickerApplyB64 = function(b64){
+  try {
+    var d = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    m_wizardPickerApply(d.id, d.name);
+  } catch(e){
+    console && console.warn && console.warn('m_wizardPickerApplyB64 decode fail', e);
+  }
+};
+window.m_wizardPickerApply = function(stationId, stationName){
+  /* Rev694 (auditoría GPT+Gemini "no quitar pendingMode hasta que servidor
+     confirme; cerrar resultados inmediatamente en el DOM; usar respuesta
+     del POST; el polling no debe actualizar mientras applying=true"). */
+  var s = window._wizardPickerState;
+  s.pendingMode = 'manual';   // se mantiene hasta confirmación del backend
+  s.applying = true;
+  s.q = '';
+  s.results = [];
+  s.geocodeHint = null;
+  /* Cerrar el DOM del dropdown YA, antes del POST. */
+  var input = document.getElementById('m-wiz-tides-q');
+  if (input) input.value = '';
+  var resHost = document.getElementById('m-wiz-tides-results');
+  if (resHost) resHost.innerHTML = '';
+  fetch(A+'/manual',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({manualOverride:true, manualStationId:stationId})})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(){
+      /* Ahora el backend tiene la verdad. Limpiamos pendingMode y
+         re-renderizamos el step (que ya no auto-cargará resultados). */
+      s.pendingMode = null;
+      s.applying = false;
+      var body = document.getElementById('m-wizard-body');
+      if (body && typeof m_wizardStep_tides==='function') m_wizardStep_tides(body);
+    })
+    .catch(function(){
+      /* Error: mantenemos pendingMode='manual' para que la UI no vuelva
+         solo a AUTO por accidente. */
+      s.applying = false;
+    });
+};
+
+/* Rev683 (feedback Carlos "sigue haciendo refresh step... se borra la
+   ventana"): actualiza SOLO el bloque "Estado actual" del step tides, sin
+   re-render de tarjetas ni motor. Preserva scroll y otros expandibles.
+   Rev690 (feedback Carlos "si selecciono en tides manual el Modo no se
+   actualiza en step"): tras refrescar el estado también refrescamos el
+   picker para reflejar el modo Auto/Manual que el user pudo cambiar
+   desde TidesView. Sólo si _wizardPickerState.pendingMode es null (el
+   user no está en medio de una acción local sin confirmar). */
+window.m_wizardTidesRefreshStatus = function(){
+  var box = document.getElementById('m-wiz-tides-status-box');
+  if (!box) return;
+  Promise.all([
+    fetch(A+'/tide/fetch-status',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+    fetch(A+'/wizard/system-check',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+    fetch(A+'/manual',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+  ]).then(function(res){
+    var st  = res[0] || {};
+    var sys = res[1] || {};
+    var man = res[2] || {};
+    /* Rev694: re-render del picker con el estado backend nuevo, sólo si
+       no hay una acción local pendiente ni operación de apply en vuelo. */
+    if (window._wizardPickerState
+        && !window._wizardPickerState.pendingMode
+        && !window._wizardPickerState.applying
+        && typeof m_wizardTidesRenderPicker==='function'){
+      m_wizardTidesRenderPicker(String(man.enginePref || 'auto'), man);
+    }
+    var lang = _lang;
+    var tideCk = (sys.checks || []).filter(function(c){return c.id==='tide-cache';})[0] || {};
+    var isManual = !!man.manualOverride;
+    var favSid   = String(man.favoriteStationId || '');
+    var activeSid= String(man.activeStationId || man.manualStationId || '');
+    var pref     = String(man.enginePref || 'auto');
+    var hasFavOverride = !isManual && !!favSid && favSid === activeSid;
+    var src = st.source || 'desconocida';
+    var srcColor = /IHM/i.test(src) ? '#3aa856'
+                 : /neaps/i.test(src) ? '#3aa856'
+                 : /signalk-tides/i.test(src) ? '#3aa856'
+                 : /Open/i.test(src) ? '#ffb23f'
+                 : '#888';
+    var stColor  = st.status==='ok' ? '#3aa856' : st.status==='failed' ? '#e53935' : '#ffb23f';
+    var modeText  = isManual
+      ? ((lang==='en')?'MANUAL':'MANUAL')
+      : ((lang==='en')?'AUTOMATIC':'AUTOMÁTICO');
+    var modeColor = isManual ? '#ffb23f' : '#3aa856';
+    box.style.borderLeftColor = stColor;
+    box.innerHTML =
+        '<div style="font-size:26px;font-weight:800;color:'+stColor+';margin-bottom:12px">'
+      + (st.status==='ok'?'✅':st.status==='failed'?'❌':'⚠')
+      + ' ' + ((lang==='en')?'Current status':'Estado actual') + '</div>'
+      + '<div style="display:grid;grid-template-columns:auto 1fr;gap:10px 16px;font-size:19px;color:#e0eaf0;line-height:1.5;margin-bottom:12px">'
+      + '<span style="color:#9ad;font-weight:700">'+((lang==='en')?'Mode:':'Modo:')+'</span>'
+      + '<span style="color:'+modeColor+';font-weight:800">'+modeText+'</span>'
+      + '<span style="color:#9ad;font-weight:700">'+((lang==='en')?'Active source:':'Fuente activa:')+'</span>'
+      + '<span style="color:'+srcColor+';font-weight:800">'+src+'</span>'
+      + ((st.stationName || man.activeStationName || activeSid)?('<span style="color:#9ad;font-weight:700">'+((lang==='en')?'Station:':'Estación:')+'</span>'
+                   +'<span style="color:#e0eaf0;font-weight:800">'+(st.stationName || man.activeStationName || activeSid)+'</span>'):'')
+      + '</div>'
+      + '<div style="font-size:13px;color:#888;font-family:ui-monospace,Menlo,Consolas,monospace;padding-top:8px;border-top:1px dashed rgba(255,255,255,.10)">'
+      + 'debug&nbsp;· pref=<b style="color:#9ad">'+pref+'</b>'
+      + '&nbsp; manualOverride=<b style="color:#9ad">'+(isManual?'true':'false')+'</b>'
+      + '&nbsp; manualStationId=<b style="color:#9ad">'+(man.manualStationId||'∅')+'</b>'
+      + '&nbsp; favoriteStationId=<b style="color:#9ad">'+(favSid||'∅')+'</b>'
+      + '&nbsp; activeStationId=<b style="color:#9ad">'+(activeSid||'∅')+'</b>'
+      + '&nbsp; source=<b style="color:#9ad">'+src+'</b>'
+      + '</div>'
+      + '<div style="font-size:16px;color:#cfd8dc;line-height:1.5;margin-top:12px">' + (tideCk.message || '') + '</div>'
+      + '<button onclick="m_wizardForceTideRefresh()" style="margin-top:14px;background:var(--org);color:#0a1929;border:none;padding:14px 22px;font-size:19px;font-weight:900;border-radius:10px;cursor:pointer">'
+      + ((lang==='en')?'↻ Update now':'↻ Actualizar ahora')
+      + '</button>';
+  });
+};
+window.m_wizardEnginePrefPick = function(p){
+  fetch(A+'/tide/engine-pref',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pref:p})})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){
+      var st = document.getElementById('m-wiz-tides-pref-status');
+      if (j && j.ok){
+        if (st) st.textContent = (_lang==='en')?'✓ Saved. Recomputing forecast…':'✓ Guardado. Recalculando…';
+        setTimeout(function(){
+          var body = document.getElementById('m-wizard-body');
+          if (body && typeof m_wizardStep_tides==='function') m_wizardStep_tides(body);
+        }, 1500);
+      } else {
+        if (st) st.textContent = (_lang==='en')?'✗ Failed':'✗ Falló';
+      }
+    });
+};
+window.m_wizardUnitsPick = function(u){
+  fetch(A+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({units:u})})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){
+      if (!j) return;
+      _unitsSystem = j.units;
+      var s = document.getElementById('m-wiz-units-status');
+      if (s) s.textContent = (_lang==='en')?'✓ Saved':'✓ Guardado';
+      m_wizardRender();
+    });
+};
+/* Rev670 (feedback Carlos "si hay dato en SK debemos dejarlo como fuente de
+   verdad; si somos capaces de inyectar el dato a Configuración de server en
+   SK, hagámoslo"):
+   - Si SK reporta design.draft → el input de Calado sale bloqueado, muestra
+     el valor de SK y un link al server config para cambiarlo (SK es SoT).
+   - Si NO lo reporta → input editable + botón que guarda en el plugin Y
+     publica un delta SK con design.draft para que quede como SoT también. */
+window.m_wizardStep_boat = function(body){
+  var lang = _lang;
+  body.innerHTML = m_wizardBodyTitle() + '<div style="text-align:center;padding:40px 0;font-size:18px;opacity:.7">'
+    + ((lang==='en')?'🔎 Loading boat settings…':'🔎 Cargando datos del barco…') + '</div>';
+  Promise.all([
+    fetch(A+'/calado',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+    fetch(A+'/anchor/config',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+  ]).then(function(res){
+    var calado = res[0] || {};
+    var anc    = res[1] || {};
+    var skDraftOk = !!calado.skDraftAvailable && typeof calado.skDraftValue==='number';
+    var draftShown = skDraftOk ? calado.skDraftValue : calado.draft;
+    var html = m_wizardBodyTitle();
+    html += '<div style="max-width:820px;margin:0 auto">';
+    html += '<div style="font-size:20px;color:#cfd8dc;line-height:1.55;margin-bottom:24px">'
+         + ((lang==='en')
+           ? 'Physical dimensions of your boat and safety values used by the anchor engine and depth engine.'
+           : 'Dimensiones físicas de tu barco y valores de seguridad que usa el motor de fondeo y la sonda.')
+         + '</div>';
+    /* Bloque Calado — read-only si SK lo reporta. */
+    if (skDraftOk){
+      html += '<div style="margin-bottom:20px;padding:18px 22px;background:rgba(58,168,86,.10);border:2px solid rgba(58,168,86,.45);border-radius:12px">'
+           + '<div style="font-size:22px;font-weight:800;color:#fff;margin-bottom:8px">'+((lang==='en')?'Draft':'Calado')+'</div>'
+           + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
+           + '<div style="flex:1;padding:14px 16px;font-size:26px;font-weight:900;background:rgba(0,0,0,.35);color:#3aa856;border:2px solid rgba(58,168,86,.55);border-radius:10px">'+draftShown+' m</div>'
+           + '<span style="font-size:14px;color:#0a1929;background:#3aa856;padding:6px 12px;border-radius:6px;font-weight:900">'+((lang==='en')?'SIGNALK':'SIGNALK')+'</span>'
+           + '</div>'
+           + '<div style="font-size:16px;color:#cfd8dc;line-height:1.5">'
+           + ((lang==='en')
+             ? 'The draft comes from SignalK <code>design.draft</code>. That is the single source of truth. To change it, edit it in SignalK server → Settings → Vessel Base Data.'
+             : 'El calado viene de SignalK <code>design.draft</code>. Esa es la fuente única de verdad. Para cambiarlo, edítalo en SignalK server → Ajustes → Datos del barco.')
+           + ' <a href="/admin/#/serverConfiguration/settings" target="_blank" style="color:#ffb23f;font-weight:700">'+((lang==='en')?'Open SignalK settings ↗':'Abrir ajustes SignalK ↗')+'</a>'
+           + '</div></div>';
+    } else {
+      html += '<div style="margin-bottom:20px">'
+           + '<label for="m-wiz-boat-draft" style="display:block;font-size:22px;font-weight:800;color:#fff;margin-bottom:6px">'+((lang==='en')?'Draft':'Calado')+'</label>'
+           + '<div style="display:flex;align-items:center;gap:12px">'
+           + '<input id="m-wiz-boat-draft" type="number" step="0.01" min="0" max="30" value="'+(calado.draft!=null?calado.draft:'')+'" style="flex:1;padding:14px 16px;font-size:22px;font-weight:700;background:rgba(0,0,0,.35);color:#fff;border:2px solid rgba(255,255,255,.20);border-radius:10px">'
+           + '<span style="font-size:20px;color:#9ad;font-weight:700;min-width:40px">m</span>'
+           + '</div>'
+           + '<div style="font-size:15px;color:#ffb23f;margin-top:6px;line-height:1.4">'
+           + '⚠ ' + ((lang==='en')
+             ? 'SignalK does not know your draft yet. Enter it here — we will also publish it to SignalK so it becomes the single source of truth.'
+             : 'SignalK no conoce tu calado todavía. Introdúcelo aquí — también lo publicaremos en SignalK para que sea la fuente única de verdad.')
+           + '</div></div>';
+    }
+    /* Bloque Margen — siempre editable (es un valor del plugin, no vive en SK). */
+    html += '<div style="margin-bottom:20px">'
+         + '<label for="m-wiz-boat-safety" style="display:block;font-size:22px;font-weight:800;color:#fff;margin-bottom:6px">'+((lang==='en')?'Safety margin under keel':'Margen de seguridad bajo quilla')+'</label>'
+         + '<div style="display:flex;align-items:center;gap:12px">'
+         + '<input id="m-wiz-boat-safety" type="number" step="0.01" min="0" max="10" value="'+(calado.safetyMargin!=null?calado.safetyMargin:0.5)+'" style="flex:1;padding:14px 16px;font-size:22px;font-weight:700;background:rgba(0,0,0,.35);color:#fff;border:2px solid rgba(255,255,255,.20);border-radius:10px">'
+         + '<span style="font-size:20px;color:#9ad;font-weight:700;min-width:40px">m</span>'
+         + '</div>'
+         + '<div style="font-size:15px;color:#9ad;margin-top:6px;line-height:1.4">'
+         + ((lang==='en')?'Extra depth added to the draft for grounding alarms.':'Profundidad extra sumada al calado para las alarmas de varada.')
+         + '</div></div>';
+    /* Bloque Altura roldana — Rev671 (feedback Carlos "esto es roldana sobre
+       el agua no antena gps"): hBowMeters es la altura VERTICAL de la
+       roldana de proa sobre la línea de flotación, no un offset horizontal.
+       Se usa en la fórmula scope · (profundidad + altura roldana). */
+    html += '<div style="margin-bottom:20px">'
+         + '<label for="m-wiz-boat-fromBow" style="display:block;font-size:22px;font-weight:800;color:#fff;margin-bottom:6px">'+((lang==='en')?'Bow roller height above waterline':'Altura de la roldana sobre línea de flotación')+'</label>'
+         + '<div style="display:flex;align-items:center;gap:12px">'
+         + '<input id="m-wiz-boat-fromBow" type="number" step="0.01" min="0" max="10" value="'+(anc.hBowMeters!=null?anc.hBowMeters:0)+'" style="flex:1;padding:14px 16px;font-size:22px;font-weight:700;background:rgba(0,0,0,.35);color:#fff;border:2px solid rgba(255,255,255,.20);border-radius:10px">'
+         + '<span style="font-size:20px;color:#9ad;font-weight:700;min-width:40px">m</span>'
+         + '</div>'
+         + '<div style="font-size:15px;color:#9ad;margin-top:6px;line-height:1.4">'
+         + ((lang==='en')?'Vertical distance from the waterline to the anchor roller (bow fitting). Used in the chain length formula: scope × (depth + roller height).':'Distancia vertical desde la línea de flotación hasta la roldana del ancla. Entra en la fórmula de cadena: escantillón × (profundidad + altura roldana).')
+         + '</div></div>';
+    html += '<div style="display:flex;gap:14px;align-items:center;margin-top:8px">'
+         + '<button onclick="m_wizardBoatSave('+(skDraftOk?'true':'false')+')" style="background:var(--org);color:#0a1929;padding:16px 30px;font-size:20px;font-weight:900;border-radius:10px;border:none;cursor:pointer">'
+         + ((lang==='en')?'💾 Save':'💾 Guardar') + '</button>'
+         + '<span id="m-wiz-boat-status" style="font-size:18px;color:#3aa856;font-weight:700"></span>'
+         + '</div>';
+    html += '</div>';
+    body.innerHTML = html;
+  });
+};
+window.m_wizardBoatSave = function(skDraftOk){
+  var stEl = document.getElementById('m-wiz-boat-status');
+  var safetyEl  = document.getElementById('m-wiz-boat-safety');
+  var fromBowEl = document.getElementById('m-wiz-boat-fromBow');
+  var draftEl   = document.getElementById('m-wiz-boat-draft'); /* null si SK-locked */
+  var safety  = safetyEl  ? parseFloat(safetyEl.value)  : NaN;
+  var fromBow = fromBowEl ? parseFloat(fromBowEl.value) : NaN;
+  var promises = [];
+  if (skDraftOk){
+    /* Calado viene de SK: NO tocamos draft en el plugin (dejamos draftSource='signalk').
+       Sólo persistimos safetyMargin (aparte SK no lo maneja). */
+    promises.push(fetch(A+'/calado',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({draftSource:'signalk', safetyMargin:isFinite(safety)?safety:0.5})}));
+  } else {
+    var draft = draftEl ? parseFloat(draftEl.value) : NaN;
+    /* Sin SK: escribimos el calado en el cache del plugin como draftSource='manual'
+       Y publicamos el delta SK para que quede como fuente de verdad. */
+    promises.push(fetch(A+'/calado',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({draft:isFinite(draft)?draft:null, draftSource:'manual', safetyMargin:isFinite(safety)?safety:0.5})}));
+    if (isFinite(draft)) {
+      promises.push(fetch(A+'/sk-inject/draft',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({draft:draft})}).catch(function(){}));
+    }
+  }
+  promises.push(fetch(A+'/anchor/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({hBowMeters:isFinite(fromBow)?fromBow:0})}));
+  Promise.all(promises).then(function(rs){
+    var ok = rs.every(function(r){return r && r.ok;});
+    if (stEl) stEl.textContent = ok ? ((_lang==='en')?'✓ Saved':'✓ Guardado') : ((_lang==='en')?'✗ Error':'✗ Error');
+    if (!skDraftOk){
+      /* Re-render tras 800 ms para reflejar que SK ya tiene design.draft. */
+      setTimeout(function(){
+        var bodyEl = document.getElementById('m-wizard-body');
+        if (bodyEl && typeof m_wizardStep_boat==='function') m_wizardStep_boat(bodyEl);
+      }, 800);
+    }
+  });
+};
+/* Rev662 (Sprint J-7 + feedback Carlos): step systemCheck real. Combina:
+   - Checks del sistema (espeak, noto, versiones, set-system-time, RAM).
+   - Hardware detectado (USB, I2C, ALSA audio).
+   - Hint de qué SK paths llegan de ese hardware. */
+window.m_wizardStep_systemCheck = function(body){
+  body.innerHTML = '<div style="text-align:center;padding:40px 0;font-size:18px;opacity:.7">'
+    + ((_lang==='en')?'🔎 Checking system…':'🔎 Comprobando sistema…')
+    + '</div>';
+  Promise.all([
+    fetch(A+'/wizard/system-check',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+    fetch(A+'/wizard/hardware-check',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+  ]).then(function(res){
+    var sys = res[0], hw = res[1];
+    var lang = _lang;
+    /* Rev667 (feedback Carlos "Refrescar en misma línea que Chequeo del
+       sistema"): el botón va junto al título del step (H2 del body-title)
+       en un flex-row. Y el título del sub-bloque se elimina para no duplicar. */
+    var html = '<div style="max-width:960px;margin:0 auto">';
+    html += '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:26px;flex-wrap:wrap">'
+         + '<div style="flex:1;min-width:260px">' + m_wizardBodyTitle() + '</div>'
+         + '<button onclick="m_wizardStep_systemCheck(document.getElementById(\'m-wizard-body\'))" style="background:rgba(255,152,0,.15);border:1px solid rgba(255,152,0,.45);color:var(--org);padding:14px 22px;font-size:18px;font-weight:800;border-radius:10px;cursor:pointer;white-space:nowrap;margin-top:32px">'
+         + ((lang==='en')?'🔄 Refresh':'🔄 Refrescar')
+         + '</button>'
+         + '</div>';
+    /* Rev668 (feedback Carlos "pon mismo tamaño a Dependencias del sistema"):
+       sub-heading al mismo tamaño que el H2 del step title. */
+    html += '<div style="font-size:32px;font-weight:900;color:#fff;margin:0 0 18px 0;line-height:1.15">'
+         + ((lang==='en')?'System dependencies':'Dependencias del sistema')
+         + '</div>';
+    if (sys && sys.checks){
+      sys.checks.forEach(function(c){
+        var color = c.status==='ok' ? '#3aa856' : c.status==='warn' ? '#ffb23f' : '#e53935';
+        var icon  = c.status==='ok' ? '✅' : c.status==='warn' ? '⚠' : '❌';
+        var techBadge = c.technical
+          ? '<span style="font-size:18px;color:#c8d6e0;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;margin-left:10px;background:rgba(0,0,0,.4);padding:5px 12px;border-radius:6px">'+c.technical+'</span>'
+          : '';
+        /* Rev665 (feedback Carlos "aumenta todos los textos"): label 22px,
+           mensaje 17px, pre 15px, chip técnico 15px. */
+        html += '<div style="padding:16px 20px;background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.10);border-left:5px solid '+color+';border-radius:12px;margin-bottom:12px">'
+             + '<div style="display:flex;align-items:center;gap:12px;font-size:22px;font-weight:800;color:'+color+';flex-wrap:wrap">'
+             + '<span>'+icon+'</span><span>'+c.label+'</span>'+techBadge;
+        /* Rev665 (feedback Carlos "en Actualización de datos de marea no hay
+           botón de actualizar"): inline el botón para el tide-cache warn/error. */
+        if (c.id === 'tide-cache' && c.status !== 'ok'){
+          html += '<button onclick="m_wizardForceTideRefresh()" style="margin-left:auto;background:var(--org);color:#0a1929;border:none;padding:10px 18px;font-size:16px;font-weight:900;border-radius:8px;cursor:pointer">'
+               + ((lang==='en')?'↻ Update now':'↻ Actualizar ahora')
+               + '</button>';
+        }
+        html += '</div>'
+             + '<div style="font-size:17px;color:#cfd8dc;margin-top:8px;line-height:1.5">'+c.message+'</div>';
+        if (c.action){
+          html += '<pre style="background:#000;color:#8f8;padding:12px 16px;border-radius:8px;font-size:15px;font-family:ui-monospace,Menlo,Consolas,monospace;margin:12px 0 0 0;overflow-x:auto;line-height:1.4">'+c.action+'</pre>';
+        }
+        html += '</div>';
+      });
+    }
+    /* Bloque hardware — Rev668: mismo tamaño que "Dependencias del sistema". */
+    html += '<div style="font-size:32px;font-weight:900;color:#fff;margin:34px 0 18px 0;line-height:1.15">'
+         + ((lang==='en')?'Hardware detected':'Hardware detectado')
+         + '</div>';
+    /* Rev665 (feedback Carlos): estilo unificado con los checks — mismo layout
+       de bloque con label en español + chip técnico monospace. */
+    /* Rev667 (feedback Carlos "tamaños mucho más grandes aún"): chip técnico
+       20px, label 26px, icono 32px. Bloque con más padding. */
+    var renderHwItem = function(icon, label, tech, statusColor){
+      var techBadge = tech
+        ? '<span style="font-size:20px;color:#e0eaf0;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:800;margin-left:12px;background:rgba(0,0,0,.45);padding:6px 14px;border-radius:7px">'+tech+'</span>'
+        : '';
+      return '<div style="padding:18px 22px;background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.10);border-left:6px solid '+statusColor+';border-radius:14px;margin-bottom:12px">'
+           + '<div style="display:flex;align-items:center;gap:16px;font-size:26px;font-weight:800;color:'+statusColor+';flex-wrap:wrap">'
+           + '<span style="font-size:32px;line-height:1">'+icon+'</span><span>'+label+'</span>'+techBadge
+           + '</div></div>';
+    };
+    /* USB */
+    if (hw && hw.usb && hw.usb.length){
+      html += '<div style="font-size:28px;color:#fff;font-weight:900;margin:26px 0 14px 0;line-height:1.15">🔌 USB</div>';
+      hw.usb.forEach(function(d){
+        var icon, catLabel;
+        if (d.category==='audio'){ icon='🔊'; catLabel=(lang==='en')?'Speaker':'Altavoz'; }
+        else if (d.category==='gps'){ icon='📡'; catLabel='GPS'; }
+        else if (d.category==='sdr'){ icon='📻'; catLabel=(lang==='en')?'SDR (AIS receiver)':'SDR (receptor AIS)'; }
+        else { icon='·'; catLabel=''; }
+        /* Rev665 (feedback Carlos "por qué naranja y no verde"): lo detectado
+           va en verde (es un OK). */
+        html += renderHwItem(icon, catLabel, d.desc + ' (' + d.id + ')', '#3aa856');
+      });
+    }
+    /* I2C — Rev666 (feedback Carlos "identificar cada sensor en cristiano"):
+       el backend ahora envía {icon, label, chip} en cada dispositivo, con label
+       humano ("IMU (giroscopio + acelerómetro)") y chip técnico ("MPU-6050 · 0x68"). */
+    if (hw && hw.i2c && hw.i2c.length){
+      html += '<div style="font-size:28px;color:#fff;font-weight:900;margin:26px 0 14px 0;line-height:1.15">🔗 '
+           + ((lang==='en')?'I²C sensors':'Sensores I²C')
+           + '</div>';
+      hw.i2c.forEach(function(d){
+        var icon  = d.icon  || '•';
+        var label = d.label || d.hint || ((lang==='en')?'I²C device':'Dispositivo I²C');
+        var chip  = d.chip  || d.addr || '';
+        html += renderHwItem(icon, label, chip, '#3aa856');
+      });
+    }
+    /* Audio */
+    if (hw && hw.audio && hw.audio.length){
+      html += '<div style="font-size:28px;color:#fff;font-weight:900;margin:26px 0 14px 0;line-height:1.15">🔊 '
+           + ((lang==='en')?'Audio outputs (ALSA)':'Salidas de audio (ALSA)')
+           + '</div>';
+      hw.audio.forEach(function(a){
+        var mark = a.isUsb ? '🔌' : '🎛️';
+        var isSelected = hw.selectedAudioCard && a.card === hw.selectedAudioCard;
+        var name = a.cardName + ' — ' + a.deviceName + (isSelected ? ((lang==='en')?' · SELECTED':' · SELECCIONADO') : '');
+        html += renderHwItem(mark, name, a.card, isSelected ? 'var(--org)' : '#3aa856');
+      });
+      html += '<div style="font-size:15px;color:#9ad;margin-top:10px;opacity:.85">'
+           + ((lang==='en')?'You can change the alarm output later in Settings → Alarms → 🔊 Volume + output.':'Puedes cambiar la salida de alarmas luego en Configuración → Alarmas → 🔊 Volumen + salida.')
+           + '</div>';
+    }
+    /* SK hint — Rev669 (Carlos): mismo tamaño de categoría. */
+    if (hw && hw.skHint){
+      html += '<div style="font-size:28px;color:#fff;font-weight:900;margin:26px 0 14px 0;line-height:1.15">'
+           + ((lang==='en')?'📶 SK data hints':'📶 Presencia en SignalK')
+           + '</div>';
+      /* Rev663 (feedback Carlos): "IMU (attitude)" → "Acelerómetro" (más
+         preciso). Añadidas temperaturas y AIS. */
+      var pairs = [
+        ['hasAccel',     (lang==='en')?'Accelerometer':'Acelerómetro'],
+        ['hasGps',       (lang==='en')?'GPS position':'Posición GPS'],
+        ['hasDepth',     (lang==='en')?'Depth sensor':'Sonda'],
+        ['hasWind',      (lang==='en')?'Wind sensor':'Sensor de viento'],
+        ['hasPressure',  (lang==='en')?'Barometer':'Barómetro'],
+        ['hasTempWater', (lang==='en')?'Water temperature':'Temperatura del agua'],
+        ['hasTempAir',   (lang==='en')?'Air temperature':'Temperatura del aire'],
+        ['hasAis',       (lang==='en')?'AIS feed':'AIS'],
+      ];
+      pairs.forEach(function(p){
+        var on = !!hw.skHint[p[0]];
+        html += '<div style="display:flex;align-items:center;gap:14px;padding:10px 16px;font-size:22px">'
+             + '<span style="font-size:26px">'+(on?'✅':'❌')+'</span>'
+             + '<span style="color:#e0eaf0;font-weight:700">'+p[1]+'</span>'
+             + '</div>';
+      });
+    }
+    html += '</div>';
+    body.innerHTML = html;
+  });
+};
+window.m_wizardStep_sensorCheck = function(body){
+  body.innerHTML = m_wizardBodyTitle() + '<div style="max-width:700px;margin:40px auto;text-align:center;padding:30px;background:rgba(255,255,255,.05);border-radius:14px">'
+    + '<div style="font-size:24px;font-weight:800;color:#fff;margin-bottom:14px">📡 '
+    + ((_lang==='en')?'Under construction':'En construcción')
+    + '</div></div>';
+};
+/* Rev669: step tides — fuentes de datos de marea + estado + servidor SK.
+   Fuentes conocidas: IHM (España oficial), Open-Meteo (mundial), NEAPS
+   (pendiente de detalles del proveedor). El plugin ya selecciona la fuente
+   por proximidad y disponibilidad; aquí mostramos qué fuente está activa,
+   permitimos forzar la lista IHM, y forzar reintento.
+   Servidor SK: los datos meteo llegan a través del servidor SK actual —
+   mostramos su URL. */
+window.m_wizardStep_tides = function(body){
+  var lang = _lang;
+  body.innerHTML = m_wizardBodyTitle() + '<div style="text-align:center;padding:40px 0;font-size:18px;opacity:.7">'
+    + ((lang==='en')?'🔎 Loading tide status…':'🔎 Cargando estado de mareas…') + '</div>';
+  Promise.all([
+    fetch(A+'/tide/fetch-status',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+    fetch(A+'/wizard/system-check',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+    fetch(A+'/tide/providers-status',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+    fetch(A+'/tide/engine-pref',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+    fetch(A+'/manual',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+  ]).then(function(res){
+    var st   = res[0] || {};
+    var sys  = res[1] || {};
+    var pv   = (res[2] && res[2].providers) || {};
+    var pref = (res[3] && res[3].pref) || 'auto';
+    var man  = res[4] || {};
+    var isManual  = !!man.manualOverride;
+    var favSid    = String(man.favoriteStationId || '');
+    var activeSid = String(man.activeStationId || man.manualStationId || '');
+    var hasFavOverride = !isManual && !!favSid && favSid === activeSid;
+    var tideCk = (sys.checks || []).filter(function(c){return c.id==='tide-cache';})[0] || {};
+    var netCk  = (sys.checks || []).filter(function(c){return c.id==='internet';})[0] || {};
+    var skUrl  = window.location.origin;
+    var html = m_wizardBodyTitle();
+    html += '<div style="max-width:820px;margin:0 auto">';
+    html += '<div style="font-size:20px;color:#cfd8dc;line-height:1.55;margin-bottom:22px">'
+         + ((lang==='en')
+           ? 'The plugin picks the best tide provider by proximity. IHM (Spain official) → signalk-tides plugin (if installed) → NEAPS embedded → Open-Meteo.'
+           : 'El plugin elige la mejor fuente de marea por cercanía. IHM (España oficial) → plugin signalk-tides (si está instalado) → NEAPS embebido → Open-Meteo.')
+         + '</div>';
+    /* Estado actual — Rev677 (feedback Carlos "debe decir si está en
+       automático o en manual y dejar muy claro qué seleccionas"). Dos
+       filas: (1) modo y (2) fuente. */
+    var src = st.source || 'desconocida';
+    var srcColor = /IHM/i.test(src) ? '#3aa856'
+                 : /neaps/i.test(src) ? '#3aa856'
+                 : /signalk-tides/i.test(src) ? '#3aa856'
+                 : /Open/i.test(src) ? '#ffb23f'
+                 : '#888';
+    var stColor  = st.status==='ok' ? '#3aa856' : st.status==='failed' ? '#e53935' : '#ffb23f';
+    /* Rev685 (feedback Carlos "disparate lo lioso entre auto/manual/forzado"):
+       simplificado a dos modos claros — MANUAL (usuario forzó estación) o
+       AUTOMÁTICO (motor decide). Los sub-estados "motor forzado" y
+       "estación favorita guardada" ya no se muestran porque ahora
+       tideEnginePreference y favoriteStationId están unificados desde
+       POST /api/manual (ver Rev684). */
+    var modeText  = isManual
+      ? ((lang==='en')?'MANUAL':'MANUAL')
+      : ((lang==='en')?'AUTOMATIC':'AUTOMÁTICO');
+    var modeColor = isManual ? '#ffb23f' : '#3aa856';
+    html += '<div id="m-wiz-tides-status-box" style="padding:18px 22px;background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.10);border-left:6px solid '+stColor+';border-radius:14px;margin-bottom:16px">'
+         + '<div style="font-size:26px;font-weight:800;color:'+stColor+';margin-bottom:12px">'
+         + (st.status==='ok'?'✅':st.status==='failed'?'❌':'⚠')
+         + ' ' + ((lang==='en')?'Current status':'Estado actual')
+         + '</div>'
+         + '<div style="display:grid;grid-template-columns:auto 1fr;gap:10px 16px;font-size:19px;color:#e0eaf0;line-height:1.5;margin-bottom:12px">'
+         + '<span style="color:#9ad;font-weight:700">'+((lang==='en')?'Mode:':'Modo:')+'</span>'
+         + '<span style="color:'+modeColor+';font-weight:800">'+modeText+'</span>'
+         + '<span style="color:#9ad;font-weight:700">'+((lang==='en')?'Active source:':'Fuente activa:')+'</span>'
+         + '<span style="color:'+srcColor+';font-weight:800">'+src+'</span>'
+         + ((st.stationName || man.activeStationName || activeSid) ? ('<span style="color:#9ad;font-weight:700">'+((lang==='en')?'Station:':'Estación:')+'</span>'
+                        +'<span style="color:#e0eaf0;font-weight:800">'+(st.stationName || man.activeStationName || activeSid)+'</span>') : '')
+         + '</div>'
+         /* Rev682 (feedback Carlos "no coordina, sigue diciendo Auto IHM"):
+            línea de debug compacta que expone el estado crudo que llega del
+            backend, para diagnosticar mismatch entre wizard y TidesView. */
+         + '<div style="font-size:13px;color:#888;font-family:ui-monospace,Menlo,Consolas,monospace;padding-top:8px;border-top:1px dashed rgba(255,255,255,.10)">'
+         + 'debug&nbsp;· pref=<b style="color:#9ad">'+pref+'</b>'
+         + '&nbsp; manualOverride=<b style="color:#9ad">'+(isManual?'true':'false')+'</b>'
+         + '&nbsp; manualStationId=<b style="color:#9ad">'+(man.manualStationId||'∅')+'</b>'
+         + '&nbsp; favoriteStationId=<b style="color:#9ad">'+(favSid||'∅')+'</b>'
+         + '&nbsp; activeStationId=<b style="color:#9ad">'+(activeSid||'∅')+'</b>'
+         + '&nbsp; source=<b style="color:#9ad">'+src+'</b>'
+         + '</div>'
+         + '<div style="font-size:16px;color:#cfd8dc;line-height:1.5">' + (tideCk.message || '') + '</div>'
+         + '<button onclick="m_wizardForceTideRefresh()" style="margin-top:14px;background:var(--org);color:#0a1929;border:none;padding:14px 22px;font-size:19px;font-weight:900;border-radius:10px;cursor:pointer">'
+         + ((lang==='en')?'↻ Update now':'↻ Actualizar ahora')
+         + '</button>'
+         + '</div>';
+    /* Rev677: cada tarjeta lleva un botón "Ver lo que da ahora" que consulta
+       ese motor concreto sin cambiar la config global. Útil para comparar
+       si NEAPS coincide con IHM o difiere. */
+    var sourceRow = function(icon, name, desc, tag, engineId){
+      var previewBtn = engineId
+        ? '<button onclick="m_wizardTidePreview(\''+engineId+'\')" style="margin-top:10px;background:rgba(154,170,204,.15);color:#9ad;border:1px solid rgba(154,170,204,.35);padding:10px 16px;font-size:16px;font-weight:800;border-radius:8px;cursor:pointer">'
+          + ((lang==='en')?'📊 Current data':'📊 Datos actuales')
+          + '</button>'
+        : '';
+      return '<div style="padding:14px 18px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.10);border-radius:12px;margin-bottom:10px">'
+           + '<div style="display:flex;align-items:center;gap:12px;font-size:22px;font-weight:800;color:#fff;flex-wrap:wrap">'
+           + '<span style="font-size:26px">'+icon+'</span><span>'+name+'</span>'
+           + (tag?'<span style="font-size:14px;color:#0a1929;background:'+tag.bg+';padding:4px 10px;border-radius:5px;font-weight:900">'+tag.text+'</span>':'')
+           + '</div>'
+           + '<div style="font-size:17px;color:#cfd8dc;margin-top:8px;line-height:1.5">'+desc+'</div>'
+           + previewBtn
+           + (engineId?'<div id="m-wiz-preview-'+engineId+'" style="margin-top:10px"></div>':'')
+           + '</div>';
+    };
+    /* Rev686 (feedback Carlos "en step debemos elegir modo. En Auto en Tides
+       debe salir solo override Estación. Manual para NEAPS/Open/IHM con un
+       buscador de ciudades"): selector real Auto/Manual + motor + buscador
+       de estación, replicable a TidesView. La UI del wizard AHORA cambia
+       estado backend (POST /api/manual) — ya no es sólo pasiva. */
+    html += '<div id="m-wiz-tides-picker" style="margin:24px 0"></div>';
+    html += '<div style="font-size:28px;color:#fff;font-weight:900;margin:24px 0 12px 0;line-height:1.15">'
+         + ((lang==='en')?'Data sources':'Fuentes de datos') + '</div>';
+    var badge = function(id){
+      var p = pv[id]; if (!p) return null;
+      if (p.active)    return {text:(lang==='en')?'ACTIVE':'ACTIVA',   bg:'#3aa856'};
+      if (p.available) return {text:(lang==='en')?'READY':'DISPONIBLE',bg:'#5b7'};
+      return {text:(lang==='en')?'N/A':'N/A', bg:'#666'};
+    };
+    html += sourceRow('🇪🇸', 'IHM ('+((lang==='en')?'Spain official':'España oficial')+')',
+      (lang==='en')?'Instituto Hidrográfico de la Marina. Highest accuracy on Spanish coastline. Downloads yearly coefficients as PDF.'
+                   :'Instituto Hidrográfico de la Marina. Máxima precisión en costa española. Descarga los coeficientes anuales del PDF oficial.',
+      badge('ihm'), 'ihm');
+    /* Rev674: tarjeta del plugin oficial signalk-tides. Si está publicando en
+       este server, se prefiere frente a NEAPS embebido — así el usuario
+       administra armónicos y estaciones desde un único plugin. */
+    html += sourceRow('🔗', 'signalk-tides ('+((lang==='en')?'official plugin':'plugin oficial')+')',
+      ((lang==='en')
+        ? 'The official SignalK plugin from openwatersio, which also embeds NEAPS. If installed and publishing on this server, we consume it via '
+        : 'El plugin SignalK oficial de openwatersio, que también embebe NEAPS. Si está instalado y publicando en este server, lo consumimos vía ')
+      + '<code>/signalk/v2/api/resources/tides</code>. '
+      + ((pv.sktides && !pv.sktides.available)
+          ? ((lang==='en')
+              ? 'Not installed yet — install <b>signalk-tides</b> from the SignalK Appstore to enable it.'
+              : 'Aún no instalado — instala <b>signalk-tides</b> desde el Appstore de SignalK para activarlo.')
+          : '')
+      + ' <a href="https://github.com/openwatersio/signalk-tides" target="_blank" style="color:#ffb23f;font-weight:700">github.com/openwatersio/signalk-tides ↗</a>',
+      badge('sktides'), (pv.sktides && pv.sktides.available) ? 'sktides' : null);
+    html += sourceRow('📡', 'NEAPS ('+((lang==='en')?'embedded':'embebido')+')',
+      ((lang==='en')
+        ? 'Harmonic-constants engine (~7600 stations: NOAA + TICON-4). Sub-minute time accuracy and millimetre-level height accuracy. Runs offline. Used automatically when IHM is > 300 km and signalk-tides is not installed.'
+        : 'Motor de constantes armónicas (~7600 estaciones: NOAA + TICON-4). Precisión sub-minuto en tiempo y milimétrica en altura. Funciona offline. Se usa automáticamente cuando IHM está a > 300 km y signalk-tides no está instalado.')
+      + ' <a href="https://github.com/openwatersio/neaps" target="_blank" style="color:#ffb23f;font-weight:700">github.com/openwatersio/neaps ↗</a>'
+      + '<br><br><span style="color:#ffb23f;font-size:15px">⚠ '
+      + ((lang==='en')
+        ? '<b>Vertical offset vs IHM (~10–30 cm):</b> NEAPS station datum (MLLW/LAT of the reference source) does not exactly match the IHM "port zero". Tide TIMES and RANGE match, but the absolute height reference can differ. Fix on the roadmap.'
+        : '<b>Offset vertical vs IHM (~10–30 cm):</b> el datum de la estación NEAPS (MLLW/LAT de la fuente original) no coincide exactamente con el "cero del puerto" de IHM. Las HORAS y el RANGO de la marea sí coinciden, pero la referencia absoluta puede diferir. Fix pendiente en el roadmap.')
+      + '</span>',
+      badge('neaps'), 'neaps');
+    html += sourceRow('🌐', 'Open-Meteo',
+      (lang==='en')?'Global tide model. Last-resort fallback. Public HTTPS API, no key needed.'
+                   :'Modelo global de marea. Fallback último. API HTTPS pública, sin clave.',
+      badge('openmeteo'), 'openmeteo');
+    /* Rev678 (feedback Carlos "Incluir mensaje que Otros Datos de mareas
+       oficiales y un botón que abra un correo electrónico de feedback"):
+       nota + CTA de feedback al mail dedicado del plugin. */
+    html += '<div style="margin-top:22px;padding:16px 20px;background:rgba(154,170,204,.08);border:1px solid rgba(154,170,204,.25);border-radius:12px;font-size:17px;color:#cfd8dc;line-height:1.55">'
+         + '📬 <b>' + ((lang==='en')?'Other official tide sources?':'¿Otros datos de mareas oficiales?')
+         + '</b><br>'
+         + ((lang==='en')
+             ? 'If you use another national official source (NOAA, SHOM, UKHO, IHO…) or you know one that should be added, tell us. Feedback with route, port and boat type is very welcome.'
+             : 'Si usas otra fuente oficial nacional (NOAA, SHOM, UKHO, IHO…) o conoces alguna que deberíamos añadir, cuéntanoslo. Todo feedback con ruta, puerto y tipo de barco nos ayuda a priorizar.')
+         + '<br><br>'
+         + '<a href="mailto:anchorwatchpro@gmail.com?subject=' + encodeURIComponent((lang==='en')?'AnchorWatch Pro — Tide sources feedback':'AnchorWatch Pro — Feedback fuentes de marea')
+         + '&body=' + encodeURIComponent((lang==='en')
+             ? 'Hi,\n\nI would like to suggest / report the following about the tide sources in AnchorWatch Pro:\n\n\n\n— Route / area:\n— Home port:\n— Boat type:\n\nThanks!'
+             : 'Hola,\n\nQuería sugerir / comentar lo siguiente sobre las fuentes de marea de AnchorWatch Pro:\n\n\n\n— Ruta / zona:\n— Puerto habitual:\n— Tipo de barco:\n\n¡Gracias!')
+         + '" style="display:inline-block;margin-top:8px;background:var(--org);color:#0a1929;padding:14px 22px;font-size:18px;font-weight:900;border-radius:10px;text-decoration:none">📧 '
+         + ((lang==='en')?'Send feedback':'Enviar feedback')
+         + '</a>'
+         + '</div>';
+    /* Bloque servidor SK y meteo */
+    html += '<div style="font-size:28px;color:#fff;font-weight:900;margin:24px 0 12px 0;line-height:1.15">'
+         + ((lang==='en')?'🖥️ SignalK server':'🖥️ Servidor SignalK') + '</div>';
+    html += '<div style="padding:14px 18px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.10);border-radius:12px;margin-bottom:10px;font-size:20px;color:#e0eaf0">'
+         + ((lang==='en')?'Weather data comes from Open-Meteo via this server:':'Los datos meteo llegan de Open-Meteo a través de este servidor:') + '<br>'
+         + '<span style="font-family:ui-monospace,Menlo,Consolas,monospace;color:#9ad;font-size:18px">'+skUrl+'</span>'
+         + '<br><span style="font-size:16px;color:#9ad">'
+         + (netCk.message ? '· ' + netCk.message : '')
+         + '</span></div>';
+    html += '</div>';
+    body.innerHTML = html;
+    /* Rev687: pintar el picker DESPUÉS de que el body ya esté en el DOM
+       (antes con setTimeout(0) a veces se disparaba antes de que existiera
+       el div). */
+    if (typeof m_wizardTidesRenderPicker === 'function') m_wizardTidesRenderPicker(pref, man);
+  });
+};
+/* Rev670 (feedback Carlos "en cartas offline dar información del tamaño que
+   ocupan y botón para abrir la carpeta en el explorador y no sé si ir al
+   plugin de SK que las alimenta"): mostramos tamaño por fichero + total,
+   botón para copiar ruta al portapapeles (el visor típico es Pi headless,
+   no hay explorador local; el user con SSH/samba usa la ruta), y link al
+   plugin oficial SK que registra las cartas raster/S57 en el server. */
+window.m_wizardStep_mbtiles = function(body){
+  var lang = _lang;
+  body.innerHTML = m_wizardBodyTitle() + '<div style="text-align:center;padding:40px 0;font-size:18px;opacity:.7">'
+    + ((lang==='en')?'🔎 Loading MBTiles…':'🔎 Cargando MBTiles…') + '</div>';
+  fetch(A+'/mbtiles',{cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+    .then(function(j){
+      j = j || {};
+      var dir = j.mbtilesDir || j.dir || '';
+      var files = Array.isArray(j.tilesets) ? j.tilesets : [];
+      var totalHuman = j.dirSizeHuman || '—';
+      var html = m_wizardBodyTitle();
+      html += '<div style="max-width:820px;margin:0 auto">';
+      html += '<div style="font-size:20px;color:#cfd8dc;line-height:1.55;margin-bottom:22px">'
+           + ((lang==='en')
+             ? 'Point to a folder containing your MBTiles files. The viewer will list them as extra layers you can enable from the layers panel.'
+             : 'Indica la carpeta con tus ficheros MBTiles. El visor los listará como capas extra que puedes activar desde el panel de capas.')
+           + '</div>';
+      html += '<label style="display:block;font-size:22px;font-weight:800;color:#fff;margin-bottom:6px">'
+           + ((lang==='en')?'MBTiles folder path':'Ruta de la carpeta MBTiles') + '</label>';
+      html += '<div style="display:flex;gap:12px;align-items:center;margin-bottom:10px;flex-wrap:wrap">'
+           + '<input id="m-wiz-mbt-path" type="text" value="'+(dir||'/home/pi/charts')+'" placeholder="/home/pi/charts" style="flex:1;min-width:200px;padding:14px 16px;font-size:20px;font-family:ui-monospace,Menlo,Consolas,monospace;background:rgba(0,0,0,.35);color:#fff;border:2px solid rgba(255,255,255,.20);border-radius:10px">'
+           + '<button onclick="m_wizardMbtSave()" style="background:var(--org);color:#0a1929;border:none;padding:14px 22px;font-size:19px;font-weight:900;border-radius:10px;cursor:pointer">'
+           + ((lang==='en')?'💾 Save & scan':'💾 Guardar y escanear')
+           + '</button>'
+           + '<button onclick="m_wizardMbtCopyPath()" style="background:rgba(255,255,255,.10);color:#fff;border:1px solid rgba(255,255,255,.25);padding:14px 20px;font-size:18px;font-weight:700;border-radius:10px;cursor:pointer">'
+           + ((lang==='en')?'📋 Copy path':'📋 Copiar ruta')
+           + '</button></div>';
+      html += '<div id="m-wiz-mbt-status" style="font-size:18px;font-weight:700;margin-bottom:14px"></div>';
+      /* Total del directorio */
+      html += '<div style="padding:14px 18px;background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.10);border-radius:10px;margin-bottom:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
+           + '<span style="font-size:24px">💾</span>'
+           + '<span style="font-size:20px;color:#cfd8dc">'+((lang==='en')?'Total folder size:':'Tamaño total de la carpeta:')+'</span>'
+           + '<span style="font-size:24px;font-weight:900;color:#fff;font-family:ui-monospace,Menlo,Consolas,monospace">'+totalHuman+'</span>'
+           + '</div>';
+      html += '<div style="font-size:22px;font-weight:800;color:#fff;margin-bottom:10px">'
+           + ((lang==='en')?'Files found ('+files.length+')':'Ficheros encontrados ('+files.length+')') + '</div>';
+      if (files.length){
+        html += '<div style="max-height:280px;overflow-y:auto;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.10);border-radius:10px;padding:12px">';
+        files.forEach(function(f){
+          var name = (typeof f==='string') ? f : (f.filename || f.name || f.id || '?');
+          var sz   = (f && f.sizeHuman) ? f.sizeHuman : '';
+          html += '<div style="padding:8px 12px;display:flex;justify-content:space-between;gap:12px;font-size:17px;color:#cfd8dc;font-family:ui-monospace,Menlo,Consolas,monospace;border-bottom:1px solid rgba(255,255,255,.06)">'
+               + '<span>📄 '+name+'</span>'
+               + '<span style="color:#9ad;white-space:nowrap">'+sz+'</span>'
+               + '</div>';
+        });
+        html += '</div>';
+      } else {
+        html += '<div style="padding:16px 20px;background:rgba(255,178,63,.10);border:1px solid rgba(255,178,63,.35);border-radius:10px;font-size:18px;color:#ffb23f">'
+             + ((lang==='en')?'No MBTiles files detected in this folder yet.':'Aún no hay ficheros MBTiles en esta carpeta.')
+             + '</div>';
+      }
+      /* Link al plugin SK charts que registra ENC/S57/raster (fuente
+         complementaria a las MBTiles del plugin). */
+      html += '<div style="margin-top:26px;padding:16px 20px;background:rgba(154,170,204,.10);border:1px solid rgba(154,170,204,.30);border-radius:10px">'
+           + '<div style="font-size:19px;color:#cfd8dc;line-height:1.5;margin-bottom:10px">'
+           + ((lang==='en')
+             ? 'For ENC / raster charts registered in the SignalK server (charts-plugin), open its own config:'
+             : 'Para cartas ENC / raster registradas en el servidor SignalK (charts-plugin), abre su configuración propia:')
+           + '</div>'
+           + '<a href="/admin/#/serverConfiguration/plugins/@signalk-charts-plugin" target="_blank" style="display:inline-block;background:rgba(255,255,255,.10);color:#ffb23f;border:1px solid rgba(255,178,63,.45);padding:12px 20px;font-size:18px;font-weight:800;border-radius:10px;text-decoration:none">'
+           + ((lang==='en')?'🗂️ SignalK charts plugin ↗':'🗂️ Plugin cartas de SignalK ↗')
+           + '</a></div>';
+      html += '</div>';
+      body.innerHTML = html;
+    });
+};
+window.m_wizardMbtCopyPath = function(){
+  var el = document.getElementById('m-wiz-mbt-path');
+  var st = document.getElementById('m-wiz-mbt-status');
+  if (!el) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(el.value).then(function(){
+        if (st){ st.textContent = '✓ '+((_lang==='en')?'Path copied':'Ruta copiada'); st.style.color = '#3aa856'; }
+      }, function(){
+        el.select();
+        try { document.execCommand('copy'); if(st){ st.textContent = '✓ '+((_lang==='en')?'Path copied':'Ruta copiada'); st.style.color = '#3aa856'; } } catch(_){}
+      });
+    } else {
+      el.select();
+      document.execCommand('copy');
+      if (st){ st.textContent = '✓ '+((_lang==='en')?'Path copied':'Ruta copiada'); st.style.color = '#3aa856'; }
+    }
+  } catch(_){}
+};
+window.m_wizardMbtSave = function(){
+  var dir = document.getElementById('m-wiz-mbt-path').value;
+  var st  = document.getElementById('m-wiz-mbt-status');
+  fetch(A+'/mbtiles/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mbtilesDir:dir})})
+    .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+    .then(function(j){
+      if (st){
+        st.textContent = (j && (j.ok===true || j.dir))
+          ? ((_lang==='en')?'✓ Saved. Rescanning…':'✓ Guardado. Reescaneando…')
+          : ((_lang==='en')?'✗ Failed':'✗ Falló');
+      }
+      setTimeout(function(){
+        var body = document.getElementById('m-wizard-body');
+        if (body && typeof m_wizardStep_mbtiles==='function') m_wizardStep_mbtiles(body);
+      }, 800);
+    });
+};
+/* Rev670 (feedback Carlos "decir el nombre del usuario y si no hubiera modal
+   de crear master"): step maestro con dos ramas:
+   - Con maestro: muestra el alias del maestro + botón "Gestionar usuarios"
+     para el CRUD completo (añadir invitados, cambiar PIN, etc).
+   - Sin maestro: formulario inline (alias + PIN + confirmar PIN) que crea el
+     usuario maestro directamente vía /access/pin-set (que acepta creación
+     de maestro sin cookie cuando la lista está vacía). */
+window.m_wizardStep_master = function(body){
+  var lang = _lang;
+  body.innerHTML = m_wizardBodyTitle() + '<div style="text-align:center;padding:40px 0;font-size:18px;opacity:.7">'
+    + ((lang==='en')?'🔎 Loading users…':'🔎 Cargando usuarios…') + '</div>';
+  fetch(A+'/access/pins',{cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+    .then(function(j){
+      var pins = Array.isArray(j) ? j : ((j && Array.isArray(j.pins)) ? j.pins : []);
+      var master = pins.filter(function(p){return p && (p.isMaster===true || p.level==='master');})[0];
+      var hasMaster = !!master;
+      var guests = pins.filter(function(p){return p && !(p.isMaster===true || p.level==='master');});
+      var html = m_wizardBodyTitle();
+      html += '<div style="max-width:820px;margin:0 auto">';
+      html += '<div style="font-size:20px;color:#cfd8dc;line-height:1.55;margin-bottom:22px">'
+           + ((lang==='en')
+             ? 'The master user administers PINs and reviews sessions. Guest users only use the app. This step is optional — you can enable multi-user control later.'
+             : 'El usuario maestro administra PINs y revisa sesiones. Los invitados solo usan la app. Este paso es opcional — puedes activar el control multi-usuario más tarde.')
+           + '</div>';
+      if (hasMaster){
+        html += '<div style="padding:18px 22px;background:rgba(58,168,86,.10);border:2px solid rgba(58,168,86,.45);border-radius:14px;margin-bottom:16px">'
+             + '<div style="font-size:22px;font-weight:800;color:#3aa856;margin-bottom:8px">'
+             + '✅ ' + ((lang==='en')?'Master user':'Usuario maestro')
+             + '</div>'
+             + '<div style="font-size:26px;color:#fff;font-weight:900;margin-bottom:6px">'+master.alias+'</div>'
+             + '<div style="font-size:17px;color:#cfd8dc">'
+             + ((lang==='en')?'Guests on file: ':'Invitados registrados: ') + '<b>'+guests.length+'</b>'
+             + '</div></div>';
+        html += '<button onclick="m_wizardMasterOpenManage()" style="background:var(--org);color:#0a1929;padding:16px 30px;font-size:20px;font-weight:900;border-radius:10px;border:none;cursor:pointer">'
+             + ((lang==='en')?'👥 Manage users':'👥 Gestionar usuarios')
+             + '</button>';
+      } else {
+        /* Sin maestro: form inline. */
+        html += '<div style="padding:18px 22px;background:rgba(255,178,63,.10);border:2px solid rgba(255,178,63,.45);border-radius:14px;margin-bottom:18px">'
+             + '<div style="font-size:22px;font-weight:800;color:#ffb23f;margin-bottom:8px">'
+             + '⚠ ' + ((lang==='en')?'No master user yet':'Aún no hay usuario maestro')
+             + '</div>'
+             + '<div style="font-size:17px;color:#cfd8dc;line-height:1.5">'
+             + ((lang==='en')
+               ? 'Create one to enable multi-user control. If you skip, the plugin runs without PIN protection — anyone with the app URL can change settings.'
+               : 'Crea uno para activar el control multi-usuario. Si lo saltas, el plugin funciona sin PIN — cualquiera con la URL de la app podrá cambiar los ajustes.')
+             + '</div></div>';
+        html += '<div style="margin-bottom:18px">'
+             + '<label for="m-wiz-mst-alias" style="display:block;font-size:22px;font-weight:800;color:#fff;margin-bottom:6px">'+((lang==='en')?'Master alias (name)':'Alias del maestro (nombre)')+'</label>'
+             + '<input id="m-wiz-mst-alias" type="text" maxlength="24" placeholder="'+((lang==='en')?'e.g. Carlos':'p.ej. Carlos')+'" style="width:100%;padding:14px 16px;font-size:22px;font-weight:700;background:rgba(0,0,0,.35);color:#fff;border:2px solid rgba(255,255,255,.20);border-radius:10px">'
+             + '</div>';
+        html += '<div style="margin-bottom:18px">'
+             + '<label for="m-wiz-mst-pin" style="display:block;font-size:22px;font-weight:800;color:#fff;margin-bottom:6px">'+((lang==='en')?'PIN (4–8 digits)':'PIN (4–8 dígitos)')+'</label>'
+             + '<input id="m-wiz-mst-pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" maxlength="8" style="width:100%;padding:14px 16px;font-size:22px;font-weight:700;background:rgba(0,0,0,.35);color:#fff;border:2px solid rgba(255,255,255,.20);border-radius:10px;font-family:ui-monospace,Menlo,Consolas,monospace">'
+             + '</div>';
+        html += '<div style="margin-bottom:22px">'
+             + '<label for="m-wiz-mst-pin2" style="display:block;font-size:22px;font-weight:800;color:#fff;margin-bottom:6px">'+((lang==='en')?'Confirm PIN':'Confirma el PIN')+'</label>'
+             + '<input id="m-wiz-mst-pin2" type="password" inputmode="numeric" pattern="[0-9]{4,8}" maxlength="8" style="width:100%;padding:14px 16px;font-size:22px;font-weight:700;background:rgba(0,0,0,.35);color:#fff;border:2px solid rgba(255,255,255,.20);border-radius:10px;font-family:ui-monospace,Menlo,Consolas,monospace">'
+             + '</div>';
+        html += '<div style="display:flex;gap:14px;align-items:center">'
+             + '<button onclick="m_wizardMasterCreate()" style="background:var(--org);color:#0a1929;padding:16px 30px;font-size:20px;font-weight:900;border-radius:10px;border:none;cursor:pointer">'
+             + ((lang==='en')?'👤 Create master':'👤 Crear maestro') + '</button>'
+             + '<span id="m-wiz-mst-status" style="font-size:18px;font-weight:700"></span>'
+             + '</div>';
+      }
+      html += '</div>';
+      body.innerHTML = html;
+    });
+};
+window.m_wizardMasterCreate = function(){
+  var alias = document.getElementById('m-wiz-mst-alias').value.trim();
+  var pin   = document.getElementById('m-wiz-mst-pin').value;
+  var pin2  = document.getElementById('m-wiz-mst-pin2').value;
+  var stEl  = document.getElementById('m-wiz-mst-status');
+  var setErr = function(msg){ if(stEl){ stEl.textContent = '✗ '+msg; stEl.style.color = '#e53935'; } };
+  var setOk  = function(msg){ if(stEl){ stEl.textContent = '✓ '+msg; stEl.style.color = '#3aa856'; } };
+  if (!alias){ setErr((_lang==='en')?'Alias required':'Alias obligatorio'); return; }
+  if (!/^\d{4,8}$/.test(pin)){ setErr((_lang==='en')?'PIN must be 4–8 digits':'El PIN debe ser 4–8 dígitos'); return; }
+  if (pin !== pin2){ setErr((_lang==='en')?'PINs do not match':'Los PINs no coinciden'); return; }
+  fetch(A+'/access/pin-set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pin, alias:alias})})
+    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+    .then(function(res){
+      if (res.ok && res.j && res.j.ok){
+        setOk((_lang==='en')?'Master created':'Maestro creado');
+        setTimeout(function(){
+          var bodyEl = document.getElementById('m-wizard-body');
+          if (bodyEl && typeof m_wizardStep_master==='function') m_wizardStep_master(bodyEl);
+        }, 600);
+      } else {
+        var e = (res.j && res.j.error) || 'error';
+        setErr(e);
+      }
+    })
+    .catch(function(){ setErr((_lang==='en')?'Network error':'Error de red'); });
+};
+window.m_wizardMasterOpenManage = function(){
+  /* Excepción: abre el modal de gestión de usuarios (bcrypt + validaciones
+     server-side). Se marca _mFromConfig igual que el asistente para que al
+     cerrar vuelva a Config. */
+  closePopup('m-wizard-pop');
+  setTimeout(function(){
+    if (typeof m_openUserControl==='function') m_openUserControl();
+  }, 60);
+};
+
+/* Rev659: parar el live timer al salir del step (evita polling en background). */
+/* Rev681 (feedback Carlos "no coordina wizard con TidesView"): al entrar en
+   el step tides arrancamos polling cada 5 s para que refleje cambios que el
+   user hace desde el selector de TidesView (u otra pestaña). Al salir del
+   step, paramos. */
+var _wizardTidesPollTimer = null;
+(function(){
+  var origRender = m_wizardRender;
+  window.m_wizardRender = function(){
+    var next = _wizardState && _wizardState.currentStepId;
+    if (_wizardImuLiveTimer && next !== 'imu'){
+      clearInterval(_wizardImuLiveTimer); _wizardImuLiveTimer = null;
+    }
+    if (_wizardTidesPollTimer && next !== 'tides'){
+      clearInterval(_wizardTidesPollTimer); _wizardTidesPollTimer = null;
+    }
+    var ret = origRender.apply(this, arguments);
+    if (next === 'tides' && !_wizardTidesPollTimer){
+      /* Rev683 (feedback Carlos "sigue haciendo refresh step... se borra la
+         ventana"): en lugar de re-renderear TODO el step cada tick (perdiendo
+         scroll, cierre de tablas preview, etc.), llamamos a un actualizador
+         parcial que sólo refresca el bloque de "Estado actual" — el bloque
+         "Motor por defecto" y las 4 tarjetas no se tocan. */
+      _wizardTidesPollTimer = setInterval(function(){
+        if (_wizardState && _wizardState.currentStepId==='tides'
+            && typeof m_wizardTidesRefreshStatus==='function'){
+          m_wizardTidesRefreshStatus();
+        }
+      }, 15000);
+    }
+    return ret;
+  };
+})();
+
+/* Rev660 (feedback Carlos "elimina lo de UTF, no tiene sentido"):
+   step locale eliminado del wizard. Se conserva en memoria solo como
+   contribuyente teórico; el sospechoso principal del bug IMU es
+   @signalk/set-system-time (ver diagnóstico y systemCheck). */
+window._deleted_m_wizardStep_locale = function(body){
+  body.innerHTML = '<div style="text-align:center;padding:40px 0;font-size:18px;opacity:.7">'
+    + ((_lang==='en')?'🔎 Checking system locale…':'🔎 Comprobando locale del sistema…')
+    + '</div>';
+  fetch(A+'/wizard/locale-check',{cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if (!j){ body.innerHTML = '<div style="color:var(--red)">Locale check failed</div>'; return; }
+      var currentIsUtf8 = j.current && /utf-?8/i.test(j.current);
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'max-width:800px;margin:0 auto';
+      /* Estado actual */
+      var stateRow = document.createElement('div');
+      /* Rev659 (feedback Carlos: "no te dejes liar por Pablo — no es panacea"):
+         suavizo la severidad. No-UTF-8 pasa a WARNING amarillo, no error rojo,
+         y el texto lo presenta como buena práctica + posible contribuyente,
+         no como causa raíz garantizada. */
+      stateRow.style.cssText = 'padding:20px;border-radius:14px;font-size:22px;font-weight:800;margin-bottom:22px;text-align:center;'
+        + (currentIsUtf8
+            ? 'background:rgba(58,168,86,.15);border:2px solid #3aa856;color:#3aa856'
+            : 'background:rgba(255,178,63,.15);border:2px solid #ffb23f;color:#ffb23f');
+      stateRow.innerHTML = (currentIsUtf8
+        ? ((_lang==='en')?'✅ UTF-8 locale is active':'✅ Locale UTF-8 activo')
+        : ((_lang==='en')?'⚠ Locale is not UTF-8':'⚠ El locale no es UTF-8'))
+        + '<div style="font-size:16px;font-weight:600;margin-top:6px;opacity:.85">'
+        + ((_lang==='en')?'LANG=':'LANG=') + (j.current || 'unset')
+        + '</div>';
+      wrap.appendChild(stateRow);
+      /* Explicación del problema */
+      var expl = document.createElement('div');
+      expl.style.cssText = 'font-size:17px;color:#cfd8dc;line-height:1.55;margin-bottom:22px';
+      if (currentIsUtf8){
+        expl.innerHTML = (_lang==='en')
+          ? 'Modern Linux best practice. You are set — no action needed.'
+          : 'Buena práctica en Linux moderno. Ya está bien — no hay que hacer nada.';
+      } else {
+        expl.innerHTML = (_lang==='en')
+          ? '<b>Not a hard error.</b> Many plugins work fine on non-UTF-8 locales. However, some users have reported IMU parsing artefacts on ISO-8859-1 (comma-vs-dot decimal separators). Switching to UTF-8 is recommended as a Linux best practice. If you already see phantom "strong" waves in port, the more likely culprit is the SignalK plugin <code style="background:#000;padding:2px 6px;border-radius:4px">@signalk/set-system-time</code> — check it in the diagnostic.'
+          : '<b>No es un error crítico.</b> Muchos plugins funcionan sin problema con locales no-UTF-8. Sin embargo, algunos usuarios han reportado artefactos de parseo del IMU en ISO-8859-1 (separador decimal coma vs punto). Cambiar a UTF-8 es recomendable como buena práctica de Linux. Si ya ves "olas fuertes" fantasma en puerto, el culpable más probable es el plugin de SignalK <code style="background:#000;padding:2px 6px;border-radius:4px">@signalk/set-system-time</code> — revísalo en el diagnóstico.';
+      }
+      wrap.appendChild(expl);
+      /* Fix box */
+      if (!currentIsUtf8){
+        var fixBox = document.createElement('div');
+        fixBox.style.cssText = 'padding:20px;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.15);border-radius:12px;margin-bottom:22px';
+        var fixTitle = (_lang==='en')?'How to fix (needs sudo)':'Cómo arreglarlo (requiere sudo)';
+        var rec = j.recommendation || (j.hasUtf8 ? 'es_ES.UTF-8' : 'C.UTF-8');
+        var hasUtf8Msg = j.hasUtf8
+          ? ((_lang==='en')?'✅ UTF-8 locale is already installed. Just activate it:':'✅ Un locale UTF-8 ya está instalado. Solo hay que activarlo:')
+          : ((_lang==='en')?'⚠ No UTF-8 locale is installed. Generate one first:':'⚠ No hay ningún locale UTF-8 instalado. Genéralo primero:');
+        fixBox.innerHTML = '<div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:10px">' + fixTitle + '</div>'
+          + '<div style="font-size:15px;color:#cfd8dc;margin-bottom:14px">' + hasUtf8Msg + '</div>'
+          + '<pre style="background:#000;color:#8f8;padding:12px 14px;border-radius:8px;font-size:15px;font-family:ui-monospace,Menlo,Consolas,monospace;overflow-x:auto;margin:0 0 12px 0;line-height:1.4">'
+          + (j.hasUtf8
+              ? ('sudo update-locale LANG=' + rec + '\nsudo systemctl restart signalk')
+              : ('sudo dpkg-reconfigure locales\n# select ' + rec + ' + set as default\nsudo systemctl restart signalk'))
+          + '</pre>'
+          + '<div style="font-size:14px;color:#9ad;opacity:.85">'
+          + ((_lang==='en')
+              ? 'After running these commands and restarting Signal K, re-launch the wizard from Settings to verify. Attitude bias should drop from 10-15° to &lt;0.5°.'
+              : 'Después de ejecutar estos comandos y reiniciar Signal K, relanza el wizard desde Configuración para verificarlo. El bias de attitude debe bajar de 10-15° a &lt;0.5°.')
+          + '</div>';
+        wrap.appendChild(fixBox);
+      }
+      /* Data guardada en el step. */
+      window._wizardStepData_locale = { currentLang: j.current, isUtf8: currentIsUtf8, hasUtf8: j.hasUtf8, recommendation: j.recommendation };
+      body.innerHTML = '';
+      body.appendChild(wrap);
+    })
+    .catch(function(){
+      body.innerHTML = '<div style="color:var(--red)">Error checking locale</div>';
+    });
+};
+
 function m_captureDiagnostic(){
   fetch(A+'/diagnostic',{cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
