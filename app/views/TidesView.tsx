@@ -953,7 +953,18 @@ const disableAlarm = async () => {
   const prevTime = fmtHHMMFromIso(typeof prevExtreme?.time === "string" ? prevExtreme.time : undefined);
   const nextHigh = sorted.find((e) => (e.type ?? "").toLowerCase() === "high" && new Date(e.time) > now);
   const nextLow = sorted.find((e) => (e.type ?? "").toLowerCase() === "low" && new Date(e.time) > now);
-  const heightNow = typeof snapshot?.heightNow === "number" ? snapshot.heightNow : approximateTideHeightAt(sorted, now) ?? 0;
+  // Rev699 (feedback Carlos "AHORA no sale y EN 10 min = –"): al cambiar de
+  // estación el snapshot.heightNow tarda 20 s en refrescarse — durante ese
+  // hueco pinta el heightNow de la estación ANTERIOR (p.ej. Vigo IHM 2.8 m)
+  // que cae fuera del rango Y de la nueva (Portland 0.17-0.87 m) → la línea
+  // AHORA queda fuera del SVG y los deltas contradicen tendency. Calculamos
+  // heightNow local prioritariamente con los extremes actuales, y solo
+  // usamos el snapshot si nuestro cálculo local no puede (extremes fuera de
+  // rango del ahora, muy poco frecuente).
+  const heightNowLocal = approximateTideHeightAt(sorted, now);
+  const heightNow = heightNowLocal != null
+    ? heightNowLocal
+    : (typeof snapshot?.heightNow === "number" ? snapshot.heightNow : 0);
 
   const stationIdForRef = manualOverride ? selectedStationId : activeStationId;
   const stationRefState = useStationRef(stationIdForRef);
@@ -1676,7 +1687,7 @@ const disableAlarm = async () => {
                     <li><strong>Anemometer (NMEA0183/NMEA2000):</strong> recommended. Enables the "Veleta" badge in the viewer and the real-time shelter-grade downgrade. Without it, you work only with weather forecast.</li>
                     <li><strong>AIS receiver (NMEA0183/NMEA2000):</strong> optional but very useful in busy bays. Enables AIS proximity watch and the intrusion alarm in your red circle.</li>
                     <li><strong>IMU / attitude sensor:</strong> optional. If you have pypilot, MacArthur HAT or a raw I2C IMU, enables on-board wave estimation (direction, period, apparent height) and the 24 h history. Without it, shelter relies only on forecast wind.</li>
-                    <li><strong>Internet connection (4G/WiFi):</strong> optional but recommended for weather forecast, Open-Meteo tides (outside IHM coverage) and internet AIS data. The plugin works offline with a local cache of 2+ months.</li>
+                    <li><strong>Internet connection (4G/WiFi):</strong> optional but recommended for weather forecast and internet AIS data. Tides are available worldwide even <em>offline</em> thanks to the embedded <strong>NEAPS</strong> harmonic-constants engine (~7 600 stations from NOAA + TICON-4), with IHM Spain as top priority in Spanish waters and Open-Meteo as last-resort fallback. The plugin also caches results locally for 2+ months.</li>
                   </ul>
                   <h4 style={{ margin: '12px 0 4px' }}>2.4 Audio</h4>
                   <p>The primary safety output is the boat's onboard computer (typically a Raspberry Pi). The backend picks the available output automatically in order: USB → analog → HDMI. On phones, tablets and other client devices, the alarm plays <strong>if</strong> the tab is open and the browser has authorised audio. A web application cannot guarantee sound when the device is silenced, in do-not-disturb mode, the tab is suspended or the browser blocks autoplay. Consider client-side audio <strong>complementary</strong>, not a substitute for the Pi audio.</p>

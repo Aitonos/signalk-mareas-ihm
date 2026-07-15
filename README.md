@@ -23,7 +23,7 @@ A single Signal K plugin that turns your boat computer into a serious **anchor w
 - 🌊 **On-board wave measurement** — 24 h history from your IMU (intensity, period, height by 5-minute bins).
 - 📊 **Anchoring calculator** — chain, scope, depth, swing prediction.
 - 🗺️ **Multi-layer chart viewer** — world bathymetry + Esri Satellite + IHM ENC S-52 + NOAA ENC (USA) + offline MBTiles + OpenStreetMap + OpenSeaMap + SK Charts integration, all with adjustable transparency.
-- 🌅 **Official IHM Spain tides** (>70 stations) + worldwide FES2014 fallback.
+- 🌅 **Multi-source worldwide tides** with automatic engine selection by proximity: IHM Spain official (>70 stations) → [`signalk-tides`](https://github.com/openwatersio/signalk-tides) if installed → **NEAPS** harmonic-constants engine embedded (~7600 stations NOAA + TICON-4) → Open-Meteo as last resort.
 - 🌤️ **Weather forecast** via Open-Meteo (ICON, GFS, ECMWF, Arome, GEM, JMA).
 - 🌀 **Built-in shortcuts** to Windy, Windregatta.com, KIP, SK Freeboard.
 - 📱 **Works on any screen** — from a phone in hand to the big bridge monitor. The viewer reorders itself and buttons stay the right size for finger-touch use.
@@ -76,8 +76,13 @@ Most anchor watch apps are paid, closed source, single-device and tied to a vend
 - **Real-time downgrade**: if the measured wind on the anemometer is higher than the forecast in an exposed sector, the grade is downgraded automatically.
 
 #### Tides
-- **Official IHM Spain predictions** for >70 stations with annual HAT/LAT and constituent coefficients.
-- **Worldwide fallback** via Open-Meteo / FES2014 (USA, UK, Australia, Japan, etc.).
+- **Automatic multi-source engine** chosen by proximity to the boat, with graceful fallback:
+  1. **IHM Spain official** (>70 harbours) — highest priority when within Spanish waters.
+  2. **[`signalk-tides`](https://github.com/openwatersio/signalk-tides)** — if the openwatersio plugin is installed we call it as a bridge, so its own datum and station catalogue win.
+  3. **NEAPS harmonic-constants engine** *(embedded, ~7 600 stations)* — [openwatersio/neaps](https://github.com/openwatersio/neaps) + `@neaps/tide-database` (NOAA ~3 400 US + TICON-4 ~4 200 worldwide). Sub-minute time resolution, mm-level height accuracy, all computed locally (no network needed). Extremes are rebased to LAT (Lowest Astronomical Tide) computed over 365 d so heights match the harbour's "zero" as published by IHM/NOAA.
+  4. **Open-Meteo global** (FES2014) — last-resort fallback when no NEAPS station is within 80 km.
+- **Setup wizard** with Auto / Manual mode picker and **city-search** station selector: type "Sydney" or "San Francisco" and the wizard geocodes it, finds the nearest predictable NEAPS station and shows the distance; if no station is within 100 km it offers Open-Meteo automatically.
+- **Manual station override** persists across restarts; the backend serves as the single source of truth.
 - **Interactive tide curve** with cursor, peaks and 2-month offline cache.
 - **No API key required** for any tide source.
 
@@ -208,7 +213,7 @@ Un único plugin de Signal K que convierte el ordenador del barco en un **gestor
 - 🌊 **Medición de olas a bordo** — historial 24 h desde el IMU (intensidad/período/altura por bin de 5 min).
 - 📊 **Calculadora de fondeo** — cadena, scope, sonda, predicción de borneo.
 - 🗺️ **Visor de cartas multicapa** — Batimetría mundial + Esri Satélite + IHM ENC S-52 + NOAA ENC (EE.UU.) + MBTiles offline + OpenStreetMap + OpenSeaMap + SK Charts, con transparencias ajustables.
-- 🌅 **Mareas oficiales IHM España** (>70 estaciones) + fallback global FES2014.
+- 🌅 **Mareas mundiales multi-fuente** con selección automática de motor por proximidad: IHM España oficial (>70 estaciones) → [`signalk-tides`](https://github.com/openwatersio/signalk-tides) si está instalado → motor de **NEAPS** por constantes armónicas embebido (~7600 estaciones NOAA + TICON-4) → Open-Meteo como último recurso.
 - 🌤️ **Previsión meteo** Open-Meteo (ICON, GFS, ECMWF, Arome, GEM, JMA).
 - 🌀 **Atajos integrados** a Windy, Windregatta.com, KIP, SK Freeboard.
 - 📱 **Versátil en cualquier pantalla** — desde el móvil en mano hasta el monitor grande del puente. El visor se reordena solo y los botones se mantienen del tamaño adecuado para tocar sin equivocarte.
@@ -261,8 +266,13 @@ La mayoría de apps de anchor watch son de pago, código cerrado, un solo dispos
 - **Degradación en tiempo real**: si el viento medido por la veleta es mayor que el previsto en un sector expuesto, el grado baja automáticamente.
 
 #### Mareas
-- **Predicciones oficiales IHM España** para >70 estaciones con HAT/LAT anual y coeficientes de constituyentes.
-- **Fallback mundial** vía Open-Meteo / FES2014 (USA, UK, Australia, Japón, etc.).
+- **Motor multi-fuente automático** elegido por proximidad al barco, con degradado limpio:
+  1. **IHM España oficial** (>70 puertos) — máxima prioridad dentro de aguas españolas.
+  2. **[`signalk-tides`](https://github.com/openwatersio/signalk-tides)** — si el plugin de openwatersio está instalado lo llamamos como puente, respetando su datum y su catálogo de estaciones.
+  3. **Motor NEAPS por constantes armónicas** *(embebido, ~7 600 estaciones)* — [openwatersio/neaps](https://github.com/openwatersio/neaps) + `@neaps/tide-database` (NOAA ~3 400 EE.UU. + TICON-4 ~4 200 mundiales). Resolución sub-minuto en tiempo, precisión milimétrica en altura, todo local (sin red). Los extremos se referencian al LAT (Lowest Astronomical Tide) calculado sobre 365 d, así las alturas coinciden con el "cero" del puerto que publica IHM/NOAA.
+  4. **Open-Meteo global** (FES2014) — último recurso cuando no hay estación NEAPS a menos de 80 km.
+- **Wizard de configuración** con selector Auto/Manual y **búsqueda por ciudad** para la estación: escribe "Sídney" o "San Francisco" y el asistente geocodifica, busca la estación NEAPS predecible más cercana y muestra la distancia; si ninguna está a menos de 100 km ofrece Open-Meteo automáticamente.
+- **Override manual de estación** persistente entre reinicios; el backend es la fuente de verdad.
 - **Curva de marea interactiva** con cursor, picos y caché offline de 2 meses.
 - **Sin API key** para ninguna fuente de mareas.
 

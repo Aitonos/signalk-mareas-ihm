@@ -28,6 +28,19 @@ interface SignalKApp { debug?: (msg: string) => void; error?: (msg: string) => v
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 h
 const FORECAST_DAYS = 7;
 
+// Rev715 (feedback Carlos "arregla el tema offset de marea NEAPS versus
+// IHM"): el offset previo (-minLevel + 0.05 sobre una ventana de 7 días)
+// hace que la bajamar mínima *de la semana* quede a 5 cm — pero durante
+// mareas muertas esa bajamar semanal está muy por encima del LAT real
+// (Lowest Astronomical Tide). Resultado: NEAPS pinta ~30-60 cm por
+// debajo de IHM. Fix: calcular el offset con una ventana amplia (365 d)
+// para capturar la bajamar astronómica real, cachearlo por estación
+// (~30 d), y ya no añadir "+0.05" — 0 = LAT real, coherente con el cero
+// del puerto de IHM.
+const LAT_WINDOW_DAYS = 365;
+const LAT_OFFSET_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const LAT_START_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+
 // Máxima distancia (km) entre el barco y la estación NEAPS más cercana
 // para considerarla utilizable. Más allá el modelo pierde precisión
 // (constantes de una zona no aplican a otra).
@@ -48,13 +61,59 @@ interface CachedNeaps {
 function cacheKey(lat: number, lon: number): string {
   const rl = Math.round(lat * 10) / 10;
   const rg = Math.round(lon * 10) / 10;
-  return `neaps-tides-v1:${rl.toFixed(1)}:${rg.toFixed(1)}`;
+  // Rev715: bump a v2 para invalidar cache antiguo (offset LAT roto).
+  return `neaps-tides-v2:${rl.toFixed(1)}:${rg.toFixed(1)}`;
 }
 
 function isStale(fetchedAt: string): boolean {
   const t = Date.parse(fetchedAt);
   if (isNaN(t)) return true;
   return Date.now() - t > CACHE_TTL_MS;
+}
+
+/**
+ * Rev715: calcula (y cachea 30 días) el offset LAT (Lowest Astronomical
+ * Tide) de una estación NEAPS a partir de una ventana de 365 días. Este
+ * offset se suma a `level` para que el mínimo astronómico caiga en 0.00 m,
+ * coherente con el cero hidrográfico del puerto que publica IHM.
+ *
+ * Robustecido: si el cálculo de 365 d falla, cae a la ventana pequeña
+ * ya calculada (5 cm sobre bajamar de la ventana) — never worse.
+ */
+async function computeStationLatOffset(
+  app: SignalKApp,
+  cache: FileCache,
+  station: any,
+): Promise<number> {
+  const stationId = String(station?.id ?? "");
+  if (!stationId) return 0;
+  const safeSuffix = stationId.replace(/[^a-z0-9_.-]/gi, "_");
+  const key = `neaps-lat-offset-v1_${safeSuffix}`;
+  const cached = (await cache.get(key)) as { offset: number; fetchedAt: string } | undefined;
+  if (cached && typeof cached.offset === "number" && cached.fetchedAt) {
+    const age = Date.now() - Date.parse(cached.fetchedAt);
+    if (Number.isFinite(age) && age < LAT_OFFSET_TTL_MS) {
+      return cached.offset;
+    }
+  }
+  const start = new Date(Date.now() - LAT_START_LOOKBACK_MS);
+  const end = new Date(start.getTime() + LAT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  try {
+    const pred: any = station.getExtremesPrediction({ start, end, units: "meters" });
+    const raw: any[] = Array.isArray(pred?.extremes) ? pred.extremes : [];
+    const lows: number[] = raw
+      .map(e => Number(e?.level))
+      .filter(v => Number.isFinite(v));
+    if (lows.length < 4) return 0;
+    const minLevel = Math.min(...lows);
+    const offset = -minLevel;
+    await cache.set(key, { offset, fetchedAt: new Date().toISOString() });
+    app.debug?.(`[NEAPS] LAT offset estación ${stationId} = ${offset.toFixed(3)} m (min 365d = ${minLevel.toFixed(3)})`);
+    return offset;
+  } catch (e: any) {
+    app.debug?.(`[NEAPS] LAT offset falló para ${stationId}: ${e?.message ?? e}`);
+    return 0;
+  }
 }
 
 /**
@@ -102,14 +161,12 @@ export async function neapsTideForecast(
       end,
       units: "meters",
     });
-    // Rebase a "cero del puerto" (Lowest Astronomical Tide aproximado a la
-    // ventana pronosticada). Coherente con lo que hace openmeteo-tides.
+    // Rebase a "cero del puerto" ≈ LAT (Lowest Astronomical Tide). Rev715:
+    // el offset se calcula sobre 365 d (no sobre los 7 d del forecast) para
+    // capturar la bajamar astronómica REAL y coincidir con el cero del
+    // puerto de IHM. Cacheado por estación.
+    const offsetToZero = await computeStationLatOffset(app, cache, station);
     const rawExtremes = Array.isArray(prediction.extremes) ? prediction.extremes : [];
-    const finiteLevels = rawExtremes
-      .map(e => e.level)
-      .filter((v: any) => Number.isFinite(v)) as number[];
-    const minLevel = finiteLevels.length > 0 ? Math.min(...finiteLevels) : 0;
-    const offsetToZero = -minLevel + 0.05; // 5 cm sobre la bajamar mínima
     const extremes: TideExtreme[] = rawExtremes
       .filter(e => e && e.time instanceof Date && Number.isFinite(e.level))
       .map(e => ({
@@ -179,7 +236,8 @@ export async function neapsTideForecastByStationId(
   // no existe → ENOENT → devuelve null → fallback nearest → Vigo.
   // Sanitizamos: reemplazamos cualquier carácter no seguro por "_".
   const safeSuffix = cleanId.replace(/[^a-z0-9_.-]/gi, "_");
-  const key = `neaps-tides-byid-v1_${safeSuffix}`;
+  // Rev715: bump a v2 para invalidar cache antiguo (offset LAT roto).
+  const key = `neaps-tides-byid-v2_${safeSuffix}`;
   const cached = (await cache.get(key)) as CachedNeaps | undefined;
   if (cached && !isStale(cached.fetchedAt) && Array.isArray(cached.extremes)) {
     app.debug?.(`[NEAPS-byId] cache hit — ${cached.stationName} (${cached.extremes.length} extremes)`);
@@ -210,9 +268,8 @@ export async function neapsTideForecastByStationId(
     }
     const rawExtremes = Array.isArray(prediction?.extremes) ? prediction.extremes : [];
     app.debug?.(`[NEAPS-byId] rawExtremes.length=${rawExtremes.length}`);
-    const finiteLevels = rawExtremes.map((e: any) => e.level).filter((v: any) => Number.isFinite(v)) as number[];
-    const minLevel = finiteLevels.length > 0 ? Math.min(...finiteLevels) : 0;
-    const offsetToZero = -minLevel + 0.05;
+    // Rev715: rebase LAT sobre 365 d (ver computeStationLatOffset).
+    const offsetToZero = await computeStationLatOffset(app, cache, station);
     const extremes: TideExtreme[] = rawExtremes
       .filter((e: any) => e && e.time instanceof Date && Number.isFinite(e.level))
       .map((e: any) => ({

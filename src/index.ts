@@ -112,7 +112,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev697";
+const PLUGIN_REVISION = "Rev718";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -641,6 +641,179 @@ function pickDescriptions(lang: UiLang): Record<string, string> {
 
 function registerPublishedPath(p: unknown) {
   if (typeof p === "string" && p.length) PUBLISHED_PATHS.add(p);
+}
+
+// ── Rev702 (feedback Carlos "hay que poner una seccion dentro para elegir
+// los deltas que publicamos en Signal K, marcando los imprescindibles y los
+// opcionales. Revisa cuales son redundantes o no tienen sentido, hemos
+// generado demasiado trafico") ──
+// Catálogo canónico de paths SK:
+//   tier=required  → obligatorio, sin toggle. Sin él el widget se rompe.
+//   tier=optional  → ON por defecto, el user lo apaga si genera ruido.
+//   tier=regional  → OFF por defecto salvo detección geográfica (Rías Baixas).
+//   tier=deprecated→ eliminado del código, se lista solo para migración de UI.
+// group  → para agrupar en la sección del asistente.
+type SkPathTier = "required" | "optional" | "regional" | "deprecated";
+interface SkPathSpec { tier: SkPathTier; group: string; }
+const SK_PATH_CATALOG: Record<string, SkPathSpec> = {
+  // ── mareas base (todo required)
+  "environment.tide.heightNow":         { tier: "required", group: "tides" },
+  "environment.tide.tendency":          { tier: "required", group: "tides" },
+  "environment.tide.stationName":       { tier: "required", group: "tides" },
+  "environment.tide.stationId":         { tier: "required", group: "tides" },
+  "environment.tide.heightNextHigh":    { tier: "required", group: "tides" },
+  "environment.tide.timeNextHigh":      { tier: "required", group: "tides" },
+  "environment.tide.heightNextLow":     { tier: "required", group: "tides" },
+  "environment.tide.timeNextLow":       { tier: "required", group: "tides" },
+  "environment.tide.heightLastHigh":    { tier: "required", group: "tides" },
+  "environment.tide.timeLastHigh":      { tier: "required", group: "tides" },
+  "environment.tide.heightLastLow":     { tier: "required", group: "tides" },
+  "environment.tide.timeLastLow":       { tier: "required", group: "tides" },
+  "environment.tide.coef":              { tier: "required", group: "tides" },
+  // ── mareas extras (optional)
+  "environment.tide.percentage":        { tier: "optional", group: "tides" },
+  "environment.tide.pluginVersion":     { tier: "optional", group: "tides" },
+  // ── corriente derivada
+  "environment.tide.flow.strength":         { tier: "optional", group: "flow" },
+  "environment.tide.flow.direction":        { tier: "optional", group: "flow" },
+  "environment.tide.flow.intensity":        { tier: "optional", group: "flow" },
+  "environment.tide.flow.ratio":            { tier: "optional", group: "flow" },
+  "environment.tide.flow.strengthModifier": { tier: "optional", group: "flow" },
+  // ── calado/varada
+  "environment.tide.vessel.draft":                 { tier: "optional", group: "grounding" },
+  "environment.tide.vessel.draftUsed":             { tier: "optional", group: "grounding" },
+  "environment.tide.vessel.draftSafetyMarginUsed": { tier: "optional", group: "grounding" },
+  "environment.tide.vessel.draftBase":             { tier: "optional", group: "grounding" },
+  "environment.tide.vessel.draftEffective":        { tier: "optional", group: "grounding" },
+  "environment.tide.vessel.groundingRisk":         { tier: "optional", group: "grounding" },
+  "environment.tide.vessel.groundingStatus":       { tier: "required", group: "grounding" },
+  "environment.tide.vessel.groundingAlarm":        { tier: "required", group: "grounding" },
+  "environment.tide.vessel.BKeelFreeWater":        { tier: "optional", group: "grounding" },
+  "environment.tide.vessel.finalExpctDepthBKeel":  { tier: "optional", group: "grounding" },
+  // ── fondeo required (alarma garreo)
+  "environment.anchor.mareasIhm.watchEnabled":     { tier: "required", group: "anchor" },
+  "environment.anchor.mareasIhm.dragging":         { tier: "required", group: "anchor" },
+  "environment.anchor.mareasIhm.distanceToAnchor": { tier: "required", group: "anchor" },
+  "environment.anchor.mareasIhm.alarmRadius":      { tier: "required", group: "anchor" },
+  "environment.anchor.mareasIhm.anchorLat":        { tier: "required", group: "anchor" },
+  "environment.anchor.mareasIhm.anchorLon":        { tier: "required", group: "anchor" },
+  "environment.anchor.mareasIhm.anchoredSince":    { tier: "required", group: "anchor" },
+  // ── fondeo optional (radios ocupación, geometría)
+  "environment.anchor.mareasIhm.chain":                        { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.radiusBowNow":                 { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.radiusTotalNow":               { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.radiusBowMaxInWindow":         { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.radiusTotalMaxInWindow":       { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.radiusIncreaseInWindow":       { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.radiusMaxTime":                { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.anchor.ScopeResume":           { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.LOA":                          { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.bowHeight":                    { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.chainLength":                  { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.depthBelowSurface":            { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.draftUsed":                    { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.lookaheadHours":               { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.verticalNow":                  { tier: "optional", group: "anchor" },
+  "environment.anchor.ScopeUsed":                              { tier: "optional", group: "anchor" },
+  // ── AIS + commands PUT (para KIP/domótica)
+  "environment.anchor.mareasIhm.aisAlarmEnabled":  { tier: "optional", group: "ais-commands" },
+  "environment.anchor.mareasIhm.aisAlarmStatus":   { tier: "optional", group: "ais-commands" },
+  "environment.anchor.mareasIhm.anchorCommand":    { tier: "optional", group: "ais-commands" },
+  "environment.anchor.mareasIhm.garreoAlarmCommand": { tier: "optional", group: "ais-commands" },
+  "environment.anchor.mareasIhm.aisAlarmCommand":  { tier: "optional", group: "ais-commands" },
+  // ── meteo / oleaje / abrigo (bloque completo opcional)
+  "environment.weather.mareasIhm.forecast24h":      { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.pressureHpa":      { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.pressureTrend3hHpa": { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.tempC":            { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.wind.speedKt":     { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.wind.gustKt":      { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.wind.dirDeg":      { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.wave.heightM":     { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.wave.periodSec":   { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.wave.dirDeg":      { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.swell.heightM":    { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.swell.periodSec":  { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.swell.dirDeg":     { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.shelter":          { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.shelter.grade":    { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.shelter.configured":     { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.shelter.exposedHourCount": { tier: "optional", group: "weather" },
+  "environment.weather.mareasIhm.shelter.worstExposureKt":  { tier: "optional", group: "weather" },
+  // ── regional (Rías Baixas — OFF por defecto; ON solo dentro del polígono)
+  "environment.tide.navegacionRiasbaixas": { tier: "regional", group: "rias-baixas" },
+  "environment.tide.tacticRbaixas":        { tier: "regional", group: "rias-baixas" },
+  "environment.tide.tacticadviceRbaixas":  { tier: "regional", group: "rias-baixas" },
+  // ── horario oficial
+  "environment.time.season":         { tier: "optional", group: "time" },
+  "environment.time.utcOffsetHours": { tier: "optional", group: "time" },
+  // ── Rev703: paths que Rev702 se dejó fuera del catálogo → todos salían
+  // publicándose siempre (no había forma de filtrarlos).
+  //
+  // Depth/tide derivados de fondeo
+  "environment.depth.belowKeelExpectedAtLW":  { tier: "optional", group: "grounding" },
+  "environment.tide.expectedDropToLW":        { tier: "optional", group: "grounding" },
+  // Wave engine IMU (~15 paths). Los KPI principales van required; el resto
+  // (debug, disclaimers, motionRms, rejectionReason…) van optional para
+  // permitir apagar el ruido.
+  "environment.outside.waves.estimate.status":                { tier: "required", group: "waves" },
+  "environment.outside.waves.estimate.algorithm":             { tier: "optional", group: "waves" },
+  "environment.outside.waves.estimate.confidence":            { tier: "required", group: "waves" },
+  "environment.outside.waves.estimate.confidenceDirection":   { tier: "optional", group: "waves" },
+  "environment.outside.waves.estimate.confidencePeriodTrue":  { tier: "optional", group: "waves" },
+  "environment.outside.waves.estimate.directionTrue":         { tier: "required", group: "waves" },
+  "environment.outside.waves.estimate.disclaimer":            { tier: "optional", group: "waves" },
+  "environment.outside.waves.estimate.dopplerReason":         { tier: "optional", group: "waves" },
+  "environment.outside.waves.estimate.motionBand":            { tier: "optional", group: "waves" },
+  "environment.outside.waves.estimate.motionRmsDeg":          { tier: "optional", group: "waves" },
+  "environment.outside.waves.estimate.periodEncountered":     { tier: "optional", group: "waves" },
+  "environment.outside.waves.estimate.periodTrue":            { tier: "required", group: "waves" },
+  "environment.outside.waves.estimate.rejectionReason":       { tier: "optional", group: "waves" },
+  "environment.outside.waves.estimate.relativeAxis":          { tier: "optional", group: "waves" },
+  "environment.outside.waves.estimate.relativeAxisAmbiguous": { tier: "optional", group: "waves" },
+  "environment.outside.waves.estimate.heightM":               { tier: "required", group: "waves" },
+  "environment.outside.waves.estimate.samples":               { tier: "optional", group: "waves" },
+  // IMU raw (bridge Pypilot → SK). Optional — muchos usuarios no los
+  // necesitan y saturan el bus. Los widgets de olas no dependen de ellos.
+  "navigation.acceleration": { tier: "optional", group: "imu" },
+  "navigation.gyro":         { tier: "optional", group: "imu" },
+  "navigation.attitude":     { tier: "optional", group: "imu" },
+  // ── DEPRECATED (Rev702): sin publicación. Mantenidos aquí para que la
+  // UI del asistente pueda mostrarlos tachados si el user tiene toggles
+  // persistidos de sesiones antiguas.
+  "environment.anchor.mareasIhm.swingRadiusNow": { tier: "deprecated", group: "deprecated" },
+  "environment.anchor.mareasIhm.swingRadiusMax": { tier: "deprecated", group: "deprecated" },
+  "environment.tide.pluginIteration":            { tier: "deprecated", group: "deprecated" },
+  "environment.tide.tendencypercentage":         { tier: "deprecated", group: "deprecated" },
+  "environment.tide.resume":                     { tier: "deprecated", group: "deprecated" },
+  "environment.tide.finalExpctDepthBKeelResume": { tier: "deprecated", group: "deprecated" },
+  "environment.tide.coefLocal":                  { tier: "deprecated", group: "deprecated" },
+  "environment.tide.coefSigned":                 { tier: "deprecated", group: "deprecated" },
+  "environment.tide.amplitudeCoefficient":       { tier: "deprecated", group: "deprecated" },
+};
+
+// Cache in-memory de la config del user (path → enabled). null hasta primer
+// GET. `isPathPublishAllowed(path)` es el gatekeeper: los required van
+// siempre, los deprecated nunca, y el resto respeta el toggle del user.
+let _skPathsConfigCache: Record<string, boolean> | null = null;
+async function _loadSkPathsConfig(cache: any): Promise<Record<string, boolean>> {
+  if (_skPathsConfigCache) return _skPathsConfigCache;
+  try {
+    const stored = await cache.get("skPathsConfig");
+    _skPathsConfigCache = (stored && typeof stored === "object") ? { ...stored } as Record<string, boolean> : {};
+  } catch { _skPathsConfigCache = {}; }
+  return _skPathsConfigCache ?? {};
+}
+function isPathPublishAllowed(path: string): boolean {
+  const spec = SK_PATH_CATALOG[path];
+  if (!spec) return true; // path no catalogado → publicar (compat)
+  if (spec.tier === "required")   return true;
+  if (spec.tier === "deprecated") return false;
+  if (_skPathsConfigCache && Object.prototype.hasOwnProperty.call(_skPathsConfigCache, path)) {
+    return !!_skPathsConfigCache[path];
+  }
+  // Default: regional → OFF; optional → ON.
+  return spec.tier === "optional";
 }
 
 // Polígono Rías Baixas (aproximado)
@@ -1603,6 +1776,46 @@ export default function (app: SignalKApp): Plugin {
       if (!_mo && _pref !== "auto") {
         app.debug(`[STARTUP] pref residual "${_pref}" con manualOverride=false → reset a "auto"`);
         await ihmCache.set("tideEnginePreference", "auto");
+      }
+      // Rev702: precarga de la config de paths para que `isPathPublishAllowed`
+      // tenga los toggles del user antes del primer updateTides.
+      await _loadSkPathsConfig(ihmCache);
+      // Rev703 (feedback Carlos "son 84 paths y aunque seleccione o
+      // deseleccione siguen igual"): el filtro Rev702 sólo aplicaba en el
+      // handleMessage de updateTides. Hay 40+ handleMessage repartidos por
+      // el código (fondeo, alarmas, IMU bridge, notifs, weather advisory,
+      // etc.). Envolvemos el handleMessage nativo UNA VEZ aquí para que
+      // TODOS los deltas pasen por isPathPublishAllowed antes de salir a
+      // SK — sin tener que tocar 40 sitios. Las notifications (paths que
+      // empiezan por "notifications.") NO se filtran nunca: son alertas
+      // críticas para el user.
+      if (!(app as any)._ihmHandleMessageWrapped) {
+        const _origHandle = (app as any).handleMessage.bind(app);
+        (app as any)._ihmOrigHandleMessage = _origHandle; // Rev704: expuesto para publicar null-values
+        (app as any).handleMessage = function(pluginId: any, delta: any) {
+          try {
+            if (delta && Array.isArray(delta.updates)) {
+              let anyKept = false;
+              for (const u of delta.updates) {
+                if (Array.isArray(u.values)) {
+                  u.values = u.values.filter((v: any) => {
+                    const p = String(v?.path ?? "");
+                    if (p.startsWith("notifications.")) return true;
+                    return isPathPublishAllowed(p);
+                  });
+                  if (u.values.length > 0) anyKept = true;
+                } else {
+                  anyKept = true; // update sin values (meta, etc.) → dejarlo
+                }
+              }
+              // Si todos los updates quedaron vacíos, omitir la llamada.
+              if (!anyKept) return;
+            }
+          } catch { /* si algo raro pasa, dejar pasar sin filtrar (fail-open) */ }
+          return _origHandle(pluginId, delta);
+        };
+        (app as any)._ihmHandleMessageWrapped = true;
+        app.debug("[SKPATHS] handleMessage wrapped — filter active for all deltas");
       }
     } catch {
       // ignore
@@ -2695,14 +2908,36 @@ try {
       check("gps",          "GPS position",           "navigation.position");
       check("sog",          "Speed over Ground",      "navigation.speedOverGround");
       check("heading",      "Heading",                "navigation.headingTrue");
+      check("headingMag",   "Magnetic heading",       "navigation.headingMagnetic", 30_000);
+      check("stw",          "Speed through water",    "navigation.speedThroughWater", 30_000);
       check("depth",        "Depth (below keel)",     "environment.depth.belowKeel");
       check("windDir",      "Wind direction (true)",  "environment.wind.directionTrue");
       check("windSpeed",    "Wind speed (apparent)",  "environment.wind.speedApparent");
       check("pressure",     "Barometric pressure",    "environment.outside.pressure");
       check("waterTemp",    "Water temperature",      "environment.water.temperature", 60_000);
+      // Rev714 (feedback Carlos "echo en falta temperatura del aire, señal
+      // AIS, revisa si alguno más"): añadidos temperatura del aire,
+      // humedad, rumbo magnético, corredera y AIS.
+      check("airTemp",      "Air temperature",        "environment.outside.temperature", 60_000);
+      check("humidity",     "Air humidity",           "environment.outside.humidity", 60_000);
       check("attitude",     "IMU attitude",           "navigation.attitude");
       check("gpsSats",      "GPS satellites",         "navigation.gnss.satellites", 60_000);
       check("gpsHDOP",      "GPS HDOP (precision)",   "navigation.gnss.horizontalDilution", 60_000);
+      // AIS: no es un self-path — miramos la base local de MMSI conocidos
+      // que el plugin mantiene. 0 = sin feed AIS operativo; >0 = feed OK.
+      try {
+        const aisTargets = _aisKnownDB ? Object.keys(_aisKnownDB).length : 0;
+        sensors.push({
+          id: "ais",
+          label: "AIS targets",
+          path: "vessels.* (AIS feed)",
+          status: aisTargets > 0 ? "ok" : "missing",
+          sample: aisTargets,
+          ageMs: aisTargets > 0 ? 0 : null,
+        });
+      } catch {
+        sensors.push({ id: "ais", label: "AIS targets", path: "vessels.* (AIS feed)", status: "missing", sample: 0, ageMs: null });
+      }
       res.json({ sensors });
     });
 
@@ -2720,7 +2955,7 @@ try {
         completedAtIso: st.completedAtIso,
       });
     });
-    expressApp.post("/signalk-mareas-ihm/api/wizard/step", async (req: any, res: any) => {
+    expressApp.post("/signalk-mareas-ihm/api/wizard/step", requireControlAccess, async (req: any, res: any) => {
       res.set("Cache-Control", "no-store");
       try {
         const body = req.body || {};
@@ -2757,7 +2992,7 @@ try {
         res.status(500).json({ error: String(e?.message || e) });
       }
     });
-    expressApp.post("/signalk-mareas-ihm/api/wizard/finish", async (_req: any, res: any) => {
+    expressApp.post("/signalk-mareas-ihm/api/wizard/finish", requireControlAccess, async (_req: any, res: any) => {
       res.set("Cache-Control", "no-store");
       try {
         const st = await _getWizardState();
@@ -2770,7 +3005,7 @@ try {
         res.status(500).json({ error: String(e?.message || e) });
       }
     });
-    expressApp.post("/signalk-mareas-ihm/api/wizard/restart", async (_req: any, res: any) => {
+    expressApp.post("/signalk-mareas-ihm/api/wizard/restart", requireControlAccess, async (_req: any, res: any) => {
       res.set("Cache-Control", "no-store");
       try {
         const fresh = {
@@ -2792,7 +3027,7 @@ try {
     // Rev655 (Sprint I-1 opción B): fuerza un fetch del forecast de marea.
     // Usa el mismo provider (IHM u Open-Meteo según la estación seleccionada
     // y el modo — no hardcodeamos fuente). Devuelve estado + count.
-    expressApp.post("/signalk-mareas-ihm/api/tide/force-refresh", async (_req: any, res: any) => {
+    expressApp.post("/signalk-mareas-ihm/api/tide/force-refresh", requireControlAccess, async (_req: any, res: any) => {
       res.set("Cache-Control", "no-store");
       const t0 = Date.now();
       const r = await _doTideFetch(true);
@@ -3108,6 +3343,17 @@ try {
         }
         if (engine === "neaps") {
           const mod = await import("@neaps/tide-database");
+          // Rev700 (feedback Carlos "he probado con Noirmoutier y falla"):
+          // @neaps/tide-database expone estaciones (like Herbaudière
+          // "_60minute_..._cmems") que `near()`/`search()` devuelven pero
+          // `neaps.findStation()` NO puede resolver porque no tienen
+          // constituyentes armónicos calculables. Filtramos aquí para que
+          // el picker solo ofrezca estaciones que van a funcionar de verdad.
+          const neapsRuntime = await import("neaps");
+          const isPredictable = (sid: string): boolean => {
+            try { return !!(neapsRuntime as any).findStation(sid); }
+            catch { return false; }
+          };
           if (!q) {
             // Sin query, devuelve las N más cercanas al barco.
             const posValue = app.getSelfPath("navigation.position.value") || (await ihmCache.get("position")) || null;
@@ -3116,15 +3362,36 @@ try {
                 latitude: posValue.latitude,
                 longitude: posValue.longitude,
                 maxDistance: 500,
-                maxResults: MAX,
+                maxResults: MAX * 3, // pedimos más porque vamos a filtrar
                 includeAll: true,
               }) as any[];
-              return res.json({ engine, q, results: near.map(([s, dKm]: any) => ({
+              const filtered = near.filter(([s]: any) => isPredictable(s.id)).slice(0, MAX);
+              // Rev701: sugerencia Open-Meteo si la más cercana NEAPS está
+              // a > 100 km del barco.
+              const bestKm = filtered.length ? Number(filtered[0][1]) : Infinity;
+              const suggestOM = !filtered.length || bestKm > 100;
+              const results: any[] = [];
+              if (suggestOM) {
+                results.push({
+                  id: "openmeteo-global",
+                  name: `🌐 Open-Meteo global (posición GPS)`,
+                  lat: posValue.latitude, lon: posValue.longitude,
+                  distanceKm: 0,
+                  suggestion: {
+                    kind: "openmeteo-recommended",
+                    reason: filtered.length
+                      ? `NEAPS más cercana a ${Math.round(bestKm)} km — Open-Meteo es más preciso aquí`
+                      : `Sin estaciones NEAPS en 500 km — Open-Meteo (modelo global) es la única opción`,
+                  },
+                });
+              }
+              filtered.forEach(([s, dKm]: any) => results.push({
                 id: `neaps/${s.id}`,
                 name: String(s.name),
                 lat: s.latitude, lon: s.longitude,
                 distanceKm: dKm,
-              })) });
+              }));
+              return res.json({ engine, q, results, openmeteoSuggested: suggestOM });
             }
             return res.json({ engine, q, results: [] });
           }
@@ -3142,25 +3409,58 @@ try {
                 latitude: geoNeaps.lat,
                 longitude: geoNeaps.lon,
                 maxDistance: 500,
-                maxResults: 10,
+                maxResults: 30, // Rev700: pedimos más para poder filtrar
                 includeAll: true,
               }) as any[];
-              if (Array.isArray(near) && near.length) {
+              const filteredNear = near.filter(([s]: any) => isPredictable(s.id)).slice(0, 10);
+              // Rev701 (feedback Carlos "podemos hacer sugerencias dinamicas
+              // a openmeteo cuando neaps no da valores razonablemente
+              // cerca?"): si la mejor estación NEAPS está lejos (>100 km),
+              // añadimos Open-Meteo como sugerencia al principio con
+              // `openmeteoSuggested=true`. Open-Meteo es un modelo global
+              // por lat/lon, no depende de estaciones — para zonas con
+              // poca cobertura NEAPS (Islandia, medio-Pacífico, costa
+              // este africana, ártico…) es la mejor opción.
+              const NEAPS_FAR_THRESHOLD_KM = 100;
+              const bestDistKm = filteredNear.length ? Number(filteredNear[0][1]) : Infinity;
+              const suggestOpenMeteo = !filteredNear.length || bestDistKm > NEAPS_FAR_THRESHOLD_KM;
+              const results: any[] = [];
+              if (suggestOpenMeteo) {
+                results.push({
+                  id: "openmeteo-global",
+                  name: `🌐 Open-Meteo global (${(geoNeaps.display || q).split(",")[0]})`,
+                  lat: geoNeaps.lat, lon: geoNeaps.lon,
+                  distanceKm: 0,
+                  suggestion: {
+                    kind: "openmeteo-recommended",
+                    reason: filteredNear.length
+                      ? `NEAPS más cercana a ${Math.round(bestDistKm)} km — Open-Meteo (modelo global) es más preciso aquí`
+                      : `Sin estaciones NEAPS en 500 km — Open-Meteo (modelo global) es la única opción`,
+                  },
+                });
+              }
+              filteredNear.forEach(([s, dKm]: any) => {
+                results.push({
+                  id: `neaps/${s.id}`,
+                  name: String(s.name),
+                  lat: s.latitude, lon: s.longitude,
+                  distanceKm: dKm,
+                });
+              });
+              if (results.length) {
                 return res.json({
                   engine, q,
-                  results: near.map(([s, dKm]: any) => ({
-                    id: `neaps/${s.id}`,
-                    name: String(s.name),
-                    lat: s.latitude, lon: s.longitude,
-                    distanceKm: dKm,
-                  })),
+                  results,
                   geocodeHint: { query: q, resolvedTo: geoNeaps.display, lat: geoNeaps.lat, lon: geoNeaps.lon },
+                  openmeteoSuggested: suggestOpenMeteo,
                 });
               }
             } catch { /* fall through to text search */ }
           }
           // Fallback: búsqueda por texto (matching nombre de estación).
-          const found = (mod as any).search(q, { maxResults: MAX, includeAll: true }) as any[];
+          const found = ((mod as any).search(q, { maxResults: MAX * 3, includeAll: true }) as any[])
+            .filter((s: any) => isPredictable(s.id))
+            .slice(0, MAX);
           const posValue = app.getSelfPath("navigation.position.value") || (await ihmCache.get("position")) || null;
           const lat2 = isPositionValue(posValue) ? posValue.latitude : undefined;
           const lon2 = isPositionValue(posValue) ? posValue.longitude : undefined;
@@ -4513,6 +4813,126 @@ try {
       } catch (e: any) {
         res.status(500).json({ error: e?.message ?? String(e) });
       }
+    });
+
+    // Rev702 (feedback Carlos "seccion para elegir deltas SK, imprescindibles
+    // y opcionales. Revisa redundantes"): catálogo del plugin — cada path con
+    // {tier, group, description, enabled}. Enabled respeta:
+    //   required   → true fijo (no toggleable).
+    //   deprecated → false fijo (sin publicación).
+    //   optional/regional → toggle del user, con default por tier.
+    expressApp.get("/signalk-mareas-ihm/api/sk-paths/catalog", async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        const qLang = String(req.query?.lang ?? "").toLowerCase();
+        const storedLang = (await ihmCache.get("lang")) as any;
+        const lang: UiLang = (qLang === "es" || qLang === "en") ? qLang : (storedLang === "es" || storedLang === "en" ? storedLang : DEFAULT_LANG);
+        const desc = pickDescriptions(lang);
+        const cfg = await _loadSkPathsConfig(ihmCache);
+        const entries = Object.entries(SK_PATH_CATALOG).map(([path, spec]) => {
+          let enabled: boolean;
+          if (spec.tier === "required")        enabled = true;
+          else if (spec.tier === "deprecated") enabled = false;
+          else if (Object.prototype.hasOwnProperty.call(cfg, path)) enabled = !!cfg[path];
+          else enabled = (spec.tier === "optional"); // regional → false por defecto
+          return {
+            path,
+            description: desc[path] ?? "",
+            tier: spec.tier,
+            group: spec.group,
+            enabled,
+          };
+        });
+        // Grupos para render (orden en el que aparecerán en la UI).
+        const groups = [
+          { id: "tides",         label: lang==="en" ? "🌊 Tides"          : "🌊 Mareas" },
+          { id: "flow",          label: lang==="en" ? "🌀 Current flow"    : "🌀 Corriente" },
+          { id: "grounding",     label: lang==="en" ? "🚧 Grounding alarm" : "🚧 Alarma varada" },
+          { id: "anchor",        label: lang==="en" ? "⚓ Anchor"          : "⚓ Fondeo" },
+          { id: "ais-commands",  label: lang==="en" ? "📡 AIS + PUT"      : "📡 AIS y PUT" },
+          { id: "weather",       label: lang==="en" ? "☁️ Weather"        : "☁️ Meteo" },
+          { id: "waves",         label: lang==="en" ? "🌊 IMU waves engine": "🌊 Motor de olas IMU" },
+          { id: "imu",           label: lang==="en" ? "📐 IMU raw (SK)"    : "📐 IMU crudo (SK)" },
+          { id: "rias-baixas",   label: lang==="en" ? "🧭 Rías Baixas (regional)" : "🧭 Rías Baixas (regional)" },
+          { id: "time",          label: lang==="en" ? "⏰ Time"            : "⏰ Horario" },
+          { id: "deprecated",    label: lang==="en" ? "🗑 Deprecated (auto-off)" : "🗑 Obsoletos (auto-off)" },
+        ];
+        res.json({ groups, paths: entries });
+      } catch (e: any) {
+        res.status(500).json({ error: e?.message ?? String(e) });
+      }
+    });
+
+    expressApp.get("/signalk-mareas-ihm/api/sk-paths/config", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      const cfg = await _loadSkPathsConfig(ihmCache);
+      res.json({ config: cfg });
+    });
+
+    expressApp.post("/signalk-mareas-ihm/api/sk-paths/config", requireControlAccess, async (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        const body = req?.body ?? {};
+        const partial: Record<string, boolean> = {};
+        if (body && typeof body === "object") {
+          for (const [k, v] of Object.entries(body.config ?? body)) {
+            if (typeof k !== "string" || !k) continue;
+            const spec = SK_PATH_CATALOG[k];
+            if (!spec || spec.tier === "required" || spec.tier === "deprecated") continue;
+            partial[k] = !!v;
+          }
+        }
+        const current = await _loadSkPathsConfig(ihmCache);
+        // Rev704 (feedback Carlos "no se actualiza inmediatamente de SK"):
+        // detectamos los paths que pasan de ON→OFF y les publicamos un
+        // delta `value: null` — SK server borra el path del árbol al vuelo,
+        // sin esperar al TTL de la cache ni al restart. El siguiente
+        // updateTides simplemente no los volverá a poner (el wrapper de
+        // handleMessage los filtra por el nuevo config).
+        const wasOn = (path: string): boolean => {
+          if (Object.prototype.hasOwnProperty.call(current, path)) return !!current[path];
+          const spec = SK_PATH_CATALOG[path];
+          return spec ? spec.tier === "optional" : true;
+        };
+        const nullValues: Array<{ path: string; value: null }> = [];
+        for (const [path, enabled] of Object.entries(partial)) {
+          if (!enabled && wasOn(path)) {
+            nullValues.push({ path, value: null });
+          }
+        }
+        _skPathsConfigCache = { ...current, ...partial };
+        await ihmCache.set("skPathsConfig", _skPathsConfigCache);
+        if (nullValues.length) {
+          try {
+            // Publicamos EN CRUDO — sin pasar por el wrapper (que filtraría
+            // estos mismos paths por estar en OFF). Usamos la referencia al
+            // handleMessage original guardada al envolver.
+            const rawHandle = ((app as any)._ihmOrigHandleMessage as any) || (app as any).handleMessage.bind(app);
+            rawHandle(plugin.id, {
+              context: ("vessels." + app.selfId),
+              updates: [{ timestamp: new Date().toISOString(), values: nullValues }],
+            });
+            app.debug(`[SKPATHS] publicados null en ${nullValues.length} paths desactivados`);
+          } catch (e: any) {
+            app.debug(`[SKPATHS] fallo publicando null-values: ${e?.message ?? e}`);
+          }
+        }
+        res.json({ ok: true, config: _skPathsConfigCache, cleared: nullValues.map(x => x.path) });
+      } catch (e: any) {
+        res.status(500).json({ error: e?.message ?? String(e) });
+      }
+    });
+
+    expressApp.post("/signalk-mareas-ihm/api/sk-paths/reset", requireControlAccess, async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      // Rev704: cualquier path que estuviera OFF por decisión del user pasa
+      // a su default (optional→ON, regional→OFF). No hay que borrar nada
+      // porque los que quedan OFF ahora por default seguirán sin publicarse
+      // (los nulos actuales expiran). Los que pasan a ON se re-publicarán
+      // en el siguiente updateTides.
+      _skPathsConfigCache = {};
+      await ihmCache.set("skPathsConfig", {});
+      res.json({ ok: true });
     });
 
     // API: UI settings (lang + units, persisted)
@@ -13202,7 +13622,12 @@ function effectiveDraft(draft: number, safetyMargin: number): number {
 const DEPTH_HISTORY_WINDOW_MS = 75_000;
 const DEPTH_FROZEN_TOLERANCE = 0.02;
 const DEPTH_FROZEN_MIN_SPAN_MS = 60_000;
-const DEPTH_SPIKE_RATIO = 3.0;
+// Rev706 (feedback Carlos "alarma loca de varada, sonda bajo quilla se puso
+// negativa un momento"): antes 3.0 dejaba pasar spikes leves (5m → 1.7m,
+// ratio 0.34 > 1/3=0.33 → no filtrado → alarma). Bajado a 2.0 — una
+// muestra que baja a la mitad respecto a la anterior es SIEMPRE sospechosa
+// en una sonda estable de fondeo.
+const DEPTH_SPIKE_RATIO = 2.0;
 type DepthHistorySample = { depth: number; ts: number; sourcePath: string };
 const depthHistory: DepthHistorySample[] = [];
 let _depthHistorySource: string | null = null;
@@ -13261,6 +13686,10 @@ let _groundingEvalPending = false;
 // closure del plugin — declarado más arriba con las variables que start()
 // nested necesita ver por scoping léxico (evita TDZ TS2448).
 const _GROUNDING_WARMUP_MS = 20_000;
+// Rev706: timestamp de la primera evaluación con riesgo — usado para exigir
+// persistencia (RISK_STABILITY_MS) antes de disparar la alarma. Reset al
+// nulo cuando el riesgo desaparece.
+let _groundingRiskFirstSeenMs: number | null = null;
 async function requestGroundingEvaluation(): Promise<void> {
   if (_groundingEvalRunning) { _groundingEvalPending = true; return; }
   _groundingEvalRunning = true;
@@ -13614,7 +14043,22 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
     }
 
     const alertRisk = Boolean(enabled && alertCriteriaMet);
-    const notifyRisk = Boolean(enabled && alertCriteriaMet && !isSnoozed);
+    // Rev706 (feedback Carlos "alarma fantasma de varada por fallo de sonda"):
+    // persistencia mínima antes de disparar. Un dato de sonda aislado que
+    // pase todos los filtros (spike, frozen, absurd) puede aún ser malo —
+    // exigimos que el riesgo se confirme durante RISK_STABILITY_MS antes de
+    // notificar. Un spike de <15 s se ignora. Al desaparecer el riesgo, la
+    // alarma se calma inmediatamente (no simetrizamos — la seguridad manda).
+    const RISK_STABILITY_MS = 15_000;
+    const nowMs = now.getTime();
+    if (alertCriteriaMet && enabled) {
+      if (_groundingRiskFirstSeenMs == null) _groundingRiskFirstSeenMs = nowMs;
+    } else {
+      _groundingRiskFirstSeenMs = null;
+    }
+    const riskStableEnough = _groundingRiskFirstSeenMs != null
+      && (nowMs - _groundingRiskFirstSeenMs) >= RISK_STABILITY_MS;
+    const notifyRisk = Boolean(enabled && alertCriteriaMet && !isSnoozed && riskStableEnough);
 
     // Build single, canonical message (backend only).
     // Rev639 (bug reportado Carlos: `message: "RIESGO DE VARADA"` con
@@ -14305,14 +14749,23 @@ if (nextLow) {
   );
 }
 
-// Coeficiente de marea — SOLO tabla oficial IHM (fijo, universal para todas las estaciones)
-// El coeficiente NO depende de la estación ni de cálculos locales.
-// Se lee directamente del JSON generado desde el PDF del IHM.
-const coefVal = ihmCoefNow(now, tz);
-if (coefVal != null) {
-  values.push({ path: "environment.tide.coef" as Path, value: coefVal });
-} else {
-  console.error(`[IHM-COEF] ihmCoefNow returned null for ${now.toISOString()}`);
+// Coeficiente de marea. Con IHM España usamos la tabla oficial (0..120).
+// Fuera de España (NEAPS, Open-Meteo, sktides, sintéticas) la tabla IHM no
+// aplica — usamos `coefIndex` (25..125) calculado del rango del ciclo
+// actual vs rango histórico local. Así el widget muestra un valor
+// coherente para cualquier fuente en vez de "–".
+const _stationSid = String(lastForecast.station?.id ?? "");
+const _isIhmStation = /^\d+$/.test(_stationSid); // IHM son numéricos, virtuales llevan prefijo o texto
+const coefFromIhmTable = _isIhmStation ? ihmCoefNow(now, tz) : null;
+if (coefFromIhmTable != null) {
+  values.push({ path: "environment.tide.coef" as Path, value: coefFromIhmTable });
+} else if (coefIndex != null && Number.isFinite(coefIndex)) {
+  // Rev698 (feedback Carlos "NEAPS no calcula el coeficiente de marea"):
+  // fallback para fuentes no-IHM. coefIndex viene del ratio local
+  // (R_ciclo/R_histórico normalizado) 25..125.
+  values.push({ path: "environment.tide.coef" as Path, value: coefIndex });
+} else if (_isIhmStation) {
+  console.error(`[IHM-COEF] ihmCoefNow returned null for IHM station at ${now.toISOString()}`);
 }
 
 // Track what we publish so the WebApp can build a dynamic list of paths.
@@ -14323,6 +14776,8 @@ const delta: Delta = {
   updates: [
     {
       timestamp: now.toISOString() as Timestamp,
+      // Rev703: el filtro ya se aplica globalmente en el wrapper de
+      // handleMessage (ver plugin.start). Aquí publicamos values completo.
       values: values as any,
     },
   ],

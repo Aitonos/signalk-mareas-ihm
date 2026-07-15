@@ -2530,6 +2530,11 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
          un botón y nos manden lo que le salga"). Captura /api/diagnostic +
          copia al portapapeles + confirma. -->
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_captureDiagnostic&&m_captureDiagnostic()"><span class="ico">🐛</span><span data-i18n="menu_diag">Enviar diagnóstico</span></button>
+    <!-- Rev715 (feedback Carlos "Añade botón feedback al menú Hamb invitando a
+         compartir experiencia, bugs o demas, Y de paso haz un llamamiento a
+         dar estrellita en Github para darle visibilidad. Pon links a NPM y
+         Github"): abre modal Feedback con CTA GitHub star + Issues + NPM. -->
+    <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openFeedback&&m_openFeedback()"><span class="ico">💬</span><span data-i18n="menu_feedback">Tu opinión cuenta</span></button>
     <!-- Idiomas en grande (un botón cuadrado cada uno) -->
     <div style="display:flex;gap:10px;margin-top:18px;padding-top:18px;border-top:2px solid rgba(255,255,255,.15)">
       <button class="ml-row" style="flex:1;justify-content:center;font-size:38px!important;padding:18px!important;min-height:84px" onclick="setLang('es')">🇪🇸</button>
@@ -2574,6 +2579,32 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       <div class="m-cfg-h2">🧙 <span data-i18n="cfg_wizard_h">Asistente de configuración</span></div>
       <div class="m-cfg-help" data-i18n="cfg_wizard_help">Ejecuta de nuevo el asistente que te guía por la configuración inicial (idioma, locale, IMU, mareas, cartas, PIN).</div>
       <button class="m-uc-btn-primary" onclick="m_wizardOpenManually()" data-i18n="cfg_wizard_btn">🧙 Relanzar asistente</button>
+    </div>
+    <!-- Rev702 (feedback Carlos "hay que poner una seccion dentro para elegir
+         los deltas que publicamos en Signal K, marcando los imprescindibles y
+         los opcionales. Revisa cuales son redundantes, hemos generado demasiado
+         trafico"): seccion nueva de deltas SK con grupos plegables. -->
+    <div class="m-cfg-section">
+      <div class="m-cfg-h2">📡 <span data-i18n="cfg_skpaths_h">Publicación en SignalK</span></div>
+      <div class="m-cfg-help" data-i18n="cfg_skpaths_help">Elige qué datos publica el plugin como paths de SignalK. Los imprescindibles no se pueden desactivar (widgets y alarmas dependen de ellos). Los opcionales están activados por defecto — apágalos si te sobra tráfico. Los obsoletos ya no se publican (mostrados solo por historial).</div>
+      <!-- Rev704 (feedback Carlos "añade un buscador por texto para
+           filtrar"): input que filtra paths por nombre o descripción. -->
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input id="m-cfg-skpaths-search" type="text" placeholder="🔎 Buscar (path o descripción)…"
+               oninput="m_cfgSkPathsFilter(this.value)"
+               style="flex:1;min-width:220px;padding:14px 16px;font-size:19px;background:rgba(0,0,0,.35);color:#fff;border:2px solid rgba(255,255,255,.20);border-radius:10px">
+        <button onclick="document.getElementById('m-cfg-skpaths-search').value='';m_cfgSkPathsFilter('');"
+                style="background:rgba(255,255,255,.10);color:#fff;border:1px solid rgba(255,255,255,.25);padding:14px 20px;font-size:17px;font-weight:700;border-radius:10px;cursor:pointer">✕</button>
+      </div>
+      <div id="m-cfg-skpaths-list" style="margin-top:14px"></div>
+      <!-- Rev705 (feedback Carlos "podemos quitar guardar cambios y que el
+           seleccionar/deseleccionar mande de forma inmediata el comando"):
+           quitado el botón Guardar. Cada toggle POSTea al instante. Solo
+           queda el Reset defaults. -->
+      <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+        <button onclick="m_cfgSkPathsReset()" class="m-cfg-btn-reset" data-i18n="cfg_skpaths_reset">↺ Restablecer defaults</button>
+      </div>
+      <div id="m-cfg-skpaths-status" style="margin-top:10px;font-size:16px;font-weight:700;min-height:22px"></div>
     </div>
     <!-- Seccion Unidades -->
     <div class="m-cfg-section">
@@ -3832,10 +3863,446 @@ function m_openConfig(){
   openPopup('m-config-pop');
   try{ m_btnCfgRenderLists(); }catch(_){}
   try{ m_bbarCfgRender(); }catch(_){}
+  try{ m_cfgSkPathsLoad(); }catch(_){} // Rev702
   /* Rev619: pins y sesiones vive en su modal propio (m-user-control-pop),
      ya no cargamos aquí. */
   try{ if(typeof translateAll === 'function') translateAll(); }catch(_){}
 }
+
+/* Rev702 (feedback Carlos "secciones de deltas SK"): carga el catálogo del
+   backend y pinta la lista agrupada. Cada path lleva un checkbox togglable
+   (excepto required=candado, deprecated=tachado). El save es explícito. */
+window._skPathsCatalog = { groups: [], paths: [] };
+window.m_cfgSkPathsLoad = function(){
+  var host = document.getElementById('m-cfg-skpaths-list');
+  if (!host) return;
+  host.innerHTML = '<div style="color:#888;font-size:15px;padding:12px">'+((_lang==='en')?'Loading…':'Cargando…')+'</div>';
+  fetch(A+'/sk-paths/catalog?lang='+encodeURIComponent(_lang||'es'),{cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+    .then(function(j){
+      if (!j || !Array.isArray(j.groups) || !Array.isArray(j.paths)){
+        host.innerHTML = '<div style="color:#e53935">'+((_lang==='en')?'Failed to load catalog':'No se pudo cargar el catálogo')+'</div>';
+        return;
+      }
+      window._skPathsCatalog = j;
+      m_cfgSkPathsRender();
+    });
+};
+window.m_cfgSkPathsRender = function(){
+  var host = document.getElementById('m-cfg-skpaths-list');
+  if (!host) return;
+  var j = window._skPathsCatalog;
+  var lang = _lang;
+  /* Rev704: filtro por texto. Si el user ha escrito algo, solo aparecen
+     paths cuyo nombre O descripción contienen el término (case-insensitive).
+     Los grupos sin coincidencias no se pintan. Cuando hay filtro activo,
+     todos los <details> arrancan abiertos para que se vean los resultados. */
+  var filter = String(window._skPathsFilter || '').trim().toLowerCase();
+  var byGroup = {};
+  j.paths.forEach(function(p){
+    if (filter){
+      var haystack = ((p.path||'') + ' ' + (p.description||'')).toLowerCase();
+      if (haystack.indexOf(filter) < 0) return;
+    }
+    (byGroup[p.group] = byGroup[p.group] || []).push(p);
+  });
+  var html = '';
+  if (filter && Object.keys(byGroup).length === 0){
+    host.innerHTML = '<div style="padding:20px;color:#888;font-size:18px;text-align:center">'
+      + ((lang==='en')?'No paths match ':'Ningún path contiene ') + '"<b>'+filter+'</b>"</div>';
+    return;
+  }
+  j.groups.forEach(function(g){
+    var list = byGroup[g.id] || [];
+    if (!list.length) return;
+    var reqCount = list.filter(function(p){return p.tier==='required';}).length;
+    var onCount  = list.filter(function(p){return p.enabled;}).length;
+    /* Rev703 (feedback Carlos "aumenta el texto del selector en Config"):
+       summary 26px 900, path 20px 800, descripción 17px con line-height 1.5,
+       checkbox 1.8× para touch amable. */
+    var openAttr = (filter || g.id!=='deprecated') ? 'open' : '';
+    /* Rev706 (feedback Carlos "pon selector seleccionar todo en cada
+       categoria"): dos botones inline en el header del grupo — ✅ todos y
+       ❌ ninguno. Solo aplican a los optional/regional del grupo (los
+       required/deprecated se ignoran). Los onclick paran la propagación
+       para no plegar el <details>. */
+    var toggleAllBtns = (g.id === 'deprecated') ? '' :
+      ('<button title="'+((lang==='en')?'Enable all optional':'Activar todos los opcionales')+'" onclick="event.stopPropagation();event.preventDefault();m_cfgSkPathsGroupToggle(\''+g.id+'\',true)" style="margin-left:10px;background:rgba(58,168,86,.2);color:#3aa856;border:1px solid rgba(58,168,86,.5);padding:6px 12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer">✅ '+((lang==='en')?'All':'Todos')+'</button>'
+     + '<button title="'+((lang==='en')?'Disable all optional':'Desactivar todos los opcionales')+'" onclick="event.stopPropagation();event.preventDefault();m_cfgSkPathsGroupToggle(\''+g.id+'\',false)" style="margin-left:6px;background:rgba(229,57,53,.15);color:#e53935;border:1px solid rgba(229,57,53,.45);padding:6px 12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer">❌ '+((lang==='en')?'None':'Ninguno')+'</button>');
+    html += '<details style="margin-bottom:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:12px" '+openAttr+'>'
+         + '<summary data-skgroup="'+g.id+'" style="cursor:pointer;padding:18px 20px;font-size:26px;font-weight:900;color:#fff;display:flex;align-items:center;gap:12px;line-height:1.2;flex-wrap:wrap">'
+         + '<span>'+g.label+'</span>'
+         + '<span class="m-skg-count" style="margin-left:auto;font-size:18px;color:#9ad;font-weight:700">'+onCount+' / '+list.length+((reqCount?' · '+reqCount+' 🔒':''))+'</span>'
+         + toggleAllBtns
+         + '</summary>'
+         + '<div style="padding:0 20px 16px 20px">';
+    list.forEach(function(p){
+      var lock = (p.tier==='required') ? '🔒 ' : (p.tier==='deprecated' ? '🗑 ' : '');
+      var disabled = (p.tier==='required' || p.tier==='deprecated');
+      /* Rev708 (feedback Carlos "me sale icono prohibido en el cursor y no
+         me deja"): en checkboxes required/deprecated el cursor not-allowed
+         era intimidante. Cambio a `help` + tooltip explicando por qué, y
+         click en el label muestra un toast con el motivo (para touch). */
+      var lockReason = (p.tier==='required')
+        ? ((lang==='en')?'Required — widgets/alarms depend on it, cannot be disabled':'Imprescindible — widgets/alarmas dependen de él, no se puede desactivar')
+        : (p.tier==='deprecated')
+          ? ((lang==='en')?'Deprecated — no longer published':'Obsoleto — ya no se publica')
+          : '';
+      /* Rev709 (feedback Carlos "mejor el icono prohibido, pero al hacer
+         click nos dé un pop up con CSS propio"): mantenemos not-allowed
+         visual y al click abrimos m_cfgSkPathsLockPopup — modal centrado
+         con estilo del plugin (dark + naranja) en lugar de mensaje inline. */
+      /* Rev710 (feedback Carlos "nada, sigue sin dar mensaje de salida al
+         hacer click"): los navegadores NO despachan click en <input
+         disabled> — el onclick del label no se dispara nunca. Solución:
+         no usar `disabled`; interceptar el onchange, revertir el toggle
+         y abrir el popup. */
+      var labelCursor = disabled ? 'not-allowed' : 'pointer';
+      var titleAttr = disabled ? (' title="'+lockReason.replace(/"/g,'&quot;')+'"') : '';
+      var pathEsc = p.path.replace(/\'/g,"\\'");
+      var changeHandler = disabled
+        ? ' onchange="m_cfgSkPathsBlockedChange(this,\''+p.tier+'\',\''+pathEsc+'\','+p.enabled+')"'
+        : ' onchange="m_cfgSkPathsToggle(\''+pathEsc+'\', this.checked)"';
+      html += '<label' + titleAttr
+           +   ' style="display:flex;align-items:flex-start;gap:14px;padding:14px 4px;border-top:1px solid rgba(255,255,255,.08);cursor:'+labelCursor+'">'
+           + '<input type="checkbox" data-skpath="'+p.path+'" '+(p.enabled?'checked':'')
+           +   changeHandler
+           +   ' style="margin-top:6px;transform:scale(1.8);flex-shrink:0'+(disabled?';opacity:.55;cursor:not-allowed':'')+'">'
+           + '<div style="flex:1;min-width:0">'
+           + '<div style="font-size:20px;font-weight:800;color:'+(p.tier==='deprecated'?'#666':'#fff')+';word-break:break-all;text-decoration:'+(p.tier==='deprecated'?'line-through':'none')+';line-height:1.3">'+lock+p.path+'</div>'
+           + '<div style="font-size:17px;color:'+(p.tier==='deprecated'?'#555':'#cfd8dc')+';margin-top:6px;line-height:1.5">'+(p.description||'')+'</div>'
+           + (disabled?'<div style="font-size:14px;color:'+(p.tier==='deprecated'?'#666':'#9ad')+';margin-top:4px;font-style:italic">'+lockReason+'</div>':'')
+           + '</div>'
+           + '</label>';
+    });
+    html += '</div></details>';
+  });
+  host.innerHTML = html;
+};
+window.m_cfgSkPathsFilter = function(text){
+  window._skPathsFilter = text || '';
+  m_cfgSkPathsRender();
+};
+/* Rev711 (feedback Carlos "no sale uno en los opcionales que no se pueden
+   activar por no tener permisos de usuario"): popup CSS propio cuando el
+   servidor devuelve 401 (capa de seguridad ON + sin sesión). Mismo estilo
+   que el popup de lock pero con color rojo/naranja de aviso y CTA a
+   Control de usuarios. */
+window.m_cfgSkPathsAuthPopup = function(pathName){
+  var isEn = (_lang==='en');
+  var borderCol = '#e5a23a';
+  var titleTxt = isEn ? 'Permission required' : 'Permisos requeridos';
+  var bodyTxt  = isEn
+    ? 'The security layer is <b>enabled</b> and you are not logged in. Only authenticated users can change SignalK path publication.<br><br>Open <b>User control</b> from the main menu and log in with your PIN, then try again.'
+    : 'La capa de seguridad está <b>activada</b> y no has iniciado sesión. Solo los usuarios autenticados pueden cambiar la publicación de paths SignalK.<br><br>Abre <b>Control de usuarios</b> desde el menú principal e introduce tu PIN, y vuelve a intentarlo.';
+  var old = document.getElementById('m-skpath-lock-modal');
+  if (old && old.parentNode) old.parentNode.removeChild(old);
+  var overlay = document.createElement('div');
+  overlay.id = 'm-skpath-lock-modal';
+  overlay.setAttribute('style',
+    'position:fixed;inset:0;z-index:99999;'
+  + 'background:rgba(0,0,0,.72);'
+  + 'display:flex;align-items:center;justify-content:center;'
+  + 'padding:14px;box-sizing:border-box;'
+  + 'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;');
+  overlay.innerHTML =
+    '<div style="'
+  + '  background:#1a1a1a;color:#f0f0f0;'
+  + '  border:2px solid '+borderCol+';border-radius:14px;'
+  + '  box-shadow:0 12px 40px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.06);'
+  + '  max-width:520px;width:100%;max-height:82vh;overflow-y:auto;'
+  + '  padding:22px 24px 20px;box-sizing:border-box;">'
+  + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">'
+  +   '<span style="font-size:32px;line-height:1">🔒</span>'
+  +   '<h3 style="margin:0;font-size:20px;color:'+borderCol+';font-weight:600">'+titleTxt+'</h3>'
+  + '</div>'
+  + '<div style="background:rgba(255,255,255,.05);border-radius:8px;padding:10px 12px;margin-bottom:14px;'
+  +   'font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#7fb3ff;word-break:break-all;'
+  +   'border:1px solid rgba(127,179,255,.15)">'
+  +   String(pathName||'').replace(/</g,'&lt;')
+  + '</div>'
+  + '<div style="font-size:14px;line-height:1.55;color:#d8d8d8">'+bodyTxt+'</div>'
+  + '<div style="margin-top:20px;text-align:right">'
+  +   '<button type="button" id="m-skpath-lock-close" style="'
+  +     'background:'+borderCol+';color:#111;border:none;border-radius:8px;'
+  +     'padding:10px 22px;font-size:15px;font-weight:600;cursor:pointer;'
+  +     'min-height:44px;min-width:120px">'
+  +     (isEn?'Understood':'Entendido')
+  +   '</button>'
+  + '</div>'
+  + '</div>';
+  var close = function(){
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    document.removeEventListener('keydown', escHandler);
+  };
+  var escHandler = function(e){ if (e.key === 'Escape') close(); };
+  overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
+  document.addEventListener('keydown', escHandler);
+  document.body.appendChild(overlay);
+  var btn = document.getElementById('m-skpath-lock-close');
+  if (btn) btn.addEventListener('click', close);
+};
+/* Rev710: intercepta el change del checkbox bloqueado: revierte al valor
+   original (para que visualmente NO cambie) y abre el popup explicativo.
+   Necesario porque <input disabled> no dispara click events en la mayoría
+   de navegadores → el onclick del label nunca se ejecutaba. */
+window.m_cfgSkPathsBlockedChange = function(input, tier, pathName, wasEnabled){
+  if (input) input.checked = !!wasEnabled;
+  m_cfgSkPathsLockPopup(tier, pathName);
+};
+/* Rev709 (feedback Carlos "cuando hagamos click en alguno que podamos nos
+   dé un pop up con CSS propio"): modal centrado dark + naranja explicando
+   por qué el checkbox está bloqueado. Reemplaza el mensaje inline en
+   barra de status de Rev708. */
+window.m_cfgSkPathsLockPopup = function(tier, pathName){
+  var isEn = (_lang==='en');
+  var titleTxt, bodyTxt, iconTxt, borderCol;
+  if (tier === 'required'){
+    iconTxt = '🔒';
+    borderCol = '#ffb23f';
+    titleTxt = isEn ? 'Required path' : 'Path imprescindible';
+    bodyTxt  = isEn
+      ? 'This SignalK path is <b>required</b> by widgets or alarms in this plugin. If it is turned off, features that depend on it (anchor watch, AIS, tides, sounder, etc.) will stop working.<br><br>To disable it you would need to lower its tier from <code>required</code> to <code>optional</code> in the plugin source, knowing what will break.'
+      : 'Este path de SignalK es <b>imprescindible</b> para widgets o alarmas de este plugin. Si se desactiva, dejarán de funcionar las funciones que dependen de él (vigilancia de fondeo, AIS, mareas, sonda, etc.).<br><br>Para desactivarlo habría que bajar su tier de <code>required</code> a <code>optional</code> en el código del plugin, sabiendo qué se rompe.';
+  } else {
+    iconTxt = '🗑';
+    borderCol = '#888';
+    titleTxt = isEn ? 'Deprecated path' : 'Path obsoleto';
+    bodyTxt  = isEn
+      ? 'This SignalK path is <b>deprecated</b> — the plugin no longer publishes it. Keeping it disabled prevents legacy traffic and stale values on the SK tree.<br><br>Nothing in the current version reads it; it stays in the list only for reference.'
+      : 'Este path de SignalK está <b>obsoleto</b> — el plugin ya no lo publica. Mantenerlo desactivado evita tráfico legacy y valores caducados en el árbol de SK.<br><br>Ningún componente de la versión actual lo lee; se mantiene en la lista solo para referencia.';
+  }
+  var old = document.getElementById('m-skpath-lock-modal');
+  if (old && old.parentNode) old.parentNode.removeChild(old);
+  var overlay = document.createElement('div');
+  overlay.id = 'm-skpath-lock-modal';
+  overlay.setAttribute('style',
+    'position:fixed;inset:0;z-index:99999;'
+  + 'background:rgba(0,0,0,.72);'
+  + 'display:flex;align-items:center;justify-content:center;'
+  + 'padding:14px;box-sizing:border-box;'
+  + 'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;');
+  overlay.innerHTML =
+    '<div style="'
+  + '  background:#1a1a1a;color:#f0f0f0;'
+  + '  border:2px solid '+borderCol+';border-radius:14px;'
+  + '  box-shadow:0 12px 40px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.06);'
+  + '  max-width:520px;width:100%;max-height:82vh;overflow-y:auto;'
+  + '  padding:22px 24px 20px;box-sizing:border-box;">'
+  + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">'
+  +   '<span style="font-size:32px;line-height:1">'+iconTxt+'</span>'
+  +   '<h3 style="margin:0;font-size:20px;color:'+borderCol+';font-weight:600">'+titleTxt+'</h3>'
+  + '</div>'
+  + '<div style="background:rgba(255,255,255,.05);border-radius:8px;padding:10px 12px;margin-bottom:14px;'
+  +   'font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#7fb3ff;word-break:break-all;'
+  +   'border:1px solid rgba(127,179,255,.15)">'
+  +   String(pathName||'').replace(/</g,'&lt;')
+  + '</div>'
+  + '<div style="font-size:14px;line-height:1.55;color:#d8d8d8">'+bodyTxt+'</div>'
+  + '<div style="margin-top:20px;text-align:right">'
+  +   '<button type="button" id="m-skpath-lock-close" style="'
+  +     'background:'+borderCol+';color:#111;border:none;border-radius:8px;'
+  +     'padding:10px 22px;font-size:15px;font-weight:600;cursor:pointer;'
+  +     'min-height:44px;min-width:120px">'
+  +     (isEn?'Understood':'Entendido')
+  +   '</button>'
+  + '</div>'
+  + '</div>';
+  var close = function(){
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    document.removeEventListener('keydown', escHandler);
+  };
+  var escHandler = function(e){ if (e.key === 'Escape') close(); };
+  overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
+  document.addEventListener('keydown', escHandler);
+  document.body.appendChild(overlay);
+  var btn = document.getElementById('m-skpath-lock-close');
+  if (btn) btn.addEventListener('click', close);
+};
+/* Rev706 (feedback Carlos "pon selector seleccionar todo en cada
+   categoria"): un solo POST con TODOS los paths optional/regional del
+   grupo cambiados a `enabled` (true=activar todos, false=desactivar).
+   Los required/deprecated NO se tocan. Update optimista + rollback si
+   falla. */
+window.m_cfgSkPathsGroupToggle = function(groupId, enabled){
+  if (!window._skPathsCatalog) return;
+  var paths = window._skPathsCatalog.paths.filter(function(p){
+    return p.group === groupId && p.tier !== 'required' && p.tier !== 'deprecated';
+  });
+  if (!paths.length) return;
+  var st = document.getElementById('m-cfg-skpaths-status');
+  if (st){
+    st.textContent = (_lang==='en')
+      ? '⏳ Applying ' + paths.length + ' paths…'
+      : '⏳ Aplicando ' + paths.length + ' paths…';
+    st.style.color = '#9ad';
+  }
+  var payload = {};
+  var prevState = {}; // para rollback
+  paths.forEach(function(p){
+    payload[p.path] = !!enabled;
+    prevState[p.path] = p.enabled;
+    p.enabled = !!enabled;
+    /* Refresca el checkbox visualmente sin re-render completo. */
+    var cb = document.querySelector('input[data-skpath="'+p.path+'"]');
+    if (cb) cb.checked = !!enabled;
+  });
+  m_cfgSkPathsUpdateGroupCounts();
+  fetch(A+'/sk-paths/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config: payload})})
+    /* Rev707: leemos body en OK y error para exponer motivo. */
+    .then(function(r){ return r.json().then(function(j){return {ok:r.ok,status:r.status,j:j};},function(){return {ok:r.ok,status:r.status,j:null};}); })
+    .catch(function(){ return {ok:false,status:0,j:null}; })
+    .then(function(res){
+      var j = res.j;
+      if (!res.ok || !j || !j.ok){
+        paths.forEach(function(p){
+          p.enabled = prevState[p.path];
+          var cb = document.querySelector('input[data-skpath="'+p.path+'"]');
+          if (cb) cb.checked = prevState[p.path];
+        });
+        m_cfgSkPathsUpdateGroupCounts();
+        if (st){
+          var msg;
+          if (res.status === 401){
+            msg = (_lang==='en')
+              ? '🔒 Session required — open User control → login with your PIN'
+              : '🔒 Sesión requerida — abre Control de usuarios → introduce tu PIN';
+          } else if (j && j.error){
+            msg = '✗ ' + j.error;
+          } else if (res.status === 0){
+            msg = (_lang==='en')?'✗ Network error':'✗ Error de red';
+          } else {
+            msg = (_lang==='en')?('✗ Failed (HTTP '+res.status+')'):('✗ Falló (HTTP '+res.status+')');
+          }
+          st.textContent = msg; st.style.color = '#e53935';
+        }
+        return;
+      }
+      var cleared = Array.isArray(j.cleared) ? j.cleared.length : 0;
+      if (st){
+        st.textContent = enabled
+          ? ((_lang==='en')?'✓ Enabled '+paths.length+' paths':'✓ Activados '+paths.length+' paths')
+          : ((_lang==='en')?('✓ Disabled '+paths.length+' paths'+(cleared?' ('+cleared+' cleared from SK)':''))
+                           :('✓ Desactivados '+paths.length+' paths'+(cleared?' ('+cleared+' borrados de SK)':'')));
+        st.style.color = '#3aa856';
+      }
+    });
+};
+/* Rev705 (feedback Carlos "seleccionar/deseleccionar mande de forma
+   inmediata"): cada toggle envía el POST al instante. Estado local del
+   checkbox se sincroniza con la respuesta del backend. Sin botón Guardar. */
+var _skPathsSaveTimer = null;
+window.m_cfgSkPathsToggle = function(path, checked){
+  var st = document.getElementById('m-cfg-skpaths-status');
+  if (st){
+    st.textContent = (_lang==='en') ? '⏳ Applying…' : '⏳ Aplicando…';
+    st.style.color = '#9ad';
+  }
+  /* Actualizamos el catálogo local de forma optimista para que el UI
+     refleje el cambio antes de la respuesta del servidor. */
+  if (window._skPathsCatalog && Array.isArray(window._skPathsCatalog.paths)){
+    for (var i = 0; i < window._skPathsCatalog.paths.length; i++){
+      if (window._skPathsCatalog.paths[i].path === path){
+        window._skPathsCatalog.paths[i].enabled = !!checked;
+        break;
+      }
+    }
+  }
+  m_cfgSkPathsUpdateGroupCounts();
+  var payload = {}; payload[path] = !!checked;
+  fetch(A+'/sk-paths/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config: payload})})
+    /* Rev707 (feedback Carlos "no activa los cambios pero no da mensaje de
+       aviso de por qué"): leemos el body en TODOS los casos (ok y error)
+       para poder mostrar el motivo real. Antes solo devolvíamos null en
+       fallos → "Falló al aplicar" genérico. */
+    .then(function(r){ return r.json().then(function(j){return {ok:r.ok,status:r.status,j:j};},function(){return {ok:r.ok,status:r.status,j:null};}); })
+    .catch(function(){ return {ok:false,status:0,j:null}; })
+    .then(function(res){
+      var j = res.j;
+      if (!res.ok || !j || !j.ok){
+        var msg;
+        if (res.status === 401){
+          /* Rev711 (feedback Carlos "no sale uno en los opcionales que no
+             se pueden activar por no tener permisos de usuario"): popup
+             CSS propio en lugar de mensaje inline en status. */
+          m_cfgSkPathsAuthPopup(path);
+          msg = (_lang==='en')
+            ? '🔒 Permission required'
+            : '🔒 Permisos requeridos';
+        } else if (j && j.error){
+          msg = '✗ ' + j.error;
+        } else if (res.status === 0){
+          msg = (_lang==='en')?'✗ Network error':'✗ Error de red';
+        } else {
+          msg = (_lang==='en')?('✗ Failed (HTTP '+res.status+')'):('✗ Falló (HTTP '+res.status+')');
+        }
+        if (st){ st.textContent = msg; st.style.color = '#e53935'; }
+        /* Rollback */
+        var cb = document.querySelector('input[data-skpath="'+path.replace(/"/g,'\\"')+'"]');
+        if (cb) cb.checked = !checked;
+        if (window._skPathsCatalog){
+          for (var k = 0; k < window._skPathsCatalog.paths.length; k++){
+            if (window._skPathsCatalog.paths[k].path === path){
+              window._skPathsCatalog.paths[k].enabled = !checked;
+              break;
+            }
+          }
+        }
+        m_cfgSkPathsUpdateGroupCounts();
+        return;
+      }
+      var cleared = Array.isArray(j.cleared) ? j.cleared.length : 0;
+      if (st){
+        st.textContent = (_lang==='en')
+          ? ('✓ ' + path + (cleared? ' (cleared from SK)' : ''))
+          : ('✓ ' + path + (cleared? ' (borrado de SK)' : ''));
+        st.style.color = '#3aa856';
+      }
+    });
+};
+/* Actualiza solo los contadores de cada grupo (12 / 15). Rápido y no
+   destruye scroll. */
+window.m_cfgSkPathsUpdateGroupCounts = function(){
+  if (!window._skPathsCatalog) return;
+  var byGroup = {};
+  window._skPathsCatalog.paths.forEach(function(p){ (byGroup[p.group] = byGroup[p.group] || []).push(p); });
+  window._skPathsCatalog.groups.forEach(function(g){
+    var counter = document.querySelector('summary[data-skgroup="'+g.id+'"] .m-skg-count');
+    if (!counter) return;
+    var list = byGroup[g.id] || [];
+    var reqCount = list.filter(function(p){return p.tier==='required';}).length;
+    var onCount  = list.filter(function(p){return p.enabled;}).length;
+    counter.textContent = onCount+' / '+list.length + (reqCount? ' · '+reqCount+' 🔒' : '');
+  });
+};
+window.m_cfgSkPathsReset = function(){
+  var st = document.getElementById('m-cfg-skpaths-status');
+  fetch(A+'/sk-paths/reset',{method:'POST'})
+    /* Rev707: mismo patrón — body en todo caso para exponer motivo. */
+    .then(function(r){ return r.json().then(function(j){return {ok:r.ok,status:r.status,j:j};},function(){return {ok:r.ok,status:r.status,j:null};}); })
+    .catch(function(){ return {ok:false,status:0,j:null}; })
+    .then(function(res){
+      var j = res.j;
+      if (!res.ok || !j || !j.ok){
+        if (st){
+          var msg;
+          if (res.status === 401){
+            msg = (_lang==='en')
+              ? '🔒 Session required — open User control → login with your PIN'
+              : '🔒 Sesión requerida — abre Control de usuarios → introduce tu PIN';
+          } else if (j && j.error){
+            msg = '✗ ' + j.error;
+          } else {
+            msg = (_lang==='en')?'✗ Reset failed':'✗ Reset falló';
+          }
+          st.textContent = msg; st.style.color = '#e53935';
+        }
+        return;
+      }
+      if (st){ st.textContent = (_lang==='en')?'✓ Defaults restored':'✓ Defaults restaurados'; st.style.color = '#3aa856'; }
+      m_cfgSkPathsLoad();
+    });
+};
 function m_closeConfig(){ closePopup('m-config-pop'); }
 function m_onUnitsChange(v){
   m_setUnits(v);
@@ -4965,6 +5432,10 @@ var _i18n={
   cfg_wizard_h:{es:'Asistente de configuración',en:'Configuration wizard'},
   cfg_wizard_help:{es:'Ejecuta de nuevo el asistente que te guía por la configuración inicial (idioma, locale, IMU, mareas, cartas, PIN).',en:'Re-run the wizard that walks you through the initial setup (language, locale, IMU, tides, charts, PIN).'},
   cfg_wizard_btn:{es:'🧙 Relanzar asistente',en:'🧙 Re-launch wizard'},
+  cfg_skpaths_h:{es:'Publicación en SignalK',en:'SignalK publication'},
+  cfg_skpaths_help:{es:'Elige qué datos publica el plugin como paths de SignalK. Los imprescindibles no se pueden desactivar (widgets y alarmas dependen de ellos). Los opcionales están activados por defecto — apágalos si te sobra tráfico. Los obsoletos ya no se publican (mostrados solo por historial).',en:'Pick which paths the plugin publishes to SignalK. Required ones cannot be turned off (widgets and alarms need them). Optional ones are on by default — turn them off if you want to reduce traffic. Deprecated ones are no longer published (shown only for history).'},
+  cfg_skpaths_save:{es:'💾 Guardar cambios',en:'💾 Save changes'},
+  cfg_skpaths_reset:{es:'↺ Restablecer defaults',en:'↺ Restore defaults'},
   /* Rev663 (feedback Carlos): i18n del botón del header + del título global. */
   wizard_restart_btn:{es:'🔄 Reiniciar asistente',en:'🔄 Restart wizard'},
   wizard_restart_btn_short:{es:'🔄 Reiniciar',en:'🔄 Restart'},
@@ -5008,6 +5479,7 @@ var _i18n={
   menu_instrucciones:{es:'Instrucciones y aviso legal',en:'Instructions & disclaimer'},
   /* Rev646 (Sprint I-4): captura de diagnóstico 1-botón. */
   menu_diag:{es:'🐛 Enviar diagnóstico',en:'🐛 Send diagnostic'},
+  menu_feedback:{es:'💬 Tu opinión cuenta',en:'💬 Your feedback matters'},
   diag_copied:{es:'Diagnóstico copiado al portapapeles. Pégalo en el chat o email al desarrollador.',en:'Diagnostic copied to clipboard. Paste it into the chat or email to the developer.'},
   diag_failed:{es:'No se pudo capturar el diagnóstico.',en:'Could not capture diagnostic.'},
   menu_config_sk:{es:'Signal K',en:'Signal K'},
@@ -15855,8 +16327,11 @@ function m_wizardRender(){
   };
   var t = titles[currentStepId] || {es:'—',en:'—'};
   window._wizardCurrentStepTitle = (_lang==='en')?t.en:t.es;
-  /* Progreso */
-  var pct = Math.round((idx / total) * 100);
+  /* Progreso — Rev715 (feedback Carlos "step 9/9 y no llega al final"):
+     idx era 0-based (0..total-1); en el último step (idx=total-1) daba
+     (total-1)/total = ~89%. Ahora usamos (idx+1)/total → 100% en el
+     último paso. */
+  var pct = Math.round(((idx + 1) / total) * 100);
   var barEl = document.getElementById('m-wizard-progress-bar');
   if (barEl) barEl.style.width = pct + '%';
   /* Body */
@@ -15920,11 +16395,18 @@ function m_wizardBodyTitle(){
       idx = _wizardState.stepsOrder.indexOf(_wizardState.currentStepId) + 1;
     }
   } catch(_){}
+  /* Rev715 (feedback Carlos "ponlo a continuación del título Summary &
+     finish"): "Paso N / M" ya no va en línea separada — inline junto al
+     H2 como chip a la derecha del título. */
   var stepLabel = ((_lang==='en')?'Step ':'Paso ') + idx + ' / ' + total;
-  return '<div style="font-size:20px;font-weight:800;color:#9ad;letter-spacing:.6px;margin-bottom:8px">' + stepLabel + '</div>'
-       + '<h2 style="font-size:32px;font-weight:900;color:#fff;margin:0 0 26px 0;line-height:1.15">'
-       + (window._wizardCurrentStepTitle || '—')
-       + '</h2>';
+  return '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 0 26px 0">'
+       +   '<h2 style="font-size:32px;font-weight:900;color:#fff;margin:0;line-height:1.15;flex:1;min-width:0">'
+       +     (window._wizardCurrentStepTitle || '—')
+       +   '</h2>'
+       +   '<span style="font-size:18px;font-weight:800;color:#9ad;letter-spacing:.6px;background:rgba(154,170,221,.10);padding:6px 14px;border-radius:20px;border:1px solid rgba(154,170,221,.28);white-space:nowrap;line-height:1">'
+       +     stepLabel
+       +   '</span>'
+       + '</div>';
 }
 /* Rev665: botón "Reiniciar asistente" que va inline abajo del body de cada
    step (ya no en el header custom eliminado). */
@@ -16255,22 +16737,48 @@ window.m_wizardStep_summary = function(body){
   var html = '';
   html += m_wizardBodyTitle();
   html += '<div style="max-width:900px;margin:0 auto">';
-  html += '<div style="font-size:20px;color:#cfd8dc;line-height:1.55;margin-bottom:30px;text-align:center">'
-       + ((lang==='en')?'Configuration summary. Click any item to jump to its management screen.'
-                        :'Resumen de configuración. Pulsa cualquier ítem para ir directo a su pantalla de gestión.')
-       + '</div>';
-  /* Rev687 (feedback Carlos "quita el botón Configurar y haz que cada
-     cuadro sea en sí un botón, mucho más intuitivo y limpio como UX"): la
-     fila entera es clickable ahora. Sin CTA redundante. Hover indica que
-     es interactivo. */
+  /* Rev715 (feedback Carlos "quita esta frase Configuration summary. Click
+     any item…"): eliminada. Se sustituye por un banner de estado global
+     rojo/verde según haya o no items sin configurar/atender. */
+  var completed = (_wizardState && Array.isArray(_wizardState.stepsCompleted))
+    ? _wizardState.stepsCompleted : [];
+  var pending = items.filter(function(it){ return completed.indexOf(it.id) < 0; });
+  var pendingCount = pending.length;
+  if (pendingCount > 0){
+    var bannerTxt = (lang==='en')
+      ? ('❌ '+pendingCount+' step'+(pendingCount>1?'s':'')+' still need your attention. Tap each red row to complete it.')
+      : ('❌ Faltan '+pendingCount+' paso'+(pendingCount>1?'s':'')+' por atender. Pulsa cada fila roja para completarla.');
+    html += '<div style="padding:18px 22px;margin-bottom:24px;background:rgba(229,57,53,.14);border:2px solid #e53935;border-radius:12px;font-size:19px;font-weight:800;color:#ff8a80;text-align:center;line-height:1.4">'
+         + bannerTxt + '</div>';
+  } else {
+    var okTxt = (lang==='en')
+      ? '✅ All steps completed. You can finish the wizard now.'
+      : '✅ Todos los pasos completados. Ya puedes terminar el asistente.';
+    html += '<div style="padding:18px 22px;margin-bottom:24px;background:rgba(58,168,86,.14);border:2px solid #3aa856;border-radius:12px;font-size:19px;font-weight:800;color:#7ee89a;text-align:center;line-height:1.4">'
+         + okTxt + '</div>';
+  }
+  /* Rev687: cuadro entero clickable. Sin CTA redundante. Hover indica
+     interactividad. Rev715: color de borde según estado (rojo=pending,
+     verde=completado). Icono trailing ✅/⚠ para reforzar. */
   items.forEach(function(it){
-    html += '<button onclick="m_wizardSummaryGoto(\''+it.id+'\')" style="width:100%;display:flex;align-items:center;gap:20px;padding:22px 26px;background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.15);border-radius:12px;margin-bottom:12px;cursor:pointer;text-align:left;transition:background .15s,border-color .15s,transform .05s" onmouseover="this.style.background=\'rgba(255,152,0,.10)\';this.style.borderColor=\'var(--org)\'" onmouseout="this.style.background=\'rgba(0,0,0,.30)\';this.style.borderColor=\'rgba(255,255,255,.15)\'" onmousedown="this.style.transform=\'scale(.99)\'" onmouseup="this.style.transform=\'scale(1)\'">'
+    var isDone = completed.indexOf(it.id) >= 0;
+    var bColor = isDone ? 'rgba(58,168,86,.55)' : '#e53935';
+    var bHover = isDone ? '#3aa856' : '#ff5252';
+    var bgBase = isDone ? 'rgba(0,0,0,.30)' : 'rgba(229,57,53,.10)';
+    var bgHover = isDone ? 'rgba(58,168,86,.10)' : 'rgba(229,57,53,.20)';
+    var badge = isDone
+      ? '<span style="font-size:24px;color:#3aa856;font-weight:900">✅</span>'
+      : '<span style="font-size:24px;color:#ff8a80;font-weight:900">⚠</span>';
+    html += '<button onclick="m_wizardSummaryGoto(\''+it.id+'\')" style="width:100%;display:flex;align-items:center;gap:20px;padding:22px 26px;background:'+bgBase+';border:2px solid '+bColor+';border-radius:12px;margin-bottom:12px;cursor:pointer;text-align:left;transition:background .15s,border-color .15s,transform .05s"'
+         + ' onmouseover="this.style.background=\''+bgHover+'\';this.style.borderColor=\''+bHover+'\'"'
+         + ' onmouseout="this.style.background=\''+bgBase+'\';this.style.borderColor=\''+bColor+'\'"'
+         + ' onmousedown="this.style.transform=\'scale(.99)\'" onmouseup="this.style.transform=\'scale(1)\'">'
          + '<span style="font-size:38px;flex-shrink:0">'+it.icon+'</span>'
          + '<span style="font-size:24px;font-weight:800;color:#fff;flex:1">'+it.label+'</span>'
-         + '<span style="font-size:28px;color:var(--org);font-weight:900">›</span>'
+         + badge
+         + '<span style="font-size:28px;color:var(--org);font-weight:900;margin-left:8px">›</span>'
          + '</button>';
   });
-  /* Rev662: botón "Reiniciar asistente" movido al header — no duplicar aquí. */
   html += '</div>';
   body.innerHTML = html;
 };
@@ -16541,10 +17049,24 @@ window.m_wizardPickerRenderResults = function(){
   st.results.forEach(function(r){
     var dist = (r.distanceKm != null) ? '<span style="color:#9ad;font-size:15px;font-weight:700;margin-left:10px">('+r.distanceKm.toFixed(1)+' km)</span>' : '';
     var b64 = btoa(unescape(encodeURIComponent(JSON.stringify({id:String(r.id), name:String(r.name)}))));
-    html += '<button onclick="m_wizardPickerApplyB64(\''+b64+'\')" style="width:100%;text-align:left;padding:14px 18px;margin-bottom:8px;background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.20);border-radius:10px;cursor:pointer;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:space-between">'
-         + '<span>📍 '+r.name+dist+'</span>'
-         + '<span style="font-size:13px;color:#666;font-family:ui-monospace,Menlo,Consolas,monospace">'+r.id+'</span>'
-         + '</button>';
+    /* Rev701 (feedback Carlos "podemos hacer sugerencias dinámicas a
+       openmeteo cuando neaps no da valores razonablemente cerca?"): la
+       sugerencia Open-Meteo va con marco verde + motivo explicativo debajo.
+       Se distingue de las estaciones NEAPS normales para que sea evidente. */
+    if (r.suggestion && r.suggestion.kind === 'openmeteo-recommended'){
+      html += '<button onclick="m_wizardPickerApplyB64(\''+b64+'\')" style="width:100%;text-align:left;padding:16px 20px;margin-bottom:10px;background:rgba(58,168,86,.12);color:#fff;border:2px solid rgba(58,168,86,.55);border-radius:12px;cursor:pointer;font-size:18px;font-weight:800">'
+           + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'
+           + '<span style="font-size:14px;color:#0a1929;background:#3aa856;padding:3px 10px;border-radius:5px;font-weight:900">'+((lang==='en')?'RECOMMENDED':'RECOMENDADO')+'</span>'
+           + '<span>'+r.name+'</span>'
+           + '</div>'
+           + '<div style="font-size:14px;color:#9ad;font-weight:600;line-height:1.4">'+r.suggestion.reason+'</div>'
+           + '</button>';
+    } else {
+      html += '<button onclick="m_wizardPickerApplyB64(\''+b64+'\')" style="width:100%;text-align:left;padding:14px 18px;margin-bottom:8px;background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.20);border-radius:10px;cursor:pointer;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:space-between">'
+           + '<span>📍 '+r.name+dist+'</span>'
+           + '<span style="font-size:13px;color:#666;font-family:ui-monospace,Menlo,Consolas,monospace">'+r.id+'</span>'
+           + '</button>';
+    }
   });
   host.innerHTML = html;
 };
@@ -16956,11 +17478,216 @@ window.m_wizardStep_systemCheck = function(body){
     body.innerHTML = html;
   });
 };
+/* Rev713 (feedback Carlos "hay que terminar la configuración"): step
+   sensorCheck implementado. Consume /wizard/sensor-check para mostrar
+   estado en vivo de cada sensor (GPS, sonda, viento, presión, temperaturas,
+   IMU, AIS) con último valor, edad, y guía de qué revisar si falta.
+   Refresco automático cada 2s. */
 window.m_wizardStep_sensorCheck = function(body){
-  body.innerHTML = m_wizardBodyTitle() + '<div style="max-width:700px;margin:40px auto;text-align:center;padding:30px;background:rgba(255,255,255,.05);border-radius:14px">'
-    + '<div style="font-size:24px;font-weight:800;color:#fff;margin-bottom:14px">📡 '
-    + ((_lang==='en')?'Under construction':'En construcción')
+  var lang = _lang;
+  body.innerHTML = m_wizardBodyTitle()
+    + '<div id="m-wiz-sensor-body" style="max-width:960px;margin:0 auto">'
+    + '<div style="text-align:center;padding:40px 0;font-size:18px;opacity:.7">'
+    + ((lang==='en')?'🔎 Reading sensors…':'🔎 Leyendo sensores…')
     + '</div></div>';
+  var container = document.getElementById('m-wiz-sensor-body');
+  var fmtSample = function(id, v){
+    if (v == null) return '—';
+    try {
+      if (id === 'gps' && typeof v === 'object' && v.latitude != null){
+        return v.latitude.toFixed(5)+', '+v.longitude.toFixed(5);
+      }
+      if (id === 'sog' && typeof v === 'number'){
+        var kn = v * 1.94384;
+        return kn.toFixed(2) + ' kn';
+      }
+      if (id === 'heading' && typeof v === 'number'){
+        return (v * 180 / Math.PI).toFixed(1) + '°';
+      }
+      if (id === 'depth' && typeof v === 'number'){
+        return v.toFixed(2) + ' m';
+      }
+      if (id === 'windDir' && typeof v === 'number'){
+        return (v * 180 / Math.PI).toFixed(0) + '°';
+      }
+      if (id === 'windSpeed' && typeof v === 'number'){
+        return (v * 1.94384).toFixed(1) + ' kn';
+      }
+      if (id === 'pressure' && typeof v === 'number'){
+        return (v / 100).toFixed(1) + ' hPa';
+      }
+      if (id === 'waterTemp' && typeof v === 'number'){
+        return (v - 273.15).toFixed(1) + ' °C';
+      }
+      /* Rev714: nuevos sensores */
+      if (id === 'airTemp' && typeof v === 'number'){
+        return (v - 273.15).toFixed(1) + ' °C';
+      }
+      if (id === 'humidity' && typeof v === 'number'){
+        var pct = v > 1 ? v : v * 100;
+        return pct.toFixed(0) + ' %';
+      }
+      if (id === 'headingMag' && typeof v === 'number'){
+        return (v * 180 / Math.PI).toFixed(1) + '° M';
+      }
+      if (id === 'stw' && typeof v === 'number'){
+        return (v * 1.94384).toFixed(2) + ' kn';
+      }
+      if (id === 'ais'){
+        var n = (typeof v === 'number') ? v : 0;
+        return (lang==='en')
+          ? (n === 0 ? 'no vessels' : (n === 1 ? '1 vessel' : (n+' vessels')))
+          : (n === 0 ? 'sin barcos' : (n === 1 ? '1 barco' : (n+' barcos')));
+      }
+      if (id === 'attitude' && typeof v === 'object'){
+        var toDeg = function(x){ return x == null ? '—' : (x*180/Math.PI).toFixed(1)+'°'; };
+        return 'pitch '+toDeg(v.pitch)+' · roll '+toDeg(v.roll)+' · yaw '+toDeg(v.yaw);
+      }
+      if (typeof v === 'number') return v.toString();
+      return JSON.stringify(v).slice(0, 60);
+    } catch(_){ return '—'; }
+  };
+  var fmtAge = function(ms){
+    if (ms == null) return '';
+    if (ms < 1000) return ms + ' ms';
+    if (ms < 60000) return (ms/1000).toFixed(1)+' s';
+    return Math.round(ms/60000)+' min';
+  };
+  var labelI18n = function(id, en){
+    var esMap = {
+      gps:'Posición GPS', sog:'Velocidad sobre el fondo', heading:'Rumbo (verdadero)',
+      headingMag:'Rumbo (magnético)', stw:'Velocidad por el agua (corredera)',
+      depth:'Sonda (bajo quilla)', windDir:'Dirección del viento (verdadero)',
+      windSpeed:'Velocidad del viento (aparente)', pressure:'Presión barométrica',
+      waterTemp:'Temperatura del agua', airTemp:'Temperatura del aire',
+      humidity:'Humedad ambiente', attitude:'IMU (attitude)',
+      gpsSats:'Satélites GPS', gpsHDOP:'GPS HDOP (precisión)',
+      ais:'AIS (barcos cercanos)'
+    };
+    var enMap = {
+      gps:'GPS position', sog:'Speed over Ground', heading:'True heading',
+      headingMag:'Magnetic heading', stw:'Speed through water (log)',
+      depth:'Depth (below keel)', windDir:'Wind direction (true)',
+      windSpeed:'Wind speed (apparent)', pressure:'Barometric pressure',
+      waterTemp:'Water temperature', airTemp:'Air temperature',
+      humidity:'Air humidity', attitude:'IMU attitude',
+      gpsSats:'GPS satellites', gpsHDOP:'GPS HDOP (precision)',
+      ais:'AIS (nearby vessels)'
+    };
+    return (lang==='en') ? (enMap[id] || en) : (esMap[id] || en);
+  };
+  var hintFor = function(id, status){
+    if (status === 'ok') return null;
+    var hints = {
+      gps: (lang==='en')
+        ? 'Check the USB GPS is connected (Wizard → Hardware) and that SignalK has an active GPS provider.'
+        : 'Comprueba que el GPS USB esté conectado (Wizard → Hardware) y que SignalK tenga un proveedor GPS activo.',
+      depth: (lang==='en')
+        ? 'The sounder needs an NMEA-0183 / NMEA-2000 input or an OpenPlotter driver.'
+        : 'La sonda necesita entrada NMEA-0183 / NMEA-2000 o un driver de OpenPlotter.',
+      windDir: (lang==='en')
+        ? 'A wind sensor (WS310 style, NMEA) is required. Anemometer signal must reach SignalK.'
+        : 'Requiere un sensor de viento (WS310 estilo, NMEA). La señal del anemómetro debe llegar a SignalK.',
+      windSpeed: (lang==='en')
+        ? 'A wind sensor (WS310 style, NMEA) is required. Anemometer signal must reach SignalK.'
+        : 'Requiere un sensor de viento (WS310 estilo, NMEA). La señal del anemómetro debe llegar a SignalK.',
+      pressure: (lang==='en')
+        ? 'A BME280/BMP280 (I²C) provides barometric pressure. Check that its provider is active in SignalK.'
+        : 'Un BME280/BMP280 (I²C) proporciona la presión barométrica. Comprueba que su proveedor esté activo en SignalK.',
+      waterTemp: (lang==='en')
+        ? 'Water temperature is optional; usually comes from the sounder (NMEA MTW).'
+        : 'La temperatura del agua es opcional; suele venir de la sonda (NMEA MTW).',
+      airTemp: (lang==='en')
+        ? 'Air temperature usually comes from a BME280/BMP280 (I²C) or an OpenPlotter weather add-on.'
+        : 'La temperatura del aire suele venir de un BME280/BMP280 (I²C) o un módulo meteo de OpenPlotter.',
+      humidity: (lang==='en')
+        ? 'Relative humidity requires a BME280 (BMP280 alone does not measure humidity).'
+        : 'La humedad relativa requiere un BME280 (el BMP280 solo NO mide humedad).',
+      headingMag: (lang==='en')
+        ? 'Magnetic heading needs a compass (fluxgate, KBOX, autopilot) — not the same as GPS COG.'
+        : 'El rumbo magnético requiere un compás (fluxgate, KBOX, piloto) — no es lo mismo que el COG del GPS.',
+      stw: (lang==='en')
+        ? 'Speed through water needs a paddle-wheel or ultrasonic log via NMEA VHW/VBW.'
+        : 'La velocidad por el agua requiere una corredera de rueda o ultrasónica vía NMEA VHW/VBW.',
+      ais: (lang==='en')
+        ? 'AIS feed needs a receiver (SDR + AIS-catcher / dedicated AIS receiver) publishing to SignalK. Not needed at anchor if no vessels around.'
+        : 'La señal AIS requiere un receptor (SDR + AIS-catcher / receptor AIS dedicado) publicando a SignalK. No es necesario en fondeo si no hay barcos alrededor.',
+      attitude: (lang==='en')
+        ? 'IMU (pypilot or i2c raw) is needed. In OpenPlotter, activate pypilot and enable the "Pypilot IMU bridge" in this plugin\'s config.'
+        : 'Se necesita un IMU (pypilot o i2c raw). En OpenPlotter, activa pypilot y habilita el "Puente pypilot IMU" en la config del plugin.',
+      gpsSats: (lang==='en')
+        ? 'Satellites count comes from an NMEA GSV sentence. Some cheap GPS units do not publish it.'
+        : 'El número de satélites viene de la sentencia NMEA GSV. Algunos GPS baratos no la publican.',
+      gpsHDOP: (lang==='en')
+        ? 'HDOP requires NMEA GSA output from the GPS.'
+        : 'HDOP requiere salida NMEA GSA en el GPS.'
+    };
+    return hints[id] || null;
+  };
+  var refresh = function(){
+    fetch(A+'/wizard/sensor-check', {cache:'no-store'})
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .catch(function(){ return null; })
+      .then(function(j){
+        if (!container) return;
+        if (!j || !Array.isArray(j.sensors)){
+          container.innerHTML = '<div style="text-align:center;padding:40px;color:#e53935;font-size:18px">'
+            + ((lang==='en')?'✗ Failed to read sensors':'✗ No se pueden leer los sensores')
+            + '</div>';
+          return;
+        }
+        var okCount = j.sensors.filter(function(s){return s.status==='ok';}).length;
+        var warnCount = j.sensors.filter(function(s){return s.status==='warn';}).length;
+        var missCount = j.sensors.filter(function(s){return s.status==='missing';}).length;
+        var summaryTxt = (lang==='en')
+          ? ('✅ '+okCount+' active · ⚠ '+warnCount+' stale · ❌ '+missCount+' missing')
+          : ('✅ '+okCount+' activos · ⚠ '+warnCount+' antiguos · ❌ '+missCount+' ausentes');
+        var html = '';
+        html += '<div style="padding:18px;margin-bottom:22px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;text-align:center;font-size:20px;font-weight:800;color:#fff">'
+             + summaryTxt + '</div>';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px">';
+        j.sensors.forEach(function(s){
+          var color = s.status==='ok' ? '#3aa856' : s.status==='warn' ? '#ffb23f' : '#e53935';
+          var icon  = s.status==='ok' ? '✅' : s.status==='warn' ? '⚠' : '❌';
+          var sampleTxt = fmtSample(s.id, s.sample);
+          var ageTxt = s.status==='ok' ? fmtAge(s.ageMs) : (s.status==='warn' ? fmtAge(s.ageMs)+' '+((lang==='en')?'(stale)':'(antiguo)') : ((lang==='en')?'no data':'sin datos'));
+          html += '<div style="padding:14px 18px;background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.10);border-left:5px solid '+color+';border-radius:12px">'
+               +   '<div style="display:flex;align-items:baseline;gap:10px;font-size:19px;font-weight:800;color:'+color+'">'
+               +     '<span>'+icon+'</span><span>'+labelI18n(s.id, s.label)+'</span>'
+               +   '</div>'
+               +   '<div style="font-size:12px;color:#8ea9bd;font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:4px;word-break:break-all">'+s.path+'</div>'
+               +   '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;gap:12px;flex-wrap:wrap">'
+               +     '<div style="font-size:22px;font-weight:900;color:#fff;font-family:ui-monospace,Menlo,Consolas,monospace">'+sampleTxt+'</div>'
+               +     '<div style="font-size:14px;color:#9ad;font-weight:600">'+ageTxt+'</div>'
+               +   '</div>';
+          var hint = hintFor(s.id, s.status);
+          if (hint){
+            html += '<div style="font-size:13px;color:#cfd8dc;margin-top:10px;line-height:1.5;font-style:italic;opacity:.9">💡 '+hint+'</div>';
+          }
+          html += '</div>';
+        });
+        html += '</div>';
+        html += '<div style="margin-top:22px;text-align:center">'
+             +   '<button onclick="m_wizardStep_sensorCheck(document.getElementById(\'m-wizard-body\'))" style="background:rgba(255,152,0,.15);border:1px solid rgba(255,152,0,.45);color:var(--org);padding:12px 22px;font-size:16px;font-weight:800;border-radius:10px;cursor:pointer">'
+             +     ((lang==='en')?'🔄 Refresh now':'🔄 Refrescar ahora')
+             +   '</button>'
+             + '</div>';
+        html += '<div style="margin-top:16px;font-size:13px;color:#9ad;text-align:center;opacity:.8">'
+             +   ((lang==='en')?'Auto-refresh every 2 s while this step is open.':'Refresco automático cada 2 s mientras estés en este paso.')
+             + '</div>';
+        container.innerHTML = html;
+      });
+  };
+  refresh();
+  if (window._wizardSensorLiveTimer) clearInterval(window._wizardSensorLiveTimer);
+  window._wizardSensorLiveTimer = setInterval(function(){
+    if (!document.getElementById('m-wiz-sensor-body')){
+      clearInterval(window._wizardSensorLiveTimer);
+      window._wizardSensorLiveTimer = null;
+      return;
+    }
+    refresh();
+  }, 2000);
 };
 /* Rev669: step tides — fuentes de datos de marea + estado + servidor SK.
    Fuentes conocidas: IHM (España oficial), Open-Meteo (mundial), NEAPS
@@ -17476,6 +18203,95 @@ window._deleted_m_wizardStep_locale = function(body){
     .catch(function(){
       body.innerHTML = '<div style="color:var(--red)">Error checking locale</div>';
     });
+};
+
+/* Rev715 (feedback Carlos "añade botón feedback al menú Hamb… llamamiento
+   a dar estrellita en Github… links a NPM y Github"): modal fullscreen
+   con CSS propio (dark + naranja) invitando a compartir experiencia y
+   reportar bugs. CTAs: ⭐ GitHub star, 🐛 nuevo issue, 📦 NPM.
+   Bilingüe. */
+window.m_openFeedback = function(){
+  var isEn = (_lang==='en');
+  var repoUrl   = 'https://github.com/Aitonos/signalk-mareas-ihm';
+  var issuesUrl = repoUrl + '/issues/new';
+  var npmUrl    = 'https://www.npmjs.com/package/signalk-mareas-ihm';
+  var old = document.getElementById('m-feedback-modal');
+  if (old && old.parentNode) old.parentNode.removeChild(old);
+  var overlay = document.createElement('div');
+  overlay.id = 'm-feedback-modal';
+  overlay.setAttribute('style',
+    'position:fixed;inset:0;z-index:99998;'
+  + 'background:rgba(0,0,0,.78);'
+  + 'display:flex;align-items:center;justify-content:center;'
+  + 'padding:14px;box-sizing:border-box;'
+  + 'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;');
+  var titleTxt = isEn ? 'Your feedback matters' : 'Tu opinión cuenta';
+  var introTxt = isEn
+    ? 'AnchorWatch Pro is built by <b>one skipper</b> for the community. Everything you tell us — good and bad — feeds directly into the next release.'
+    : 'AnchorWatch Pro lo mantiene <b>un solo armador</b> para toda la comunidad. Todo lo que nos cuentes — bueno y malo — va directo a la próxima versión.';
+  var starLead = isEn
+    ? 'If it helps you at anchor, please give the project a ⭐ star on GitHub — it is the single easiest way to make other sailors find it.'
+    : 'Si te ayuda cuando fondeas, dale una ⭐ estrellita al proyecto en GitHub — es la forma más fácil de que otros marineros lo descubran.';
+  var bugLead = isEn
+    ? 'Found a bug or want to request a feature? Open an issue and describe what happened; include the diagnostic bundle (menu → 🐛) if you can.'
+    : '¿Ves un bug o quieres pedir una función? Abre una issue contando qué pasó; adjunta el paquete de diagnóstico (menú → 🐛) si puedes.';
+  var npmLead = isEn
+    ? 'Or check the package page on NPM to read release notes and get direct install commands.'
+    : 'O visita la página del paquete en NPM para leer las notas de versión y comandos de instalación.';
+  var btn = function(href, bg, textColor, borderColor, iconHtml, labelHtml){
+    return '<a href="'+href+'" target="_blank" rel="noopener noreferrer" style="'
+      + 'display:flex;align-items:center;gap:14px;padding:16px 18px;margin-bottom:12px;'
+      + 'background:'+bg+';color:'+textColor+';border:2px solid '+borderColor+';'
+      + 'border-radius:12px;text-decoration:none;font-size:17px;font-weight:800;'
+      + 'transition:transform .05s,filter .15s" onmousedown="this.style.transform=\'scale(.99)\'"'
+      + ' onmouseup="this.style.transform=\'scale(1)\'"'
+      + ' onmouseover="this.style.filter=\'brightness(1.15)\'"'
+      + ' onmouseout="this.style.filter=\'brightness(1)\'">'
+      +   '<span style="font-size:28px;line-height:1;flex-shrink:0">'+iconHtml+'</span>'
+      +   '<span style="flex:1;line-height:1.35">'+labelHtml+'</span>'
+      +   '<span style="font-size:22px;opacity:.7">↗</span>'
+      + '</a>';
+  };
+  overlay.innerHTML =
+    '<div style="'
+  + '  background:#1a1a1a;color:#f0f0f0;'
+  + '  border:2px solid var(--org);border-radius:14px;'
+  + '  box-shadow:0 12px 40px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.06);'
+  + '  max-width:560px;width:100%;max-height:88vh;overflow-y:auto;'
+  + '  padding:24px 26px 20px;box-sizing:border-box;">'
+  + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">'
+  +   '<span style="font-size:36px;line-height:1">💬</span>'
+  +   '<h3 style="margin:0;font-size:22px;color:var(--org);font-weight:700">'+titleTxt+'</h3>'
+  + '</div>'
+  + '<div style="font-size:15px;line-height:1.55;color:#d8d8d8;margin-bottom:20px">'+introTxt+'</div>'
+  + '<div style="font-size:14px;line-height:1.55;color:#cfd8dc;margin-bottom:10px">'+starLead+'</div>'
+  + btn(repoUrl, 'linear-gradient(135deg,#fdd835,#ff9800)', '#0a1929', '#ffcf80', '⭐',
+        (isEn?'Star on GitHub':'⭐ Dar estrella en GitHub')+'<br><span style="font-size:12px;opacity:.7;font-weight:600">github.com/Aitonos/signalk-mareas-ihm</span>')
+  + '<div style="font-size:14px;line-height:1.55;color:#cfd8dc;margin:16px 0 10px">'+bugLead+'</div>'
+  + btn(issuesUrl, 'rgba(229,57,53,.18)', '#ff8a80', '#e53935', '🐛',
+        (isEn?'Open an issue / request a feature':'Abrir issue / pedir función')+'<br><span style="font-size:12px;opacity:.7;font-weight:600">github.com/…/issues/new</span>')
+  + '<div style="font-size:14px;line-height:1.55;color:#cfd8dc;margin:16px 0 10px">'+npmLead+'</div>'
+  + btn(npmUrl, 'rgba(203,56,55,.15)', '#ff9e9e', 'rgba(203,56,55,.55)', '📦',
+        (isEn?'View on NPM':'Ver en NPM')+'<br><span style="font-size:12px;opacity:.7;font-weight:600">npmjs.com/package/signalk-mareas-ihm</span>')
+  + '<div style="margin-top:20px;text-align:right">'
+  +   '<button type="button" id="m-feedback-close" style="'
+  +     'background:transparent;color:#9aa;border:1px solid rgba(255,255,255,.25);border-radius:8px;'
+  +     'padding:10px 22px;font-size:14px;font-weight:600;cursor:pointer;'
+  +     'min-height:44px;min-width:100px">'
+  +     (isEn?'Close':'Cerrar')
+  +   '</button>'
+  + '</div>'
+  + '</div>';
+  var close = function(){
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    document.removeEventListener('keydown', escHandler);
+  };
+  var escHandler = function(e){ if (e.key === 'Escape') close(); };
+  overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
+  document.addEventListener('keydown', escHandler);
+  document.body.appendChild(overlay);
+  var cb = document.getElementById('m-feedback-close');
+  if (cb) cb.addEventListener('click', close);
 };
 
 function m_captureDiagnostic(){

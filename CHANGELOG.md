@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.6.1] - 2026-07-15
+
+### English
+
+**Wizard polish + NEAPS datum fix + Feedback CTA**
+
+Follow-up release closing the last rough edges of the Sprint J wizard and correcting an accuracy problem with the NEAPS tide provider.
+
+- **NEAPS ↔ IHM offset fixed**: the "cero del puerto" for NEAPS extremes is now computed from a **365-day** window (LAT ≈ Lowest Astronomical Tide) instead of the previous 7-day window + 5 cm safety margin. In neap-tide weeks the old code would leave the semanal minimum at 5 cm and drop all heights 30–60 cm below what IHM/xtide publish. Per-station cache TTL of 30 days keeps it fast. Existing cache invalidated automatically (`neaps-tides-v1` → `v2`).
+- **Wizard step 5 — Sensor check** implemented (was `Under construction`): live grid with GPS position/SOG/heading (true + magnetic), depth, wind, barometric pressure, air/water temperature, humidity, IMU attitude, GPS satellites/HDOP, and **AIS target count**. Each tile shows the last value with unit conversion, freshness age, and a hint of what to check when it is missing (USB GPS, BME280, pypilot, SDR + AIS-catcher, etc.). Auto-refresh every 2 s.
+- **Wizard step 9 — Summary** now reflects the real state: red banner + red-bordered rows for steps not yet completed, green ✅ for done ones. Removed the redundant "Configuration summary — click any item…" line. Progress bar reaches 100 % at step 9/9 (was 89 %). "Paso N/M" moved from a stacked label to an inline chip next to the H2 title.
+- **SignalK path publication panel** in Config: click-lock popup with plugin-native CSS (dark + amber border, keyboard/backdrop dismiss) explaining *why* required 🔒 and deprecated 🗑 paths cannot be toggled. Same-styled amber popup when the security layer is enabled and the user is not logged in — no more silent 401s.
+- **Feedback menu entry** — new `💬 Your feedback matters` in the hamburger menu. Modal with GitHub star CTA, "open issue" CTA, and NPM package link. Bilingual, click-outside/Escape to close.
+- **README + npm keywords** updated to mention NEAPS, openwatersio, TICON-4, LAT datum, worldwide-tide-predictions and related terms so users searching in the SignalK Appstore find the plugin by these features.
+
+### Español
+
+**Pulido del wizard + arreglo datum NEAPS + CTA de feedback**
+
+Release de continuidad que cierra los flecos del wizard de Sprint J y corrige un problema de precisión del proveedor NEAPS de mareas.
+
+- **Offset NEAPS ↔ IHM arreglado**: el "cero del puerto" para los extremos NEAPS ahora se calcula sobre una ventana de **365 días** (LAT ≈ Lowest Astronomical Tide), en lugar de los 7 días + margen 5 cm anteriores. En semanas de mareas muertas la fórmula vieja dejaba el mínimo semanal en 5 cm y bajaba todas las alturas 30–60 cm respecto a lo que publica IHM/xtide. Caché por estación de 30 días. La caché vieja se invalida automáticamente (`neaps-tides-v1` → `v2`).
+- **Wizard paso 5 — Sensores conectados** implementado (era `En construcción`): grid en vivo con posición GPS, SOG, rumbo (verdadero + magnético), sonda, viento, presión, temperatura de aire y agua, humedad, IMU (attitude), satélites/HDOP y **contador de targets AIS**. Cada tarjeta muestra el último valor con conversión de unidades, edad del dato y una pista de qué revisar si falta (GPS USB, BME280, pypilot, SDR + AIS-catcher, etc.). Refresco cada 2 s.
+- **Wizard paso 9 — Resumen** ahora refleja el estado real: banner rojo + tarjetas con borde rojo para pasos sin completar, ✅ verde para los hechos. Eliminada la frase redundante "Resumen de configuración — pulsa cualquier ítem…". Barra de progreso llega al 100 % en el paso 9/9 (antes se quedaba en 89 %). "Paso N/M" pasa de línea aparte a chip inline junto al H2 del título.
+- **Panel de publicación de paths SignalK** en Config: popup CSS propio del plugin (dark + borde ámbar, cierra con Escape/click fuera) explicando *por qué* los paths 🔒 imprescindibles y 🗑 obsoletos no se pueden togglear. Popup ámbar equivalente cuando la capa de seguridad está activada y no hay sesión — se acabaron los 401 silenciosos.
+- **Entrada Feedback en el menú** — nuevo `💬 Tu opinión cuenta` en el menú hamburguesa. Modal con CTA de estrella en GitHub, botón de abrir issue y link a NPM. Bilingüe, se cierra con click fuera o Escape.
+- **README + keywords npm** actualizados para mencionar NEAPS, openwatersio, TICON-4, datum LAT, predicciones de marea mundiales y términos relacionados, para que quienes busquen en el Appstore de SignalK encuentren el plugin por estas features.
+
 ## [2.6.0] - 2026-07-09
 
 ### English
