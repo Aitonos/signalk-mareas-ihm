@@ -112,7 +112,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev719";
+const PLUGIN_REVISION = "Rev731";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -513,6 +513,16 @@ const PATH_DESCRIPTIONS_ES: Record<string, string> = {
 "environment.anchor.mareasIhm.anchorCommand": "⚓ FONDEAR/LEVAR — Enviar PUT true=fondear, false=levar (para KIP/domótica)",
 "environment.anchor.mareasIhm.garreoAlarmCommand": "Alarma garreo ON/OFF — Enviar PUT true/false (para KIP/domótica)",
 "environment.anchor.mareasIhm.aisAlarmCommand": "Alarma AIS ON/OFF — Enviar PUT true/false (para KIP/domótica)",
+// Rev721: canónicos SK — interop con Hoekens/Y2K/WilhelmSK
+"navigation.anchor.position":        "Posición del ancla fondeada (canónico SK — compartido con otras apps)",
+"navigation.anchor.state":           "Estado del fondeo: 'on' vigilando, 'off' levada (canónico SK)",
+"navigation.anchor.maxRadius":       "Radio máximo permitido antes de alarma (m, canónico SK)",
+"navigation.anchor.currentRadius":   "Distancia actual barco-ancla (m, canónico SK)",
+"navigation.anchor.distanceFromBow": "Distancia desde la proa al ancla (m, canónico SK)",
+"navigation.anchor.bearingTrue":     "Rumbo verdadero del barco al ancla (rad, canónico SK)",
+"navigation.anchor.apparentBearing": "Rumbo aparente al ancla desde la proa (rad, canónico SK)",
+"navigation.anchor.watchZone":       "Zona de vigilancia {type,radius} (canónico SK)",
+"navigation.anchor.meta":            "Zonas de alarma para la sonda de estado (canónico SK)",
 "environment.anchor.mareasIhm.aisAlarmStatus": "Estado alarma AIS: OK / nombres de targets en zona de riesgo",
 "environment.anchor.mareasIhm.LOA": "Eslora del barco usada en el cálculo (m)",
 "environment.anchor.mareasIhm.bowHeight": "Altura de la roldana de proa sobre la línea de flotación (m)",
@@ -606,6 +616,16 @@ const PATH_DESCRIPTIONS_EN: Record<string, string> = {
 "environment.anchor.mareasIhm.anchorCommand": "⚓ DROP/LIFT — Send PUT true=drop, false=lift (for KIP/home automation)",
 "environment.anchor.mareasIhm.garreoAlarmCommand": "Drag alarm ON/OFF — Send PUT true/false (for KIP/home automation)",
 "environment.anchor.mareasIhm.aisAlarmCommand": "AIS alarm ON/OFF — Send PUT true/false (for KIP/home automation)",
+// Rev721: canonical SK paths — interop with Hoekens/Y2K/WilhelmSK
+"navigation.anchor.position":        "Anchor position (SK canonical — shared with other anchor apps)",
+"navigation.anchor.state":           "Anchor state: 'on' watching, 'off' lifted (SK canonical)",
+"navigation.anchor.maxRadius":       "Max allowed radius before alarm (m, SK canonical)",
+"navigation.anchor.currentRadius":   "Current boat-to-anchor distance (m, SK canonical)",
+"navigation.anchor.distanceFromBow": "Distance from bow to anchor (m, SK canonical)",
+"navigation.anchor.bearingTrue":     "True bearing from boat to anchor (rad, SK canonical)",
+"navigation.anchor.apparentBearing": "Apparent bearing to anchor from bow (rad, SK canonical)",
+"navigation.anchor.watchZone":       "Watch zone {type,radius} (SK canonical)",
+"navigation.anchor.meta":            "Alarm zones for state probe (SK canonical)",
 "environment.anchor.mareasIhm.aisAlarmStatus": "AIS alarm status: OK / target names in risk zone",
 "environment.anchor.mareasIhm.LOA": "Vessel length overall used in calculation (m)",
 "environment.anchor.mareasIhm.bowHeight": "Bow roller height above waterline (m)",
@@ -721,6 +741,19 @@ const SK_PATH_CATALOG: Record<string, SkPathSpec> = {
   "environment.anchor.mareasIhm.anchorCommand":    { tier: "optional", group: "ais-commands" },
   "environment.anchor.mareasIhm.garreoAlarmCommand": { tier: "optional", group: "ais-commands" },
   "environment.anchor.mareasIhm.aisAlarmCommand":  { tier: "optional", group: "ais-commands" },
+  // Rev721: paths canónicos SK navigation.anchor.* — publicados en
+  // paralelo a los mareasIhm.* para interop con Hoekens/Y2K/WilhelmSK.
+  // Optional: si el usuario ya usa otra app de anchor watch como fuente
+  // de verdad, puede desactivarlos aquí para evitar tráfico duplicado.
+  "navigation.anchor.position":         { tier: "optional", group: "anchor-canonical" },
+  "navigation.anchor.state":            { tier: "optional", group: "anchor-canonical" },
+  "navigation.anchor.maxRadius":        { tier: "optional", group: "anchor-canonical" },
+  "navigation.anchor.currentRadius":    { tier: "optional", group: "anchor-canonical" },
+  "navigation.anchor.distanceFromBow":  { tier: "optional", group: "anchor-canonical" },
+  "navigation.anchor.bearingTrue":      { tier: "optional", group: "anchor-canonical" },
+  "navigation.anchor.apparentBearing":  { tier: "optional", group: "anchor-canonical" },
+  "navigation.anchor.watchZone":        { tier: "optional", group: "anchor-canonical" },
+  "navigation.anchor.meta":             { tier: "optional", group: "anchor-canonical" },
   // ── meteo / oleaje / abrigo (bloque completo opcional)
   "environment.weather.mareasIhm.forecast24h":      { tier: "optional", group: "weather" },
   "environment.weather.mareasIhm.pressureHpa":      { tier: "optional", group: "weather" },
@@ -796,6 +829,10 @@ const SK_PATH_CATALOG: Record<string, SkPathSpec> = {
 // GET. `isPathPublishAllowed(path)` es el gatekeeper: los required van
 // siempre, los deprecated nunca, y el resto respeta el toggle del user.
 let _skPathsConfigCache: Record<string, boolean> | null = null;
+// Rev725: rolling window de deltas emitidos por el plugin, usada por
+// /api/sk-paths/stats para mostrar "N paths activos · X deltas/seg" en la
+// cabecera del panel de paths SK del wizard.
+const _skPathsRateWindow: Array<{ t: number; n: number }> = [];
 async function _loadSkPathsConfig(cache: any): Promise<Record<string, boolean>> {
   if (_skPathsConfigCache) return _skPathsConfigCache;
   try {
@@ -1160,104 +1197,24 @@ export default function (app: SignalKApp): Plugin {
     // Solo texto (la lógica de caché offline se mantiene intacta).
     description: "Predicción de mareas para la posición del barco usando datos oficiales del IHM.",
     schema: () => ({
-      title: "MAREAS (IHM)",
+      // Rev726 (feedback Carlos "¿no puedes poner un acceso directo?
+      // Hay que poner la URL de IHM o de lo que sea en el config, quitar
+      // toda referencia visual en SK config"): el schema del admin de SK
+      // queda VACÍO de campos configurables. Todo se ha movido al wizard
+      // visual de la webapp, que persiste al mismo fichero de config
+      // via app.savePluginOptions(). Sólo dejamos un CTA prominente en
+      // description/title para que el usuario que entre al admin sepa
+      // dónde ir.
+      title: "AnchorWatch Pro",
+      description: "[App setup moved to Webapp](/signalk-mareas-ihm/mobile)",
       type: "object",
       properties: {
-        // IHM settings (this plugin ships with a single provider)
-        ...(sources[0].properties ?? {}),
-        period: {
-          title: "Update frequency",
-          type: "number",
-          description: "How often to update tide forecast (minutes)",
-          default: 60,
-          minimum: 1,
-        },
-        // Rev106: pypilot bridge — opcional, conecta por TCP al Pi Zero de
-        // pypilot para republicar acelerómetro IMU (que pypilot NO publica
-        // por defecto a SK). Habilita extracción de altura de ola por
-        // integración doble de aceleración vertical.
-        pypilotEnabled: {
-          title: "Pypilot IMU bridge",
-          type: "boolean",
-          description: "Conectar a un pypilot externo (Pi Zero) para republicar acelerómetro IMU como deltas SK",
-          default: false,
-        },
-        pypilotHost: {
-          title: "Pypilot host",
-          type: "string",
-          description: "IP o hostname del Pi de pypilot (ej. 10.10.10.50 ó pypilot.local)",
-          default: "",
-        },
-        pypilotPort: {
-          title: "Pypilot port",
-          type: "number",
-          description: "Puerto TCP del servidor de pypilot (default 23322)",
-          default: 23322,
-          minimum: 1,
-          maximum: 65535,
-        },
-        // Rev147: bloque IMU auto-detect. Si el usuario solo configura pypilot
-        // arriba (compat con instalaciones existentes), seguimos respetándolo.
-        // Si activa autoDetect, ImuManager busca primero datos ya en SK, luego
-        // pypilot localhost, luego remotos. Raw I2C es opt-in DIY explícito.
-        imuAutoDetect: {
-          title: "IMU: auto-detect source",
-          type: "boolean",
-          description: "Al arrancar, intenta detectar automáticamente la fuente IMU (SignalK existente → pypilot localhost → pypilot remoto). Si lo desactivas, sólo usa el pypilot configurado arriba.",
-          default: true,
-        },
-        imuPreferredSource: {
-          title: "IMU: preferred source (lock)",
-          type: "string",
-          enum: ["auto", "signalk", "pypilot-local", "pypilot-network", "raw-i2c", "none"],
-          description: "Fija una fuente concreta y desactiva el failover. 'auto' deja que el manager decida.",
-          default: "auto",
-        },
-        imuRemoteHosts: {
-          title: "IMU: candidate remote hosts",
-          type: "string",
-          description: "Lista separada por comas de IPs/hosts adicionales para probar (ej. 192.168.1.115,tinypilot.local). El host configurado arriba se prueba siempre.",
-          default: "",
-        },
-        imuRawI2cEnabled: {
-          title: "IMU: enable raw I2C (DIY)",
-          type: "boolean",
-          description: "Habilita la fuente I2C cruda (ICM-20948 / MPU-9250). Sólo si NO tienes pypilot — éste ya hace calibración y filtrado correctos.",
-          default: false,
-        },
-        imuRawI2cBus: {
-          title: "IMU: I2C bus device",
-          type: "string",
-          description: "Bus I2C a escanear (típicamente /dev/i2c-1 en Raspberry Pi).",
-          default: "/dev/i2c-1",
-        },
-        imuStaleAfterSeconds: {
-          title: "IMU: stale threshold (s)",
-          type: "number",
-          description: "Si la fuente activa no actualiza en este tiempo, el manager intenta failover.",
-          default: 10,
-          minimum: 2,
-          maximum: 120,
-        },
-        // Rev166: Telegram bot para alertas push al móvil del armador cuando
-        // el barco está solo en el fondeadero. Requiere crear un bot vía
-        // @BotFather (gratis) y obtener el chat_id (escribir /start al bot,
-        // luego mirar https://api.telegram.org/bot<TOKEN>/getUpdates).
-        // Las alarmas garreo / AIS / grounding emiten un mensaje cada vez
-        // que se disparan. NO sustituye al audio en el barco — es alerta
-        // remota cuando estás en tierra.
-        telegramBotToken: {
-          title: "Telegram: bot token (opcional)",
-          type: "string",
-          description: "Token del bot (ej. 123456789:AAEhBOweik6ad9r_Q...). Para crearlo: abre Telegram → habla con @BotFather → /newbot → sigue las instrucciones → copia el token. Vacío = desactivado.",
-          default: "",
-        },
-        telegramChatId: {
-          title: "Telegram: chat ID destino (auto-detectable)",
-          type: "string",
-          description: "ID del chat. Si lo dejas vacío y mandas /start a tu bot desde Telegram, el plugin lo auto-detecta y lo guarda. Puedes también escribir aquí un ID de grupo (negativo) para enviar a un grupo de varios usuarios.",
-          default: "",
-        },
+        // Rev726: TODAS las propiedades visibles se han vaciado. El código
+        // sigue leyendo `props.ihmBaseUrl`, `props.pypilotHost`, etc. con
+        // nullish coalescing a valores default sensatos, así nada se rompe.
+        // Los valores se editan desde el wizard (POST /api/plugin-options →
+        // app.savePluginOptions) que persiste al mismo storage.
+        // (props del schema removed — see Rev726, todos editables desde el wizard)
       },
     }),
     start,
@@ -1792,18 +1749,51 @@ export default function (app: SignalKApp): Plugin {
       if (!(app as any)._ihmHandleMessageWrapped) {
         const _origHandle = (app as any).handleMessage.bind(app);
         (app as any)._ihmOrigHandleMessage = _origHandle; // Rev704: expuesto para publicar null-values
+        // Rev721 (feedback usuario "otras apps de fondeo comparten los
+        // paths SK, excepto Mareas IHM"): espejo automático de nuestras
+        // notificaciones custom a los paths canónicos SK. Así WilhelmSK,
+        // Hoekens, Y2K etc. reciben nuestras alarmas por el canal que ya
+        // escuchan, sin tocar los 10+ call-sites donde emitimos.
+        const NOTIF_MIRROR: Record<string, string> = {
+          "notifications.signalk-mareas-ihm.anchorDrag":     "notifications.navigation.anchor",
+          "notifications.signalk-mareas-ihm.grounding":      "notifications.environment.depth.belowKeel",
+          "notifications.signalk-mareas-ihm.groundingRisk":  "notifications.environment.depth.belowKeel",
+          "notifications.signalk-mareas-ihm.aisAnchorAlarm": "notifications.navigation.collisionRisk",
+          "notifications.signalk-mareas-ihm.gpsLost":        "notifications.navigation.gnss",
+        };
         (app as any).handleMessage = function(pluginId: any, delta: any) {
           try {
             if (delta && Array.isArray(delta.updates)) {
               let anyKept = false;
               for (const u of delta.updates) {
                 if (Array.isArray(u.values)) {
+                  // 1) Espejo: por cada value con path en NOTIF_MIRROR,
+                  // clonamos su value con el path canónico. Se inserta en
+                  // el mismo update para que compartan timestamp y así SK
+                  // los procese como uno solo.
+                  const mirrored: any[] = [];
+                  for (const v of u.values) {
+                    const p = String(v?.path ?? "");
+                    const canonical = NOTIF_MIRROR[p];
+                    if (canonical) {
+                      mirrored.push({ path: canonical, value: v.value });
+                    }
+                  }
+                  if (mirrored.length > 0) u.values.push(...mirrored);
+                  // 2) Filtro (ya existía Rev703).
                   u.values = u.values.filter((v: any) => {
                     const p = String(v?.path ?? "");
                     if (p.startsWith("notifications.")) return true;
                     return isPathPublishAllowed(p);
                   });
                   if (u.values.length > 0) anyKept = true;
+                  // 3) Rev725: contador de rate para /api/sk-paths/stats.
+                  // Sumamos values individuales que realmente salen (no
+                  // el número de updates), para que la métrica cuadre con
+                  // "cuántos deltas/seg publica el plugin".
+                  try {
+                    _skPathsRateWindow.push({ t: Date.now(), n: u.values.length });
+                  } catch { /* defensive */ }
                 } else {
                   anyKept = true; // update sin values (meta, etc.) → dejarlo
                 }
@@ -1815,7 +1805,7 @@ export default function (app: SignalKApp): Plugin {
           return _origHandle(pluginId, delta);
         };
         (app as any)._ihmHandleMessageWrapped = true;
-        app.debug("[SKPATHS] handleMessage wrapped — filter active for all deltas");
+        app.debug("[SKPATHS] handleMessage wrapped — filter + canonical notif mirror active");
       }
     } catch {
       // ignore
@@ -2376,15 +2366,22 @@ try {
     // Añadidos: units, boat (medidas), systemCheck (espeak/noto/versiones/
     // set-system-time), sensorCheck (IMU/sonda/viento/GPS/presión), summary.
     const WIZARD_STEPS_ORDER = [
-      "language",     // 1. Idioma
-      "units",        // 2. Sistema de unidades
-      "boat",         // 3. Datos del barco (LOA, beam, draft, fromBow, margen)
-      "systemCheck",  // 4. Dependencias del sistema (espeak, noto, versiones, plugins conflictivos)
-      "sensorCheck",  // 5. Sensores conectados (IMU/sonda/viento/GPS/presión/temp)
-      "tides",        // 6. Mareas + meteo
-      "mbtiles",      // 7. Cartas offline
-      "master",       // 8. Usuario master
-      "summary",      // 9. Resumen y finalizar
+      // Rev729 (feedback Carlos "Resumen pasa a ser la HOME, no la última"):
+      // summary movido al principio como dashboard/hub. Desde ahí se
+      // navega a cualquier step.
+      "summary",      // 1.  🏠 Resumen (HOME)
+      "language",     // 2.  Idioma
+      "units",        // 3.  Sistema de unidades
+      "boat",         // 4.  Datos del barco
+      "systemCheck",  // 5.  Dependencias del sistema
+      "sensorCheck",  // 6.  Sensores conectados
+      "imu",          // 7.  IMU y pypilot
+      "notifications",// 8.  Alertas al móvil (Telegram)
+      "tides",        // 9.  Mareas + meteo
+      "mbtiles",      // 10. Cartas offline
+      "sonda",        // 11. Cálculo de sonda
+      "skpaths",      // 12. Publicación paths SignalK
+      "master",       // 13. Usuario master
     ];
     async function _getWizardState(): Promise<any> {
       const st = ((await ihmCache.get("wizardState")) as any) || {
@@ -4849,6 +4846,7 @@ try {
           { id: "flow",          label: lang==="en" ? "🌀 Current flow"    : "🌀 Corriente" },
           { id: "grounding",     label: lang==="en" ? "🚧 Grounding alarm" : "🚧 Alarma varada" },
           { id: "anchor",        label: lang==="en" ? "⚓ Anchor"          : "⚓ Fondeo" },
+          { id: "anchor-canonical", label: lang==="en" ? "⚓ Anchor Standard SK" : "⚓ Fondeo Standard SK" },
           { id: "ais-commands",  label: lang==="en" ? "📡 AIS + PUT"      : "📡 AIS y PUT" },
           { id: "weather",       label: lang==="en" ? "☁️ Weather"        : "☁️ Meteo" },
           { id: "waves",         label: lang==="en" ? "🌊 IMU waves engine": "🌊 Motor de olas IMU" },
@@ -4867,6 +4865,119 @@ try {
       res.set("Cache-Control", "no-store");
       const cfg = await _loadSkPathsConfig(ihmCache);
       res.json({ config: cfg });
+    });
+
+    // Rev725 (feedback Carlos "En cabecera que diga el total de paths que
+    // publicamos, cuántos por segundo"): stats agregados del catálogo +
+    // rate real medido en el monkey-patch de handleMessage. Devuelve:
+    //   activeCount       = cuántos paths están enabled (según toggles + tier)
+    //   totalCatalogued   = total del catálogo (incluye deprecated)
+    //   deltasPerSecond   = tasa media últimos 30 s
+    //   deltasLastMinute  = suma últimos 60 s
+    expressApp.get("/signalk-mareas-ihm/api/sk-paths/stats", async (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        await _loadSkPathsConfig(ihmCache);
+        let activeCount = 0;
+        for (const p of Object.keys(SK_PATH_CATALOG)) {
+          if (isPathPublishAllowed(p)) activeCount++;
+        }
+        const now = Date.now();
+        // Purga entradas > 60 s.
+        while (_skPathsRateWindow.length > 0 && (now - _skPathsRateWindow[0].t) > 60_000) {
+          _skPathsRateWindow.shift();
+        }
+        let sum30 = 0, sum60 = 0;
+        for (const e of _skPathsRateWindow) {
+          const age = now - e.t;
+          if (age <= 60_000) sum60 += e.n;
+          if (age <= 30_000) sum30 += e.n;
+        }
+        const perSecond = sum30 / 30;
+        res.json({
+          activeCount,
+          totalCatalogued: Object.keys(SK_PATH_CATALOG).length,
+          deltasPerSecond: Math.round(perSecond * 100) / 100,
+          deltasLastMinute: sum60,
+          windowSamples: _skPathsRateWindow.length,
+        });
+      } catch (e: any) { res.status(500).json({ error: String(e?.message ?? e) }); }
+    });
+
+    // Rev723 (feedback Carlos "no tenemos configuración de telegram, IMU y
+    // demás en menú Configuración, sólo en la de SK"): endpoints
+    // GET/POST /api/plugin-options que espejan un subconjunto del schema
+    // SK (telegram / pypilot / IMU) para poder editarlo desde el modal
+    // Config del mobile.html sin ir al admin de SignalK. Los valores se
+    // persisten con app.savePluginOptions() — SK Server reinicia el
+    // plugin en caliente al guardar, así los cambios en pypilotHost /
+    // imuAutoDetect / telegramBotToken se aplican sin reboot manual.
+    const PLUGIN_OPTS_KEYS = [
+      "telegramBotToken", "telegramChatId",
+      "pypilotEnabled", "pypilotHost", "pypilotPort",
+      "imuAutoDetect", "imuPreferredSource", "imuRemoteHosts",
+      "imuRawI2cEnabled", "imuRawI2cBus", "imuStaleAfterSeconds",
+    ] as const;
+    const _maskSecret = (s: string) => {
+      if (!s || typeof s !== "string") return "";
+      if (s.length <= 8) return "*".repeat(s.length);
+      return s.slice(0, 4) + "•".repeat(Math.max(4, s.length - 8)) + s.slice(-4);
+    };
+    expressApp.get("/signalk-mareas-ihm/api/plugin-options", (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        const rp = (app as any).readPluginOptions?.();
+        const cfg = (rp && rp.configuration) || {};
+        const out: Record<string, any> = {};
+        for (const k of PLUGIN_OPTS_KEYS) {
+          if (k === "telegramBotToken") {
+            out[k] = cfg[k] ? _maskSecret(String(cfg[k])) : "";
+            out[k + "Set"] = !!cfg[k];
+          } else if (k === "telegramChatId") {
+            out[k] = cfg[k] ? String(cfg[k]) : "";
+          } else {
+            out[k] = cfg[k];
+          }
+        }
+        // Extras informativos para la UI
+        out.telegramChatIdAutoDetected = _telegramChatIdCached || null;
+        res.json({ options: out, keys: PLUGIN_OPTS_KEYS });
+      } catch (e: any) { res.status(500).json({ error: String(e?.message ?? e) }); }
+    });
+    expressApp.post("/signalk-mareas-ihm/api/plugin-options", requireControlAccess, (req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        if (typeof (app as any).savePluginOptions !== "function") {
+          res.status(500).json({ error: "SK server too old — savePluginOptions API unavailable" });
+          return;
+        }
+        const body = req?.body ?? {};
+        const patch = (body && typeof body === "object") ? (body.options ?? body) : {};
+        const rp = (app as any).readPluginOptions?.() ?? {};
+        const cur = { ...(rp.configuration ?? {}) };
+        const applied: string[] = [];
+        for (const k of PLUGIN_OPTS_KEYS) {
+          if (!Object.prototype.hasOwnProperty.call(patch, k)) continue;
+          const v = patch[k];
+          // Rev723: si el user manda un valor enmascarado (••••), no lo
+          // sobrescribas — significa que dejó intocado el campo secreto.
+          if (k === "telegramBotToken" && typeof v === "string" && v.includes("•")) continue;
+          // Coerce tipos según schema para no guardar "true"/"false" string.
+          if (["pypilotEnabled", "imuAutoDetect", "imuRawI2cEnabled"].includes(k)) {
+            cur[k] = !!v;
+          } else if (["pypilotPort", "imuStaleAfterSeconds"].includes(k)) {
+            const n = Number(v); if (Number.isFinite(n)) cur[k] = n;
+          } else {
+            cur[k] = typeof v === "string" ? v : (v == null ? "" : String(v));
+          }
+          applied.push(k);
+        }
+        (app as any).savePluginOptions({ ...(rp.configuration ?? {}), ...cur, enabled: rp.enabled !== false }, (err: any) => {
+          if (err) { res.status(500).json({ error: String(err?.message ?? err) }); return; }
+          // SK Server ≥2.0 reinicia el plugin al guardar. Devolvemos flag.
+          res.json({ ok: true, applied, restartInProgress: true });
+        });
+      } catch (e: any) { res.status(500).json({ error: String(e?.message ?? e) }); }
     });
 
     expressApp.post("/signalk-mareas-ihm/api/sk-paths/config", requireControlAccess, async (req: any, res: any) => {
@@ -5488,6 +5599,39 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Rev721 (feedback usuario "otras apps de fondeo comparten
+// navigation.anchor.*, excepto Mareas IHM"): bearing verdadero de
+// origen→destino en radianes [0..2π), fórmula haversine estándar.
+// Necesario para poblar navigation.anchor.bearingTrue y apparentBearing
+// (esta última = bearingTrue - headingTrue) que consumen WilhelmSK,
+// Hoekens-anchor-alarm, Y2K y demás apps del ecosistema SK.
+function bearingRad(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  const θ = Math.atan2(y, x);
+  return (θ + 2 * Math.PI) % (2 * Math.PI);
+}
+
+// Rev721: valores canónicos para publicar al LEVAR el ancla — apaga
+// state y limpia los datos que otras apps del ecosistema muestran.
+// Coherente con lo que hacen Hoekens, Y2K, Whilm et al. al lift.
+function canonicalAnchorClearValues(): Array<{ path: string; value: any }> {
+  return [
+    { path: "navigation.anchor.state", value: "off" },
+    { path: "navigation.anchor.position", value: null },
+    { path: "navigation.anchor.maxRadius", value: null },
+    { path: "navigation.anchor.currentRadius", value: null },
+    { path: "navigation.anchor.distanceFromBow", value: null },
+    { path: "navigation.anchor.bearingTrue", value: null },
+    { path: "navigation.anchor.apparentBearing", value: null },
+    { path: "navigation.anchor.watchZone", value: null },
+    { path: "navigation.anchor.meta", value: null },
+  ];
 }
 
 // --- MBTiles tile server ---
@@ -6456,6 +6600,8 @@ async function _autoLiftAnchorIntentional(sogKt: number) {
       { path: "environment.anchor.mareasIhm.alarmRadius", value: null },
       { path: "environment.anchor.mareasIhm.distanceToAnchor", value: null },
       { path: "environment.anchor.mareasIhm.aisAlarmStatus", value: "Auto-lift" },
+      // Rev721: canónicos SK apagados al levar (interop con Hoekens/Y2K/WilhelmSK).
+      ...canonicalAnchorClearValues(),
     ];
     const d: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: clearValues as any }] };
@@ -6556,6 +6702,8 @@ function evaluateAnchorWatch() {
         { path: "environment.anchor.mareasIhm.anchorCommand" as Path, value: false },
         { path: "environment.anchor.mareasIhm.garreoAlarmCommand" as Path, value: false },
         { path: "environment.anchor.mareasIhm.aisAlarmCommand" as Path, value: false },
+        // Rev721: canónicos SK off cuando no estamos vigilando (interop).
+        ...canonicalAnchorClearValues(),
       ];
       const d: Delta = { context: ("vessels." + app.selfId) as Context,
         updates: [{ timestamp: new Date().toISOString() as Timestamp, values: clearValues as any }] };
@@ -6785,6 +6933,8 @@ function evaluateAnchorWatch() {
             }]}],
           };
           app.handleMessage(plugin.id, d);
+          // Rev721: el espejo canónico lo añade el wrapper de
+          // handleMessage automáticamente (notifications.navigation.anchor).
         };
         if (!isFirstEmit) {
           // Pseudo-transition: brief normal then alarm
@@ -6845,6 +6995,59 @@ function evaluateAnchorWatch() {
       { path: "environment.anchor.mareasIhm.swingRadiusMax" as Path, value: `${Math.round(radiusTotalForRing * 10) / 10} m` },
       { path: "environment.anchor.mareasIhm.swingRadiusNow" as Path, value: `${Math.round(radiusTotalForRing * 10) / 10} m` },
     ];
+
+    // Rev721 (feedback usuario "otras apps de fondeo comparten los mismos
+    // paths SK, excepto Mareas IHM — al levar en una se aplica a todas"):
+    // publicamos también los paths canónicos navigation.anchor.* así el
+    // estado del fondeo se sincroniza con Hoekens/Y2K/anchor-alarm y lo
+    // consumen apps externas como WilhelmSK (iOS/iPadOS push).
+    // Referencia Signal K vocab: navigation.anchor.position, .state,
+    // .maxRadius, .currentRadius, .distanceFromBow, .bearingTrue,
+    // .apparentBearing, .watchZone, .meta.
+    try {
+      const anchorLat = anchorWatch.anchorPosition.lat;
+      const anchorLon = anchorWatch.anchorPosition.lng;
+      const maxRadiusM = Math.round(alarmRadius * 10) / 10;
+      // dist ya se calculó como haversineM(bowLat, bowLng, anchor) — es
+      // la distancia proa→ancla. Otras apps usan currentRadius indistinta-
+      // mente para "distancia actual del barco al ancla", así que publica-
+      // mos el mismo valor en currentRadius y en distanceFromBow.
+      const currRadiusM = Math.round(dist * 10) / 10;
+      watchValues.push(
+        { path: "navigation.anchor.position" as Path, value: { latitude: anchorLat, longitude: anchorLon } as any },
+        { path: "navigation.anchor.maxRadius" as Path, value: maxRadiusM as any },
+        { path: "navigation.anchor.currentRadius" as Path, value: currRadiusM as any },
+        { path: "navigation.anchor.distanceFromBow" as Path, value: currRadiusM as any },
+        { path: "navigation.anchor.watchZone" as Path, value: { type: "circle", radius: maxRadiusM } as any },
+        // meta describe las zonas alarm/normal — permite que otras apps
+        // pinten el anillo con los mismos umbrales que nosotros.
+        { path: "navigation.anchor.meta" as Path, value: {
+            zones: [
+              { state: "normal", lower: 0, upper: maxRadiusM },
+              { state: "emergency", lower: maxRadiusM },
+            ],
+          } as any },
+        // "on" mientras estemos anchored y el watch esté activo (siempre
+        // true aquí — este bloque solo corre cuando anchorWatch.anchored).
+        { path: "navigation.anchor.state" as Path, value: "on" as any },
+      );
+      if (typeof bowLat === "number" && typeof bowLng === "number") {
+        const brg = bearingRad(bowLat, bowLng, anchorLat, anchorLon);
+        watchValues.push({ path: "navigation.anchor.bearingTrue" as Path, value: brg as any });
+        // Rev721: apparentBearing = bearingTrue - headingTrue (mod 2π).
+        // Solo si tenemos rumbo real (no COG) — algunas apps lo esperan.
+        let hdgTrue: number | null = null;
+        try {
+          const v = app.getSelfPath("navigation.headingTrue");
+          const raw = typeof v === "object" ? ((v as any).value ?? null) : (typeof v === "number" ? v : null);
+          if (typeof raw === "number" && Number.isFinite(raw)) hdgTrue = raw;
+        } catch { /* no heading — skip apparentBearing */ }
+        if (hdgTrue !== null) {
+          const appB = ((brg - hdgTrue) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+          watchValues.push({ path: "navigation.anchor.apparentBearing" as Path, value: appB as any });
+        }
+      }
+    } catch (e: any) { app.debug(`[IHM] canonical anchor publish failed: ${e?.message ?? e}`); }
     if (anchorWatch.chainDeployed) {
       watchValues.push({ path: "environment.anchor.mareasIhm.chain" as Path, value: `${anchorWatch.chainDeployed} m` } as any);
     }
@@ -7026,9 +7229,12 @@ function evaluateAnchorWatch() {
             setTimeout(() => {
               try {
                 // Rev203: filter "sound" from method when global mute is on.
+                // Rev722 (feedback usuario "WilhelmSK me despierta en iPhone
+                // vía notifications SK"): añadido "push" para que WilhelmSK
+                // dispare notification nativa iOS en la alarma AIS también.
                 const aisMethods = anchorWatch.audioEnabled !== false
-                  ? ["visual", "sound"]
-                  : ["visual"];
+                  ? ["visual", "sound", "push"]
+                  : ["visual", "push"];
                 const warnDelta: Delta = {
                   context: ("vessels." + app.selfId) as Context,
                   updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
@@ -7044,11 +7250,12 @@ function evaluateAnchorWatch() {
           // Direct emit (transition or first time)
           // Rev203: filter "sound" from method when global mute is on (only
           // applies to warn; normal state already has empty method).
+          // Rev722: "push" añadido para WilhelmSK push nativo iOS.
           let aisDirectMethods: string[] = [];
           if (desiredState === 'warn') {
             aisDirectMethods = anchorWatch.audioEnabled !== false
-              ? ["visual", "sound"]
-              : ["visual"];
+              ? ["visual", "sound", "push"]
+              : ["visual", "push"];
           }
           watchValues.push({
             path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any,
@@ -12297,6 +12504,9 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", requireControlAcces
       { path: "environment.anchor.mareasIhm.alarmRadius", value: null },
       { path: "environment.anchor.mareasIhm.distanceToAnchor", value: null },
       { path: "environment.anchor.mareasIhm.aisAlarmStatus", value: "Ancla levada" },
+      // Rev721: canónicos SK off al levar manualmente (interop con
+      // Hoekens/Y2K/WilhelmSK — al levar aquí también se apaga allí).
+      ...canonicalAnchorClearValues(),
     ];
     const d: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: clearValues as any }] };
@@ -12546,12 +12756,15 @@ try {
               { path: "environment.anchor.mareasIhm.swingRadiusNow" as Path, value: null },
               { path: "environment.anchor.mareasIhm.chain" as Path, value: null },
               { path: "environment.anchor.mareasIhm.distanceToAnchor" as Path, value: null },
+              // Rev721: canónicos SK off al levar vía KIP toggle (interop).
+              ...canonicalAnchorClearValues(),
             ] as any}] };
           app.handleMessage(plugin.id, clearDelta);
           const notifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
             updates: [{ timestamp: ts, values: [
               { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: "Anchor lifted" } },
               { path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any, value: { state: "normal", method: [] as string[], message: "Anchor lifted" } },
+              // Rev721: canónicos añadidos automáticamente por el wrapper.
             ]}] };
           app.handleMessage(plugin.id, notifDelta);
         } catch { /* non-critical */ }
@@ -13948,7 +14161,9 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
         const latchNotifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
           updates: [{ timestamp: now.toISOString() as Timestamp, values: [{
             path: "notifications.signalk-mareas-ihm.grounding" as any,
-            value: { state: "alert", method: ["visual", "sound"] as string[], message: latchMsg }
+            // Rev722: "push" añadido para que WilhelmSK dispare push nativo
+            // iOS cuando el safety latch retiene la alarma de varada.
+            value: { state: "alert", method: ["visual", "sound", "push"] as string[], message: latchMsg }
           }]}] };
         app.handleMessage(plugin.id, latchNotifDelta);
         lastGroundingNotifState = "alarm"; // mantener

@@ -1,5 +1,137 @@
 # Changelog
 
+## [2.8.0] - 2026-07-18
+
+### English
+
+**Standard SignalK interop + full wizard remake + Admin cleanup**
+
+Release focused on making the plugin play nicely with the rest of the SignalK anchor-watch ecosystem (Hoekens, Y2K, WilhelmSK, and any other client that reads the canonical vocabulary), and on moving all setup out of the SignalK Admin form into a proper visual wizard.
+
+Huge thanks to **[@jeyrb](https://github.com/jeyrb) on GitHub** for the report that started the interop work — pointing out that every other anchor app shares `navigation.anchor.*` and `notifications.navigation.anchor`, and that only our plugin was living in its own custom namespace. That report drove Rev721/Rev722 below.
+
+#### 🔗 SignalK-standard interop (@jeyrb's suggestion)
+
+- **Canonical anchor data** published in parallel to our own `environment.anchor.mareasIhm.*` — anyone who drops the anchor here now shows up correctly in Hoekens/Y2K/etc. and vice-versa (read-side sync is a future sprint):
+  - `navigation.anchor.state` (`"on"` / `"off"`)
+  - `navigation.anchor.position` (`{latitude, longitude}`)
+  - `navigation.anchor.maxRadius` (m)
+  - `navigation.anchor.currentRadius` (m)
+  - `navigation.anchor.distanceFromBow` (m)
+  - `navigation.anchor.bearingTrue` (rad)
+  - `navigation.anchor.apparentBearing` (rad, if we have true heading)
+  - `navigation.anchor.watchZone` (`{type:"circle", radius}`)
+  - `navigation.anchor.meta` (`{zones:[{normal,0,R},{emergency,R}]}`)
+- **Canonical notifications** — all our internal alarm notifications are now auto-mirrored to the standard SK notification paths by wrapping `app.handleMessage`:
+  - `notifications.signalk-mareas-ihm.anchorDrag` → `notifications.navigation.anchor`
+  - `notifications.signalk-mareas-ihm.grounding` → `notifications.environment.depth.belowKeel`
+  - `notifications.signalk-mareas-ihm.aisAnchorAlarm` → `notifications.navigation.collisionRisk`
+  - `notifications.signalk-mareas-ihm.gpsLost` → `notifications.navigation.gnss`
+  - No need to touch the 15+ call sites where we emit — the wrapper does it once.
+- **WilhelmSK-compatible push method**: every critical-state alarm delta now carries `method: ["visual", "sound", "push"]` (grounding safety-latch and AIS were missing `"push"` before), so WilhelmSK on iOS/iPadOS fires a native push notification even with the app in background. Anchor drag and grounding already had it.
+- **Optional group in wizard** — `⚓ Fondeo Standard SK` in the SignalK paths panel lets you turn the interop off if you already use another anchor app as the source of truth.
+
+#### 🧙 Wizard remake — one-stop configurator
+
+The old SignalK Admin form is now empty except for a `[App setup moved to Webapp]` link. Every setting lives in the visual wizard at `/signalk-mareas-ihm/mobile` and persists to the same plugin config file via `app.savePluginOptions()`.
+
+- **Summary is now the HOME** of the wizard (was the last step). Thirteen tiles with per-step status ✅/⚠, click any to jump.
+- Added steps: **📐 IMU and wave sensor** (probe live + pypilot host/port + IMU manager + raw I²C DIY), **📲 Mobile push alerts (Telegram)** (bot token + chat ID with auto-detect), **📐 Depth calculator** (embedded in-situ — was `Under construction`), **📡 Paths published to SignalK** (with live traffic stats).
+- Removed from menu / Config, moved to wizard: units, SignalK path publication, depth calculator.
+- Anchor calculator stays in the hamburger menu as `⚓ Cálculo de fondeo` (frequent action).
+- New **📋 Home** button in the wizard footer (between ← and →) jumps to the Summary without exiting.
+- Progress bar reaches 100 % on the last step (was 89 %).
+- Wizard step title's "Step N/M" chip now inline next to the H2.
+
+#### 📡 SignalK paths panel
+
+- **Live stats header** — refresh every 3 s: `📡 <N> active / <M> catalogued · ⚡ <X.XX> deltas/s (30 s avg) · <Y> in the last minute`. Backend endpoint `/api/sk-paths/stats` with rolling 60-s window in the `handleMessage` wrapper.
+- **Categories collapsed by default** with a rotating triangle (`▶` closed / `▼` open) — text sizes bumped ~20 % across the panel.
+- **`⚓ Fondeo Standard SK` group** for the canonical anchor paths (turn off if you use another anchor app as SoT).
+- Toggles apply immediately; ON→OFF publishes a `value: null` so SK clears the path from the tree.
+
+#### 🌐 NEAPS + geocoding polish (carried from 2.7.0 batch)
+
+- LAT (Lowest Astronomical Tide) datum computed over 365 d for NEAPS stations, cached per station 30 d. Previous release had a 30–60 cm systematic offset vs IHM in neap-tide weeks.
+- Sensor check wizard step: **16 tiles** (added air temperature, humidity, magnetic heading, speed through water, AIS target count).
+- SK paths blocked (required / deprecated): CSS-native popup explaining why they cannot be toggled — no more silent `<input disabled>` non-response on touch devices.
+- 401 (permission required) triggers the same styled popup when the security layer is enabled and no PIN is entered.
+
+#### 🎛️ SignalK Admin form cleanup
+
+- Every previously-visible field is gone from the plugin config form (`IHM base URL`, `Cache refresh`, `GPS max age`, `Update frequency`, `Pypilot bridge`, `IMU manager`, `Telegram`, etc.). All defaults are hardcoded sensibly in the source; the wizard remains the single edit surface.
+- Description of the plugin config is now a one-line CTA `[App setup moved to Webapp]` linking to the wizard.
+
+#### 💬 Menu changes
+
+- New `💬 Tu opinión cuenta` (`Your feedback matters`) entry — dark modal with ⭐ GitHub star CTA, 🐛 issue link, 📦 NPM link.
+- `🧮 Cálculo Sonda y Fondeo` removed. `⚓ Cálculo de fondeo` re-added (anchor only). Depth calculator is now wizard-only.
+
+### Español
+
+**Interop SK estándar + wizard rehecho + Admin limpio**
+
+Release enfocado en hacer que el plugin coopere con el resto del ecosistema SignalK de anchor-watch (Hoekens, Y2K, WilhelmSK, y cualquier otro cliente que lea el vocabulario canónico), y en sacar toda la configuración del formulario del Admin de SignalK para llevarla a un wizard visual completo.
+
+Muchas gracias a **[@jeyrb](https://github.com/jeyrb) en GitHub** por el reporte que arrancó el trabajo de interop — señaló que el resto de apps de fondeo comparten los paths `navigation.anchor.*` y `notifications.navigation.anchor`, y que solo nuestro plugin vivía en su propio namespace. Ese reporte fue el que dio pie a Rev721/Rev722 de abajo.
+
+#### 🔗 Interop con paths estándar de SignalK (sugerencia de @jeyrb)
+
+- **Datos de fondeo canónicos** publicados en paralelo a nuestros propios `environment.anchor.mareasIhm.*` — quien fondee aquí aparece bien en Hoekens/Y2K/etc. y viceversa (la sincronización en lectura queda para próximo sprint):
+  - `navigation.anchor.state` (`"on"` / `"off"`)
+  - `navigation.anchor.position` (`{latitude, longitude}`)
+  - `navigation.anchor.maxRadius` (m)
+  - `navigation.anchor.currentRadius` (m)
+  - `navigation.anchor.distanceFromBow` (m)
+  - `navigation.anchor.bearingTrue` (rad)
+  - `navigation.anchor.apparentBearing` (rad, si tenemos rumbo verdadero)
+  - `navigation.anchor.watchZone` (`{type:"circle", radius}`)
+  - `navigation.anchor.meta` (`{zones:[{normal,0,R},{emergency,R}]}`)
+- **Notificaciones canónicas** — todas nuestras alarmas internas se espejan automáticamente a los paths estándar SK envolviendo `app.handleMessage`:
+  - `notifications.signalk-mareas-ihm.anchorDrag` → `notifications.navigation.anchor`
+  - `notifications.signalk-mareas-ihm.grounding` → `notifications.environment.depth.belowKeel`
+  - `notifications.signalk-mareas-ihm.aisAnchorAlarm` → `notifications.navigation.collisionRisk`
+  - `notifications.signalk-mareas-ihm.gpsLost` → `notifications.navigation.gnss`
+  - Sin tocar los 15+ call sites donde emitimos — el wrapper lo hace una vez.
+- **Método push compatible con WilhelmSK**: toda alarma en state crítico lleva `method: ["visual", "sound", "push"]` (el safety-latch de varada y AIS no llevaban `"push"`), para que WilhelmSK en iOS/iPadOS dispare push nativo aunque la app esté en background. Garreo y varada ya lo tenían.
+- **Grupo opcional en el wizard** — `⚓ Fondeo Standard SK` en el panel de paths permite apagar la interop si el navegante usa otra app de fondeo como fuente de verdad.
+
+#### 🧙 Wizard rehecho — configurador único
+
+El formulario del Admin de SignalK queda vacío excepto por un enlace `[App setup moved to Webapp]`. Cada ajuste vive en el wizard visual en `/signalk-mareas-ihm/mobile` y se persiste al mismo fichero de config del plugin vía `app.savePluginOptions()`.
+
+- **Resumen ahora es la HOME** del wizard (era el último). Trece tarjetas con estado ✅/⚠ por paso, click en cualquiera para saltar.
+- Pasos añadidos: **📐 IMU y sensor de olas** (probe live + host/port de pypilot + gestor IMU + I²C crudo DIY), **📲 Alertas al móvil (Telegram)** (token del bot + chat ID con autodetect), **📐 Cálculo de sonda** (embebido in-situ — era `En construcción`), **📡 Paths publicados en SignalK** (con estadísticas de tráfico en vivo).
+- Quitados del menú / Config, movidos al wizard: unidades, publicación de paths SignalK, calculadora de sonda.
+- La calculadora de fondeo se queda en el menú hamburguesa como `⚓ Cálculo de fondeo` (acción frecuente).
+- Nuevo botón **📋 Home** en el footer del wizard (entre ← y →) que salta al Resumen sin salir.
+- Barra de progreso llega al 100 % en el último paso (antes 89 %).
+- El chip "Paso N/M" ahora va inline junto al H2 del título del paso.
+
+#### 📡 Panel de paths SignalK
+
+- **Cabecera con estadísticas en vivo** — refresco cada 3 s: `📡 <N> activos / <M> catalogados · ⚡ <X.XX> deltas/s (media 30 s) · <Y> en el último minuto`. Endpoint backend `/api/sk-paths/stats` con ventana rolling de 60 s medida en el wrapper de `handleMessage`.
+- **Categorías plegadas por defecto** con triángulo rotable (`▶` cerrado / `▼` abierto) — tamaños +20% en todo el panel.
+- **Grupo `⚓ Fondeo Standard SK`** para los paths canónicos de fondeo (apágalo si usas otra app de anchor como SoT).
+- Los toggles aplican inmediato; ON→OFF publica `value: null` para que SK borre el path del árbol.
+
+#### 🌐 NEAPS + geocoding pulido (arrastrado del batch 2.7.0)
+
+- Datum LAT (Lowest Astronomical Tide) calculado sobre 365 d para estaciones NEAPS, cacheado por estación 30 d. La release anterior tenía un offset sistemático de 30–60 cm respecto a IHM en semanas de mareas muertas.
+- Paso de sensores del wizard: **16 tarjetas** (añadidos temperatura del aire, humedad, rumbo magnético, corredera, contador de targets AIS).
+- Paths bloqueados (imprescindibles / obsoletos): popup CSS propio explicando por qué no se pueden togglear — se acabó el `<input disabled>` mudo en dispositivos táctiles.
+- El 401 (permisos requeridos) dispara el mismo popup cuando la capa de seguridad está activada y no hay PIN introducido.
+
+#### 🎛️ Limpieza del formulario Admin de SignalK
+
+- Todo campo antes visible desaparece del formulario de config del plugin (`IHM base URL`, `Cache refresh`, `GPS max age`, `Update frequency`, `Pypilot bridge`, `IMU manager`, `Telegram`, etc.). Los defaults quedan hardcoded con valores sensatos en el código fuente; el wizard es la única superficie de edición.
+- La descripción del config es ahora un CTA de una línea `[App setup moved to Webapp]` con link al wizard.
+
+#### 💬 Cambios en el menú
+
+- Nueva entrada `💬 Tu opinión cuenta` — modal dark con CTA de ⭐ estrella en GitHub, 🐛 issue y 📦 NPM.
+- Quitado `🧮 Cálculo Sonda y Fondeo`. Reintroducido `⚓ Cálculo de fondeo` (solo fondeo). El cálculo de sonda es sólo del wizard.
+
 ## [2.7.0] - 2026-07-15
 
 ### English

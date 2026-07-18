@@ -29,6 +29,7 @@ A single Signal K plugin that turns your boat computer into a serious **anchor w
 - 📱 **Works on any screen** — from a phone in hand to the big bridge monitor. The viewer reorders itself and buttons stay the right size for finger-touch use.
 - 🇬🇧 🇪🇸 **Fully bilingual UI** (English / Spanish) — switch live from the menu.
 - 👥 **Multi-user PIN control** — protect boat actions (drop/lift anchor, alarms, settings) with a master PIN + optional guest PINs (charter crew, family, etc.) with per-user notes and optional expiry. Read stays open.
+- 🔗 **Standard SignalK vocabulary** — publishes canonical `navigation.anchor.*` and `notifications.navigation.anchor` in parallel to our own paths, so Hoekens anchor alarm, Y2K, WilhelmSK et al. see and react to our anchor state. WilhelmSK iOS/iPadOS push works out of the box (all critical alarms carry `method:["push"]`).
 
 Runs on **Raspberry Pi** (OpenPlotter), **any Linux box** or **macOS / Windows** with Signal K Server.
 
@@ -187,6 +188,10 @@ This is a navigation aid, **not** a replacement for proper anchor watch with eye
 
 Issues, PRs and feature requests welcome at the [GitHub repo](https://github.com/Aitonos/signalk-mareas-ihm).
 
+### Acknowledgements
+
+- **[@jeyrb](https://github.com/jeyrb)** — reported that other anchor watch apps in the SignalK ecosystem (Hoekens anchor alarm, Y2K, WilhelmSK) share the canonical vocabulary `navigation.anchor.*` and `notifications.navigation.anchor`, and that this plugin was living in its own custom namespace. That report drove the 2.8.0 interop work: canonical anchor paths are now published in parallel, notifications are auto-mirrored to standard SK paths, and every critical alarm carries `method:["push"]` for WilhelmSK iOS/iPadOS push. Thank you.
+
 ### License
 
 Apache 2.0. Derived from `signalk-tides` (Brandon Keepers, Joachim Bakke, Scott Bender and contributors).
@@ -219,6 +224,7 @@ Un único plugin de Signal K que convierte el ordenador del barco en un **gestor
 - 📱 **Versátil en cualquier pantalla** — desde el móvil en mano hasta el monitor grande del puente. El visor se reordena solo y los botones se mantienen del tamaño adecuado para tocar sin equivocarte.
 - 🇬🇧 🇪🇸 **UI bilingüe** con cambio en vivo desde el menú.
 - 👥 **Control de usuarios por PIN** — protege las acciones del barco (echar/levar, alarmas, configuración) con un PIN maestro + PINs de invitado opcionales (tripulación de charter, familia, etc.) con notas y caducidad opcional. La lectura queda abierta.
+- 🔗 **Vocabulario estándar de SignalK** — publica los paths canónicos `navigation.anchor.*` y `notifications.navigation.anchor` en paralelo a los nuestros propios, para que Hoekens anchor alarm, Y2K, WilhelmSK y demás vean y reaccionen a nuestro estado de fondeo. El push nativo iOS/iPadOS de WilhelmSK funciona directamente (todas las alarmas críticas llevan `method:["push"]`).
 
 Funciona en **Raspberry Pi** (OpenPlotter), **cualquier Linux** o **macOS / Windows** con Signal K Server.
 
@@ -376,6 +382,10 @@ Es una **ayuda a la navegación**, NO un sustituto del anchor watch con vigilanc
 ### Contribuir y soporte
 
 Issues, PRs y peticiones de funcionalidad en el [repo de GitHub](https://github.com/Aitonos/signalk-mareas-ihm).
+
+### Agradecimientos
+
+- **[@jeyrb](https://github.com/jeyrb)** — reportó que otras apps de anchor watch del ecosistema SignalK (Hoekens anchor alarm, Y2K, WilhelmSK) comparten el vocabulario canónico `navigation.anchor.*` y `notifications.navigation.anchor`, y que este plugin vivía en su propio namespace. Ese reporte fue el que dio pie al trabajo de interop de la 2.8.0: los paths canónicos de fondeo se publican en paralelo, las notificaciones se espejan automáticamente a los paths estándar SK, y toda alarma crítica lleva `method:["push"]` para el push nativo iOS/iPadOS de WilhelmSK. Gracias.
 
 ### Licencia
 
