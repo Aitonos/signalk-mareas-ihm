@@ -112,7 +112,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev731";
+const PLUGIN_REVISION = "Rev750";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -392,7 +392,10 @@ const MAX_SIDE_BUTTONS_PER_SIDE = 5;
 // sonda_sup no persistía porque sanitizeBBOrder la filtraba fuera del
 // whitelist backend). Añadida entre "sonda" y "dif_lw" para que aparezca
 // contigua al widget de bajo quilla.
-const BB_CELL_KEYS = ["sog","heading","wind","sonda","sonda_sup","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","h_fondeo","t_fondeo","sunrise","moon","gps_acc","wx_6h","wave"] as const;
+// Rev734 (feedback Carlos "cad_larg y temp_agua aparecen en el selector pero
+// no se activan"): añadidas al whitelist del backend. Sin esto,
+// sanitizeBBOrder() las filtra al POST y no se persisten.
+const BB_CELL_KEYS = ["sog","heading","wind","sonda","sonda_sup","dif_lw","prof_min","tide","pres","abrigo","calidad","cad_rec","dist_ancla","cad_larg","temp_agua","h_fondeo","t_fondeo","sunrise","moon","gps_acc","wx_6h","wave"] as const;
 type BBCellKey = typeof BB_CELL_KEYS[number];
 /* Rev535 (B-25, feedback Carlos 2026-06-24): nuevo default snapshot del orden
    que Carlos tiene activo en Tunatunes. Sustituye al antiguo default que
@@ -512,6 +515,8 @@ const PATH_DESCRIPTIONS_ES: Record<string, string> = {
 "environment.anchor.mareasIhm.aisAlarmEnabled": "Alarma AIS en zona de fondeo activa (true/false)",
 "environment.anchor.mareasIhm.anchorCommand": "⚓ FONDEAR/LEVAR — Enviar PUT true=fondear, false=levar (para KIP/domótica)",
 "environment.anchor.mareasIhm.garreoAlarmCommand": "Alarma garreo ON/OFF — Enviar PUT true/false (para KIP/domótica)",
+"environment.anchor.mareasIhm.chainDeployedM": "Cadena desplegada efectiva (m) — resuelta por prioridad: path externo (windlass counter) > estimación geométrica (barco estático, cadena tensada) > valor manual del popup Fondeo",
+"environment.anchor.mareasIhm.chainDeployedSource": "Fuente de la cadena desplegada actual: 'external' (path externo), 'estimated' (cálculo geométrico), 'manual' (introducido por el usuario) o null",
 "environment.anchor.mareasIhm.aisAlarmCommand": "Alarma AIS ON/OFF — Enviar PUT true/false (para KIP/domótica)",
 // Rev721: canónicos SK — interop con Hoekens/Y2K/WilhelmSK
 "navigation.anchor.position":        "Posición del ancla fondeada (canónico SK — compartido con otras apps)",
@@ -615,6 +620,8 @@ const PATH_DESCRIPTIONS_EN: Record<string, string> = {
 "environment.anchor.mareasIhm.aisAlarmEnabled": "AIS anchor zone alarm enabled (true/false)",
 "environment.anchor.mareasIhm.anchorCommand": "⚓ DROP/LIFT — Send PUT true=drop, false=lift (for KIP/home automation)",
 "environment.anchor.mareasIhm.garreoAlarmCommand": "Drag alarm ON/OFF — Send PUT true/false (for KIP/home automation)",
+"environment.anchor.mareasIhm.chainDeployedM": "Effective deployed chain length (m) — resolved by priority: external path (windlass counter) > geometric estimate (static boat, taut chain) > manual value from Anchor popup",
+"environment.anchor.mareasIhm.chainDeployedSource": "Source of current deployed chain: 'external' (external path), 'estimated' (geometry), 'manual' (user-entered) or null",
 "environment.anchor.mareasIhm.aisAlarmCommand": "AIS alarm ON/OFF — Send PUT true/false (for KIP/home automation)",
 // Rev721: canonical SK paths — interop with Hoekens/Y2K/WilhelmSK
 "navigation.anchor.position":        "Anchor position (SK canonical — shared with other anchor apps)",
@@ -736,6 +743,9 @@ const SK_PATH_CATALOG: Record<string, SkPathSpec> = {
   "environment.anchor.mareasIhm.verticalNow":                  { tier: "optional", group: "anchor" },
   "environment.anchor.ScopeUsed":                              { tier: "optional", group: "anchor" },
   // ── AIS + commands PUT (para KIP/domótica)
+  // Rev733: cadena desplegada efectiva (external > estimated > manual) y su fuente.
+  "environment.anchor.mareasIhm.chainDeployedM":       { tier: "optional", group: "anchor" },
+  "environment.anchor.mareasIhm.chainDeployedSource":  { tier: "optional", group: "anchor" },
   "environment.anchor.mareasIhm.aisAlarmEnabled":  { tier: "optional", group: "ais-commands" },
   "environment.anchor.mareasIhm.aisAlarmStatus":   { tier: "optional", group: "ais-commands" },
   "environment.anchor.mareasIhm.anchorCommand":    { tier: "optional", group: "ais-commands" },
@@ -833,6 +843,65 @@ let _skPathsConfigCache: Record<string, boolean> | null = null;
 // /api/sk-paths/stats para mostrar "N paths activos · X deltas/seg" en la
 // cabecera del panel de paths SK del wizard.
 const _skPathsRateWindow: Array<{ t: number; n: number }> = [];
+/* Rev750 (feedback Carlos "detector de data y elegir fuente"): helpers
+   para detectar otros plugins tide provider habilitados en el server y
+   decidir si registrarnos como resource provider. Viven a nivel módulo
+   para que el endpoint /api/tide/providers-detected y el POST plugin-
+   options los reutilicen sin re-scan. */
+const _OTHER_TIDE_PROVIDERS = [
+  "signalk-opentide",
+  "signalk-tides",
+  "signalk-tidal-currents",
+] as const;
+function _detectOtherTideProviders(): Array<{ id: string; enabled: boolean; installed: boolean }> {
+  const out: Array<{ id: string; enabled: boolean; installed: boolean }> = [];
+  try {
+    const pcd = "/home/pi/.signalk/plugin-config-data";
+    for (const id of _OTHER_TIDE_PROVIDERS) {
+      const f = path.join(pcd, `${id}.json`);
+      let installed = false, enabled = false;
+      if (fs.existsSync(f)) {
+        installed = true;
+        try {
+          const raw = fs.readFileSync(f, "utf8");
+          const j = JSON.parse(raw);
+          enabled = !!(j && j.enabled === true);
+        } catch { /* json parse — leave enabled=false */ }
+      }
+      out.push({ id, installed, enabled });
+    }
+  } catch { /* pcd unreadable — assume none installed */ }
+  return out;
+}
+function _shouldRegisterTideProvider(
+  mode: string,
+  detected: Array<{ id: string; enabled: boolean }>,
+): { register: boolean; reason: string; conflictWith: string | null } {
+  const conflict = detected.find(d => d.enabled);
+  if (mode === "never") return { register: false, reason: "user chose 'never'", conflictWith: null };
+  if (mode === "always") return { register: true, reason: "user chose 'always' (may overwrite others)", conflictWith: conflict?.id ?? null };
+  // auto (default): ceder si hay otro
+  if (conflict) return { register: false, reason: `auto + '${conflict.id}' enabled → yielding`, conflictWith: conflict.id };
+  return { register: true, reason: "auto + no other provider detected", conflictWith: null };
+}
+
+// Rev737 (Hoekens catch-up): GPS glitch filter state (ver bloque de
+// helpers _gpsGlitchCheck/Notify/Clear más abajo). Declarado aquí
+// para que el start() pueda cargarlo desde props sin depender del
+// orden de bloques del archivo.
+let _gpsGlitchMaxKt: number = 0;
+let _lastAcceptedGpsPos: { lat: number; lng: number; ts: number } | null = null;
+let _gpsGlitchStreak: number = 0;
+const GPS_GLITCH_MAX_STREAK = 5;
+let _gpsGlitchNotifActive: boolean = false;
+// Rev738: handle del cliente aisstream y timer del bbox refresh.
+let _aisstreamHandle: any = null;
+let _aisstreamBoundingBoxTimer: any = null;
+// Rev740: arranque/re-arranque del cliente aisstream sin depender del
+// restart del plugin (que SK Server 2.x no siempre dispara tras
+// savePluginOptions). Se define en start() y se invoca desde el POST
+// /api/plugin-options al guardar el token.
+let _aisstreamStartIfConfigured: ((opts: any) => Promise<void>) | null = null;
 async function _loadSkPathsConfig(cache: any): Promise<Record<string, boolean>> {
   if (_skPathsConfigCache) return _skPathsConfigCache;
   try {
@@ -1249,6 +1318,10 @@ export default function (app: SignalKApp): Plugin {
       try { _piAlarmStopAll(); } catch { /* defensive */ }
       // Rev106: cerrar socket TCP del bridge pypilot.
       try { _pypilotDisconnectOuter(); } catch { /* defensive */ }
+      // Rev738: cerrar WebSocket del cliente aisstream.io.
+      try { _aisstreamHandle?.close(); } catch { /* defensive */ }
+      _aisstreamHandle = null;
+      if (_aisstreamBoundingBoxTimer) { clearInterval(_aisstreamBoundingBoxTimer); _aisstreamBoundingBoxTimer = null; }
       // Rev113: parar el sampling rodante de wave detection.
       try { _waveStopSamplingOuter(); } catch { /* defensive */ }
       // Rev123: parar el sampler de historial 15-min.
@@ -1603,6 +1676,76 @@ export default function (app: SignalKApp): Plugin {
 
     // Rev166: Telegram bot setup. Carga config del schema + cache previa.
     // Si falta chat_id pero hay token, intenta auto-detect via getUpdates.
+    // Rev737: GPS glitch filter setting (0 = off, default). Se lee del
+    // schema/plugin options y se cachea global.
+    {
+      const raw = (props as any)?.gpsGlitchMaxSpeedKt;
+      const n = typeof raw === "number" ? raw : Number(raw);
+      _gpsGlitchMaxKt = Number.isFinite(n) && n > 0 ? n : 0;
+      app.debug(`[IHM-GPS-GLITCH] max speed threshold = ${_gpsGlitchMaxKt} kn (0 = filter off)`);
+    }
+    // Rev738: motor AIS online aisstream.io — arranca si hay token. VHF
+    // prevalece: solo publicamos updates de aisstream para MMSIs que no
+    // hayamos visto por VHF en los últimos 60 s (definición "VHF fresco").
+    // La política vive en el callback abajo.
+    // Rev740 (feedback Carlos "no da nada en journalctl"): la lógica de
+    // arranque se extrae a un helper reutilizable + log via console.log
+    // para que aparezca sin necesidad de DEBUG=* env var.
+    _aisstreamStartIfConfigured = async (opts: any) => {
+      const aisstreamToken = String(opts?.aisstreamToken || "").trim();
+      // Cerrar cliente previo si existe (útil al re-guardar token).
+      try { _aisstreamHandle?.close(); } catch { /* defensive */ }
+      _aisstreamHandle = null;
+      if (_aisstreamBoundingBoxTimer) { clearInterval(_aisstreamBoundingBoxTimer); _aisstreamBoundingBoxTimer = null; }
+      if (!aisstreamToken) {
+        console.log(`[IHM-AISSTREAM] token vacío → cliente aisstream desactivado`);
+        return;
+      }
+      try {
+        const mod = await import("./sources/aisstream.js");
+        const bboxFromGps = (): [[number, number], [number, number]] => {
+          // Rev739 (feedback Carlos "no veo ningún target AIS lejano"):
+          // bbox default ampliado a ±3° (~333 km cuadrados) para que
+          // aparezcan targets fuera del rango VHF. Aisstream permite
+          // suscribirse a bbox arbitrariamente grandes; el filtro por
+          // gráficos/lista se hace en el frontend.
+          let lat = 43.0, lng = -8.0; // fallback Galicia
+          try {
+            const pos = app.getSelfPath("navigation.position");
+            const gLat = (pos as any)?.value?.latitude ?? (pos as any)?.latitude;
+            const gLng = (pos as any)?.value?.longitude ?? (pos as any)?.longitude;
+            if (typeof gLat === "number" && typeof gLng === "number") {
+              lat = gLat; lng = gLng;
+            }
+          } catch { /* fallback */ }
+          const halfDeg = 3.0;
+          return [
+            [lat - halfDeg, lng - halfDeg],
+            [lat + halfDeg, lng + halfDeg],
+          ];
+        };
+        _aisstreamHandle = mod.startAisstream({
+          token: aisstreamToken,
+          boundingBox: bboxFromGps(),
+          onDebug: (m) => console.log(`[IHM-AISSTREAM] ${m}`),
+          onError: (m) => console.log(`[IHM-AISSTREAM] err: ${m}`),
+          onUpdate: (u: any) => {
+            // Rev738: la dedupe con VHF vive en _aisstreamMergeUpdate,
+            // que tiene acceso al scope de _aisKnownDB sin hoist issues.
+            (globalThis as any)._aisstreamMergeUpdateFn?.(u);
+          },
+        });
+        // Refresco de bbox cada 30 min según posición actual.
+        _aisstreamBoundingBoxTimer = setInterval(() => {
+          try { _aisstreamHandle?.updateBoundingBox(bboxFromGps()); } catch { /* defensive */ }
+        }, 30 * 60_000);
+        console.log(`[IHM-AISSTREAM] cliente arrancado (token len=${aisstreamToken.length})`);
+      } catch (e: any) {
+        console.log(`[IHM-AISSTREAM] arranque fallido: ${e?.message ?? e}`);
+      }
+    };
+    // Arranque inicial al start del plugin.
+    _aisstreamStartIfConfigured(props);
     _telegramBotToken = String((props as any)?.telegramBotToken || "").trim();
     _telegramChatId   = String((props as any)?.telegramChatId   || "").trim();
     try {
@@ -1867,27 +2010,56 @@ export default function (app: SignalKApp): Plugin {
       // ignore diagnostic errors
     }
 
-    // Register the source as a resource provider
-    app.registerResourceProvider({
-      type: "tides",
-      methods: {
-        async listResources(query: Record<string, unknown>): Promise<Record<string, unknown>> {
-          // Allow provider to fall back to last known station when position isn't available yet.
-          const p = await ensureProvider();
-          if (!p) return {} as Record<string, unknown>;
-          return (await (p as any)({ position: lastPosition ?? undefined, ...query })) as unknown as Record<string, unknown>;
-},
-        getResource(): never {
-          throw new Error("Not implemented");
-        },
-        setResource(): never {
-          throw new Error("Not implemented");
-        },
-        deleteResource(): never {
-          throw new Error("Not implemented");
-        },
-      }
-    });
+    /* Rev749/750 (bug @andmayfi92 + feedback Carlos "detector de data +
+       elegir fuente en config"): tres modos de publicación al árbol SK
+       controlados por `tidePublishToSk`:
+       - "auto" (default): si detectamos otro provider enabled → skip;
+         si no hay ninguno → publicamos.
+       - "always": publicamos siempre (fuerza el nuestro, sobreescribe).
+       - "never": nunca publicamos (visor interno sólo).
+       Helpers _detectOtherTideProviders + _shouldRegisterTideProvider
+       viven a nivel módulo para que el endpoint /api/tide/providers-detected
+       y el POST /plugin-options puedan reutilizarlos sin re-scan. */
+    const tidePublishMode = String((props as any)?.tidePublishToSk || "auto");
+    const detected = _detectOtherTideProviders();
+    const shouldRegister = _shouldRegisterTideProvider(tidePublishMode, detected);
+    if (!shouldRegister.register) {
+      console.log(`[IHM-TIDES] mode="${tidePublishMode}" reason=${shouldRegister.reason} → NO registramos resource provider (plugin funciona internamente).`);
+    } else {
+      console.log(`[IHM-TIDES] mode="${tidePublishMode}" reason=${shouldRegister.reason} → registramos resource provider.`);
+      // Register the source as a resource provider (comportamiento histórico).
+      app.registerResourceProvider({
+        type: "tides",
+        methods: {
+          async listResources(query: Record<string, unknown>): Promise<Record<string, unknown>> {
+            // Allow provider to fall back to last known station when position isn't available yet.
+            const p = await ensureProvider();
+            if (!p) return {} as Record<string, unknown>;
+            const result: any = await (p as any)({ position: lastPosition ?? undefined, ...query });
+            /* Rev749: si el proveedor no tiene datos útiles para esta
+               posición (extremes vacío), devolvemos un objeto con `_note`
+               claro para que apps consumidoras puedan detectarlo, en
+               lugar de un {extremes:[]} que parece válido. */
+            if (result && Array.isArray(result.extremes) && result.extremes.length === 0) {
+              return {
+                ...result,
+                _note: "No tide coverage from mareas-ihm for this position (out of IHM/NEAPS reach). Install signalk-opentide or signalk-tides for global coverage.",
+              } as Record<string, unknown>;
+            }
+            return result as Record<string, unknown>;
+          },
+          getResource(): never {
+            throw new Error("Not implemented");
+          },
+          setResource(): never {
+            throw new Error("Not implemented");
+          },
+          deleteResource(): never {
+            throw new Error("Not implemented");
+          },
+        }
+      });
+    }
 
 // ==========================================================================
 // v1.2.0: CATENARIA / ANCHORING CALCULATOR (scope-based heuristic)
@@ -2377,7 +2549,8 @@ try {
       "sensorCheck",  // 6.  Sensores conectados
       "imu",          // 7.  IMU y pypilot
       "notifications",// 8.  Alertas al móvil (Telegram)
-      "tides",        // 9.  Mareas + meteo
+      "aisFallback",  // 9.  AIS online fallback (aisstream.io) — Rev741
+      "tides",        // 10. Mareas + meteo
       "mbtiles",      // 10. Cartas offline
       "sonda",        // 11. Cálculo de sonda
       "skpaths",      // 12. Publicación paths SignalK
@@ -3720,6 +3893,39 @@ try {
         chatId: (_telegramChatId || _telegramChatIdCached) ? maskString(_telegramChatId || _telegramChatIdCached) : null,
       };
 
+      /* Rev740 (feedback Carlos "actualiza el json de debug"): sección
+         aisstream — estado del WS, contadores, bbox, targets en cache.
+         Token enmascarado. Útil para diagnosticar el "no veo targets". */
+      try {
+        let tokenSetInProps = false;
+        try {
+          const rp = (app as any).readPluginOptions?.();
+          const cfg = (rp && rp.configuration) || {};
+          tokenSetInProps = !!cfg.aisstreamToken;
+        } catch { /* defensive */ }
+        const stats = _aisstreamHandle?.getStats?.() ?? null;
+        let aisstreamTargetsInDB = 0;
+        try {
+          for (const e of Object.values(_aisKnownDB) as any[]) {
+            if (e && e.source === "aisstream") aisstreamTargetsInDB++;
+          }
+        } catch { /* defensive */ }
+        bag.aisstream = {
+          tokenSetInProps,
+          clientRunning: !!_aisstreamHandle,
+          connected: stats?.connected ?? false,
+          receivedMsgs: stats?.received ?? 0,
+          acceptedMsgs: stats?.accepted ?? 0,
+          lastMsgAgeMs: stats?.lastMsgMs ? (now - stats.lastMsgMs) : null,
+          boundingBox: stats?.boundingBox ?? null,
+          targetsInDB: aisstreamTargetsInDB,
+          /* Rev746: motivo del último fallo del WS (cert expired,
+             ECONNREFUSED, DNS, etc.) para diagnóstico sin SSH. */
+          lastError: stats?.lastError ?? null,
+          lastErrorAgeMs: stats?.lastErrorMs ? (now - stats.lastErrorMs) : null,
+        };
+      } catch { bag.aisstream = null; }
+
       // PIN sessions info (nº de PINs y sesiones, SIN los hashes ni los alias
       // completos — solo iniciales).
       try {
@@ -4244,6 +4450,13 @@ try {
       // Validez hasta / Último acceso"): timestamp del último unlock
       // exitoso. null si nunca ha entrado (recién creado).
       lastAccessMs?: number | null;
+      // Rev735 (feedback Carlos "el guest puede editarse si Master le da
+      // ese permiso"): permisos granulares por PIN. Default vacío =
+      // guest solo lee sus propios fondeos/favoritos. El master siempre
+      // tiene TODOS los permisos implícitamente.
+      permissions?: {
+        editAnchorages?: boolean;  // crear/borrar sus propios favoritos + entradas history
+      };
     }
     const PIN_SALT = "ihm-mareas-2026-local";
     const PIN_SESSION_TTL_MS = 30 * 60 * 1000;
@@ -4274,6 +4487,11 @@ try {
                 expiresMs: typeof p.expiresMs === "number" ? p.expiresMs : null,
                 // Rev621: último acceso.
                 lastAccessMs: typeof p.lastAccessMs === "number" ? p.lastAccessMs : null,
+                // Rev735: permisos granulares. Cargados tal cual del cache,
+                // default undefined (equivale a todos false para guests).
+                permissions: (p.permissions && typeof p.permissions === "object")
+                  ? { editAnchorages: !!p.permissions.editAnchorages }
+                  : undefined,
               } as SecurityPin;
             })
           : [];
@@ -4386,6 +4604,25 @@ try {
     }
     // Exportar para que el middleware pueda usarlo desde access.ts.
     (global as any)._ihmPinSessionCheck = getPinSessionFromReq;
+    // Rev735: helpers globales para atribuir fondeos/favoritos al user
+    // activo desde cualquier endpoint fuera de este scope.
+    (global as any)._ihmActiveUserAlias = (req: any): string | null => {
+      try {
+        const s = getPinSessionFromReq(req);
+        return s.valid && s.alias ? s.alias : null;
+      } catch { return null; }
+    };
+    (global as any)._ihmActiveUserIsMaster = (req: any): boolean => {
+      try {
+        const s = getPinSessionFromReq(req);
+        return !!(s.valid && s.isMaster);
+      } catch { return false; }
+    };
+    /* Rev735: expone la lista de PINs para chequear permissions.editAnchorages
+       desde los endpoints /favorite y /history-delete. */
+    (global as any)._ihmGetPins = async () => {
+      try { return await loadPins(); } catch { return []; }
+    };
 
     expressApp.get("/signalk-mareas-ihm/api/access/pin-status", async (_req: any, res: any) => {
       res.set("Cache-Control", "no-store");
@@ -4409,6 +4646,10 @@ try {
           expired: typeof p.expiresMs === "number" && p.expiresMs < Date.now(),
           // Rev621: último acceso.
           lastAccessMs: p.lastAccessMs ?? null,
+          // Rev736: permisos granulares. Master siempre implícito true.
+          permissions: p.isMaster
+            ? { editAnchorages: true }
+            : { editAnchorages: !!(p.permissions && p.permissions.editAnchorages) },
         };
         // Rev622 (feedback Carlos): el maestro también ve su propio PIN
         // en su ficha. Coherente con "es el PIN de tu barco". Los invitados
@@ -4497,11 +4738,19 @@ try {
         // maestro puede editar sus notas y cambiar su PIN. No puede caducar
         // (siempre null) ni cambiar de nivel.
         if (typeof body.notes === "string") target.notes = body.notes.slice(0, 500);
+        // Rev736: permisos granulares. Solo aplicables a guests (el master
+        // los tiene todos implícitamente).
+        if (!target.isMaster && body.permissions && typeof body.permissions === "object") {
+          target.permissions = target.permissions || {};
+          if (typeof body.permissions.editAnchorages === "boolean") {
+            target.permissions.editAnchorages = body.permissions.editAnchorages;
+          }
+        }
         let expiresChanged = false;
         if (target.isMaster) {
           // Ignorar cualquier expiresMs recibido para el maestro.
           await savePins(pins);
-          res.json({ ok: true, alias: target.alias, level: target.level, notes: target.notes, expiresMs: null });
+          res.json({ ok: true, alias: target.alias, level: target.level, notes: target.notes, expiresMs: null, permissions: { editAnchorages: true } });
           return;
         }
         if (Object.prototype.hasOwnProperty.call(body, "expiresMs")) {
@@ -4527,7 +4776,7 @@ try {
             }
           }
         }
-        res.json({ ok: true, alias: target.alias, level: target.level, notes: target.notes, expiresMs: target.expiresMs });
+        res.json({ ok: true, alias: target.alias, level: target.level, notes: target.notes, expiresMs: target.expiresMs, permissions: { editAnchorages: !!(target.permissions && target.permissions.editAnchorages) } });
       } catch (e: any) {
         res.status(500).json({ ok: false, error: "PIN_UPDATE_ERROR", message: e?.message ?? "unknown" });
       }
@@ -4917,12 +5166,60 @@ try {
       "pypilotEnabled", "pypilotHost", "pypilotPort",
       "imuAutoDetect", "imuPreferredSource", "imuRemoteHosts",
       "imuRawI2cEnabled", "imuRawI2cBus", "imuStaleAfterSeconds",
+      // Rev737 (Hoekens catch-up): filtro anti-glitch GPS.
+      "gpsGlitchMaxSpeedKt",
+      // Rev738 (feedback Carlos "motor AIS gratuito via online"): token
+      // opcional para aisstream.io — extiende cobertura AIS cuando no
+      // hay receptor VHF o hay pérdida de señal. VHF prevalece siempre.
+      "aisstreamToken",
+      /* Rev750: modo de publicación en /signalk/v2/api/resources/tides.
+         "auto" (default): cede si hay otro provider enabled.
+         "always": fuerza el nuestro (sobreescribe otros).
+         "never": no publica nunca (solo visor interno). */
+      "tidePublishToSk",
     ] as const;
     const _maskSecret = (s: string) => {
       if (!s || typeof s !== "string") return "";
       if (s.length <= 8) return "*".repeat(s.length);
       return s.slice(0, 4) + "•".repeat(Math.max(4, s.length - 8)) + s.slice(-4);
     };
+    /* Rev739 (feedback Carlos "no veo targets AIS lejanos"): endpoint
+       de diagnóstico del cliente aisstream — devuelve estado del WS,
+       contadores de mensajes y bbox activo. Útil para confirmar que el
+       token funciona y estamos recibiendo datos. */
+    expressApp.get("/signalk-mareas-ihm/api/aisstream/stats", (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        if (!_aisstreamHandle) {
+          return res.json({ enabled: false, reason: "no token or client not started" });
+        }
+        const stats = _aisstreamHandle.getStats();
+        // Contar targets con source=aisstream en la DB.
+        let count = 0;
+        try {
+          for (const e of Object.values(_aisKnownDB) as any[]) {
+            if (e && e.source === "aisstream") count++;
+          }
+        } catch { /* defensive */ }
+        res.json({ enabled: true, ...stats, targetsInDB: count });
+      } catch (e: any) { res.status(500).json({ error: String(e?.message ?? e) }); }
+    });
+
+    /* Rev750 (feedback Carlos "detector de data + elegir fuente en
+       config"): lista los otros plugins tide provider disponibles y
+       muestra qué decisión tomará el runtime según el modo actual. */
+    expressApp.get("/signalk-mareas-ihm/api/tide/providers-detected", (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        const rp = (app as any).readPluginOptions?.();
+        const cfg = (rp && rp.configuration) || {};
+        const mode = String(cfg.tidePublishToSk || "auto");
+        const detected = _detectOtherTideProviders();
+        const decision = _shouldRegisterTideProvider(mode, detected);
+        res.json({ mode, detected, decision });
+      } catch (e: any) { res.status(500).json({ error: String(e?.message ?? e) }); }
+    });
+
     expressApp.get("/signalk-mareas-ihm/api/plugin-options", (_req: any, res: any) => {
       res.set("Cache-Control", "no-store");
       try {
@@ -4935,6 +5232,11 @@ try {
             out[k + "Set"] = !!cfg[k];
           } else if (k === "telegramChatId") {
             out[k] = cfg[k] ? String(cfg[k]) : "";
+          } else if (k === "aisstreamToken") {
+            // Rev738: token secreto — enmascarado en el GET, no
+            // sobrescribible con ••• en el POST.
+            out[k] = cfg[k] ? _maskSecret(String(cfg[k])) : "";
+            out[k + "Set"] = !!cfg[k];
           } else {
             out[k] = cfg[k];
           }
@@ -4965,8 +5267,11 @@ try {
           // Coerce tipos según schema para no guardar "true"/"false" string.
           if (["pypilotEnabled", "imuAutoDetect", "imuRawI2cEnabled"].includes(k)) {
             cur[k] = !!v;
-          } else if (["pypilotPort", "imuStaleAfterSeconds"].includes(k)) {
+          } else if (["pypilotPort", "imuStaleAfterSeconds", "gpsGlitchMaxSpeedKt"].includes(k)) {
             const n = Number(v); if (Number.isFinite(n)) cur[k] = n;
+          } else if (k === "aisstreamToken" && typeof v === "string" && v.includes("•")) {
+            // Rev738: token enmascarado (••••) → no sobreescribir.
+            continue;
           } else {
             cur[k] = typeof v === "string" ? v : (v == null ? "" : String(v));
           }
@@ -4974,7 +5279,24 @@ try {
         }
         (app as any).savePluginOptions({ ...(rp.configuration ?? {}), ...cur, enabled: rp.enabled !== false }, (err: any) => {
           if (err) { res.status(500).json({ error: String(err?.message ?? err) }); return; }
-          // SK Server ≥2.0 reinicia el plugin al guardar. Devolvemos flag.
+          /* Rev740 (feedback Carlos "no da nada en journalctl"): SK Server
+             a veces NO reinicia el plugin tras savePluginOptions, así que
+             las nuevas options no llegan a start(). Re-arrancamos manual-
+             mente los subsistemas que dependen de options en caliente
+             (aisstream). Para telegram/pypilot/IMU sí requiere restart. */
+          try {
+            if (applied.includes("aisstreamToken") && _aisstreamStartIfConfigured) {
+              _aisstreamStartIfConfigured(cur).catch(() => { /* logged in helper */ });
+            }
+            /* Rev750: si cambia tidePublishToSk, el registerResourceProvider
+               es one-shot al start() — no se puede unregister/reregister
+               en caliente vía SK API 2.x. Marcamos flag para la respuesta
+               así el frontend puede avisar al user "reinicia SK para
+               aplicar" (o hacer POST /plugin-options con enabled toggle). */
+            if (applied.includes("tidePublishToSk")) {
+              (res.locals as any).tidePublishRequiresRestart = true;
+            }
+          } catch { /* defensive */ }
           res.json({ ok: true, applied, restartInProgress: true });
         });
       } catch (e: any) { res.status(500).json({ error: String(e?.message ?? e) }); }
@@ -5607,6 +5929,71 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
 // Necesario para poblar navigation.anchor.bearingTrue y apparentBearing
 // (esta última = bearingTrue - headingTrue) que consumen WilhelmSK,
 // Hoekens-anchor-alarm, Y2K y demás apps del ecosistema SK.
+/* ========================================================================
+   Rev737 (Hoekens catch-up "GPS Glitch Filter"): rechaza fixes cuya
+   velocidad implícita entre el último fix aceptado y el nuevo excede el
+   umbral configurado. Tras 5 rechazos consecutivos concede que el
+   movimiento es real y acepta. Emite notification warn con method:visual
+   (nunca sobre drag alarm activa). Umbral 0 = filtro OFF (default).
+   Umbral típico: 5-10 kn para veleros; 20-30 kn para lanchas.
+   ======================================================================== */
+// (Las declaraciones de _gpsGlitchMaxKt etc. viven arriba junto a
+// _skPathsConfigCache para que el start() las vea sin depender del orden.)
+
+// (Rev738: _aisstreamHandle / _aisstreamBoundingBoxTimer viven arriba
+// junto a _gpsGlitchMaxKt para que el stop() los pueda cerrar.)
+function _gpsGlitchCheck(newLat: number, newLng: number, nowMs: number): { accept: boolean; impliedKt?: number } {
+  if (_gpsGlitchMaxKt <= 0) return { accept: true }; // filtro OFF
+  if (!_lastAcceptedGpsPos) { return { accept: true }; } // primer fix
+  const dtSec = Math.max(0.1, (nowMs - _lastAcceptedGpsPos.ts) / 1000);
+  if (dtSec > 60) return { accept: true }; // gap grande — no podemos evaluar; aceptar
+  const distM = haversineM(_lastAcceptedGpsPos.lat, _lastAcceptedGpsPos.lng, newLat, newLng);
+  const kt = (distM / dtSec) * 1.94384;
+  if (kt <= _gpsGlitchMaxKt) return { accept: true, impliedKt: kt };
+  // Sospechoso — reject a menos que ya llevemos 5 rechazos → conceder.
+  if (_gpsGlitchStreak >= GPS_GLITCH_MAX_STREAK) {
+    // Concede: probablemente movimiento real (5 fixes seguidos coherentes).
+    return { accept: true, impliedKt: kt };
+  }
+  return { accept: false, impliedKt: kt };
+}
+function _gpsGlitchNotify(app: any, pluginId: string, impliedKt: number): void {
+  if (_gpsGlitchNotifActive) return; // ya emitida
+  if (anchorDragAlarmActive) return; // no pisar drag alarm
+  try {
+    app.handleMessage(pluginId, {
+      context: ("vessels." + app.selfId) as any,
+      updates: [{ timestamp: new Date().toISOString() as any, values: [{
+        path: "notifications.signalk-mareas-ihm.gpsGlitch",
+        value: { state: "warn", method: ["visual"], message: `GPS glitch rejected (${impliedKt.toFixed(1)} kn implied)` },
+      }]}],
+    });
+    _gpsGlitchNotifActive = true;
+  } catch { /* non-critical */ }
+}
+function _gpsGlitchClear(app: any, pluginId: string): void {
+  if (!_gpsGlitchNotifActive) return;
+  try {
+    app.handleMessage(pluginId, {
+      context: ("vessels." + app.selfId) as any,
+      updates: [{ timestamp: new Date().toISOString() as any, values: [{
+        path: "notifications.signalk-mareas-ihm.gpsGlitch",
+        value: { state: "normal", method: [], message: "GPS fix accepted" },
+      }]}],
+    });
+    _gpsGlitchNotifActive = false;
+  } catch { /* non-critical */ }
+}
+
+/* Rev735: helper para atribuir entradas de anchorHistory al PIN activo.
+   Acepta un req (o null cuando no lo tenemos, e.g. registerPutHandler).
+   Devuelve null si no hay sesión o si el req no está disponible. */
+function __ihmActiveAliasFromReq(r: any): string | null {
+  if (!r) return null;
+  const fn = (global as any)._ihmActiveUserAlias;
+  return typeof fn === "function" ? (fn(r) ?? null) : null;
+}
+
 function bearingRad(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const φ1 = lat1 * Math.PI / 180;
   const φ2 = lat2 * Math.PI / 180;
@@ -5721,8 +6108,20 @@ interface AnchorWatchState {
   alarmRadiusExtra: number;
   enabled: boolean;
   chainDeployed: number | null;
+  // Rev733 (feedback Carlos "podemos estimar cadena echada según profundidad
+  // del sitio cuando echamos el ancla y posición estática hacia atrás?"):
+  // snapshot al drop para poder estimar la cadena tensada como triángulo
+  // rectángulo √(d² + h²) × 1.05 (5% catenaria). Y guardamos la fuente
+  // efectiva actual para el widget del bottom-bar.
+  depthAtDropM?: number | null;              // sonda del sitio al drop (m)
+  tideAtDropM?: number | null;               // altura de marea al drop (m)
+  chainDeployedManualM?: number | null;      // valor introducido a mano por el user
+  chainDeployedEstimatedM?: number | null;   // cálculo geométrico (última muestra estable)
+  chainDeployedExternalM?: number | null;    // path externo (environment.anchor.chainLength)
+  chainDeployedSource?: "external" | "estimated" | "manual" | null;
+  chainStaticSinceMs?: number | null;        // debounce: instante desde el que SOG<0.3 kn
   swingRadiusOverride: number | null;
-  anchorHistory: Array<{ lat: number; lng: number; ts: string }>;
+  anchorHistory: Array<{ lat: number; lng: number; ts: string; userAlias?: string | null }>;
   aisAlarmEnabled: boolean;
   garreoAlarmEnabled: boolean;
   gpsLostAlarmEnabled?: boolean;  // Rev354: opcional para mantener back-compat con caches viejos; default true en runtime
@@ -5850,6 +6249,11 @@ type AisKnownEntry = {
   lastPosMs?: number | null;   // ms epoch del lastLat/lastLng
   firstSeenMs?: number | null; // Rev400: timestamp del primer avistamiento (no se sobreescribe).
   lastSeenMs: number;          // ms epoch; controla TTL para datos estaticos (72h)
+  // Rev738 (aisstream.io fallback): origen del último dato dinámico.
+  // "vhf" = receptor AIS local (VHF) — máxima prioridad, prevalece siempre.
+  // "aisstream" = red terrestre — solo se usa si no hay VHF fresco para el MMSI.
+  // null / undefined = origen desconocido (targets pre-Rev738 en cache).
+  source?: "vhf" | "aisstream" | null;
 };
 const _AIS_DB_TTL_MS = 72 * 60 * 60 * 1000;   // 72h para datos ESTATICOS
 const _AIS_LAST_POS_TTL_MS = 5 * 60 * 1000;   // 5 min para posicion (target sigue visible si se cae del feed)
@@ -5892,10 +6296,116 @@ function _aisDBUpdate(mmsi: string, patch: Partial<Omit<AisKnownEntry, "mmsi" | 
     lastPosMs: patch.lastPosMs ?? prev?.lastPosMs ?? null,
     firstSeenMs: prev?.firstSeenMs ?? now,  // Rev400: jamas sobrescribir
     lastSeenMs: now,
+    // Rev738: cualquier update que llegue por esta función viene del
+    // receptor AIS local (SK deltas de vessels.*) → source="vhf". El
+    // cliente aisstream.io tiene su propia ruta de update (no pasa por
+    // aquí) y marca source="aisstream". Esto asegura que la dedupe
+    // "VHF fresco prevalece sobre aisstream" funcione.
+    source: "vhf",
   };
   _aisKnownDB[mmsi] = merged;
   _aisKnownDBDirty = true;
 }
+
+/* Rev738: helper que aplica un update recibido del cliente aisstream.io
+   al _aisKnownDB con las reglas de dedupe:
+   - Si el MMSI ya tiene entry VHF fresca (source="vhf" en los últimos
+     60 s) → IGNORAR (VHF prevalece).
+   - En cualquier otro caso → aceptar y marcar source="aisstream".
+   Vive en este scope para poder acceder a _aisKnownDB directamente sin
+   hoist issues desde el callback del start(). */
+interface _AisstreamMergePayload {
+  mmsi: string;
+  lat?: number | null; lng?: number | null;
+  cog?: number | null; sog?: number | null; heading?: number | null;
+  name?: string | null; shipType?: number | null; callsign?: string | null;
+  imo?: string | null; length?: number | null; beam?: number | null;
+  tsMs: number;
+}
+function _aisstreamMergeUpdate(u: _AisstreamMergePayload): void {
+  const cur = _aisKnownDB[u.mmsi];
+  const nowMs = Date.now();
+  const VHF_FRESH_MS = 60_000;
+  if (cur && cur.source === "vhf" && cur.lastPosMs && (nowMs - cur.lastPosMs) < VHF_FRESH_MS) {
+    return; // VHF fresco → ignorar aisstream
+  }
+  const merged: AisKnownEntry = {
+    mmsi: u.mmsi,
+    name: u.name ?? cur?.name ?? null,
+    length: u.length ?? cur?.length ?? null,
+    beam: u.beam ?? cur?.beam ?? null,
+    shipType: u.shipType ?? cur?.shipType ?? null,
+    aisClass: cur?.aisClass ?? null,
+    callsign: u.callsign ?? cur?.callsign ?? null,
+    imo: u.imo ?? cur?.imo ?? null,
+    lastLat: u.lat ?? cur?.lastLat ?? null,
+    lastLng: u.lng ?? cur?.lastLng ?? null,
+    lastSog: (u.sog != null ? u.sog * 1.94384 : (cur?.lastSog ?? null)),
+    lastHeading: u.heading ?? cur?.lastHeading ?? null,
+    lastCog: u.cog ?? cur?.lastCog ?? null,
+    lastPosMs: u.lat != null ? u.tsMs : (cur?.lastPosMs ?? null),
+    firstSeenMs: cur?.firstSeenMs ?? u.tsMs,
+    lastSeenMs: u.tsMs,
+    source: "aisstream",
+  };
+  _aisKnownDB[u.mmsi] = merged;
+  _aisKnownDBDirty = true;
+  // Rev738 (feedback Carlos "podemos republicar los AIS targets para
+  // SK"): también republicamos al árbol vessels.* del SK local para que
+  // otras apps (Hoekens, WilhelmSK, Freeboard-SK, etc.) vean los
+  // targets aisstream junto a los del VHF. La dedupe garantiza que un
+  // MMSI que ya publica el VHF NO llega aquí, así que nunca pisamos.
+  try {
+    _aisstreamRepublishToSK(u);
+  } catch { /* republish is a nice-to-have, no fallar por él */ }
+}
+function _aisstreamRepublishToSK(u: _AisstreamMergePayload): void {
+  const ctx = "vessels.urn:mrn:imo:mmsi:" + u.mmsi;
+  const values: Array<{ path: string; value: any }> = [];
+  if (u.lat != null && u.lng != null) {
+    values.push({ path: "navigation.position", value: { latitude: u.lat, longitude: u.lng } });
+  }
+  if (u.sog != null && Number.isFinite(u.sog)) {
+    values.push({ path: "navigation.speedOverGround", value: u.sog }); // m/s SK canonical
+  }
+  if (u.cog != null && Number.isFinite(u.cog)) {
+    values.push({ path: "navigation.courseOverGroundTrue", value: u.cog }); // rad
+  }
+  if (u.heading != null && Number.isFinite(u.heading)) {
+    values.push({ path: "navigation.headingTrue", value: u.heading }); // rad
+  }
+  if (u.name) {
+    values.push({ path: "name", value: u.name });
+  }
+  if (u.callsign) {
+    values.push({ path: "communication.callsignVhf", value: u.callsign });
+  }
+  if (u.imo) {
+    values.push({ path: "registrations.imo", value: `IMO ${u.imo}` });
+  }
+  if (u.length != null && u.length > 0) {
+    values.push({ path: "design.length", value: { overall: u.length } });
+  }
+  if (u.beam != null && u.beam > 0) {
+    values.push({ path: "design.beam", value: u.beam });
+  }
+  if (typeof u.shipType === "number") {
+    values.push({ path: "design.aisShipType", value: { id: u.shipType, name: String(u.shipType) } });
+  }
+  if (values.length === 0) return;
+  try {
+    // Publicamos con contexto de OTRO vessel — SK acepta cross-context
+    // deltas emitidos por plugins. $source (implícito "mareas-ihm.aisstream")
+    // permite a otras apps distinguir la procedencia.
+    (app as any).handleMessage(plugin.id + ".aisstream", {
+      context: ctx as any,
+      updates: [{ timestamp: new Date().toISOString() as any, values }],
+    });
+  } catch { /* defensive */ }
+}
+// Rev738: expuesta en globalThis para que el callback del cliente
+// aisstream (arrancado en start(), scope diferente) pueda invocarla.
+(globalThis as any)._aisstreamMergeUpdateFn = _aisstreamMergeUpdate;
 
 function _aisDBPersistMaybe() {
   if (!_aisKnownDBDirty) return;
@@ -6501,7 +7011,7 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
         const delta: Delta = { context: ("vessels." + app.selfId) as Context,
           updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
             path: "notifications.signalk-mareas-ihm.gpsLost" as any,
-            value: { state: "normal", method: [] as string[], message: "GPS recuperado" }
+            value: { state: "normal", method: [] as string[], message: "GPS recovered" }
           }]}] };
         app.handleMessage(plugin.id, delta);
       } catch { /* non-critical */ }
@@ -6529,7 +7039,8 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
     const gpsMethods = anchorWatch.audioEnabled !== false
       ? ["visual", "sound", "push"]
       : ["visual", "push"];
-    const message = `Pérdida de GPS detectada (${Math.round(elapsed / 1000)}s sin posición)`;
+    // Rev732: mensaje en EN para push WilhelmSK/notifications SK estándar.
+    const message = `GPS position lost (${Math.round(elapsed / 1000)}s without fix)`;
     const delta: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
         path: "notifications.signalk-mareas-ihm.gpsLost" as any,
@@ -6571,6 +7082,11 @@ async function _autoLiftAnchorIntentional(sogKt: number) {
   app.debug(`[IHM-AUTOLIFT] Salida intencional detectada: SOG=${sogKt.toFixed(2)} kn sostenido >${_INTENTIONAL_DEP_DUR_MS / 1000}s → auto-lift`);
   // Replica el flujo de POST /api/anchor-watch/lift sin response HTTP.
   _saveAisAckPending();
+  /* Rev736: registrar en activityLog antes de limpiar la posición. Sin req
+     (es una acción interna disparada por el evaluador). userAlias = null
+     porque nadie manualmente pidió la salida — fue el sistema. */
+  const _prevPos = anchorWatch.anchorPosition ? { lat: anchorWatch.anchorPosition.lat, lng: anchorWatch.anchorPosition.lng } : null;
+  _pushActivity({ action: "auto-lift", userAlias: null, position: _prevPos, note: `SOG ${sogKt.toFixed(1)} kn sostenido` });
   _setAnchored(false);
   anchorWatch.anchorPosition = null;
   anchorWatch.anchorOwnerAlias = null;       // Rev592
@@ -6634,6 +7150,30 @@ function evaluateAnchorWatch() {
       posTimestamp = (pos as any).timestamp ?? null;
     }
   } catch { /* no position */ }
+
+  /* Rev737 (Hoekens catch-up): GPS glitch filter por velocidad implícita.
+     Si el fix implica una velocidad > umbral respecto al último aceptado,
+     lo descartamos hasta 5 veces (streak); tras 5 concedemos movimiento
+     real. Sólo aplicable con GPS válido y filtro > 0. */
+  if (lat != null && lng != null && isFinite(lat) && isFinite(lng)) {
+    const nowMs = Date.now();
+    const g = _gpsGlitchCheck(lat, lng, nowMs);
+    if (g.accept) {
+      _lastAcceptedGpsPos = { lat, lng, ts: nowMs };
+      _gpsGlitchStreak = 0;
+      _gpsGlitchClear(app, plugin.id);
+    } else {
+      _gpsGlitchStreak++;
+      _gpsGlitchNotify(app, plugin.id, g.impliedKt ?? 0);
+      // Rechazar el fix — para efectos del anchor watch usamos el último
+      // aceptado en lugar del nuevo.
+      if (_lastAcceptedGpsPos) {
+        lat = _lastAcceptedGpsPos.lat;
+        lng = _lastAcceptedGpsPos.lng;
+      }
+      app.debug(`[IHM-GPS-GLITCH] rejected fix — implied ${g.impliedKt?.toFixed(1)} kn > ${_gpsGlitchMaxKt} kn (streak ${_gpsGlitchStreak}/${GPS_GLITCH_MAX_STREAK})`);
+    }
+  }
 
   // Rev356: SK mantiene navigation.position.value cacheado en memoria aunque
   // el GPS hardware se haya desconectado. Si solo miramos lat/lng obtenemos
@@ -6904,10 +7444,15 @@ function evaluateAnchorWatch() {
           sogMs = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0);
         } catch {}
         const sogKt = sogMs * 1.94384;
-        const velLabel = sogKt < 0.3 ? "baja" : (sogKt < 0.8 ? "media" : "alta");
+        // Rev732 (feedback @jeyrb "text was all in Spanish" en push
+        // WilhelmSK): mensajes de notifications canónicas van en inglés
+        // por defecto — WilhelmSK y demás clientes son internacionales
+        // y EN es lingua franca. Los mensajes internos del visor siguen
+        // en español (el UI del visor tiene sistema i18n propio).
+        const velLabel = sogKt < 0.3 ? "low" : (sogKt < 0.8 ? "medium" : "high");
         const overshootR = Math.max(0, Math.round(dist - radiusTotalForRing));
         const localTime = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-        const message = `[${localTime}] PELIGRO: Has garreado a ${velLabel} velocidad, ${overshootR} m del máx. radio borneo`;
+        const message = `[${localTime}] DANGER: Anchor dragging at ${velLabel} speed, ${overshootR} m past max swing radius`;
         // Rev49: pseudo-transition for KIP/OP. KIP de-dups by path+state and
         // does NOT re-fire sound on subsequent alarm emissions even with
         // different message. Workaround: emit normal briefly, then alarm
@@ -7048,6 +7593,90 @@ function evaluateAnchorWatch() {
         }
       }
     } catch (e: any) { app.debug(`[IHM] canonical anchor publish failed: ${e?.message ?? e}`); }
+
+    // Rev733: resolución de cadena desplegada con prioridad
+    // external (path del usuario, e.g. windlass counter) > estimated
+    // (geometría barco estático) > manual (input del popup Fondeo).
+    try {
+      // 1) External — path opcional que el usuario puede publicar desde
+      //    un contador NMEA2000 vía sk-path-mapper, Home Assistant, etc.
+      let extM: number | null = null;
+      try {
+        const raw = app.getSelfPath("environment.anchor.chainLength");
+        const shape = _classifyShape(raw);
+        if (shape.hasValue && typeof shape.sampleValue === "number"
+            && shape.ageMs != null && shape.ageMs < 60_000
+            && Number.isFinite(shape.sampleValue) && shape.sampleValue > 0) {
+          extM = shape.sampleValue;
+        }
+      } catch { /* no external chain */ }
+      anchorWatch.chainDeployedExternalM = extM;
+
+      // 2) Estimated — triángulo rectángulo con barco estático y cadena
+      //    tensada. Sólo si SOG < 0.3 kn sostenido 30 s y ≥60 s desde
+      //    el drop (no capturar mientras aún damos atrás).
+      const nowMs = Date.now();
+      let sogKt = 0;
+      try {
+        const v = app.getSelfPath("navigation.speedOverGround");
+        const s = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0);
+        sogKt = s * 1.94384;
+      } catch { /* no SOG */ }
+      const STATIC_SOG_KT = 0.3;
+      const STATIC_DUR_MS = 30_000;
+      const MIN_SINCE_DROP_MS = 60_000;
+      if (sogKt < STATIC_SOG_KT) {
+        if (anchorWatch.chainStaticSinceMs == null) anchorWatch.chainStaticSinceMs = nowMs;
+      } else {
+        anchorWatch.chainStaticSinceMs = null;
+      }
+      const staticElapsed = anchorWatch.chainStaticSinceMs != null
+        ? (nowMs - anchorWatch.chainStaticSinceMs) : 0;
+      const sinceDropMs = anchorWatch.anchoredSinceMs != null
+        ? (nowMs - anchorWatch.anchoredSinceMs) : 0;
+      const canEstimate = staticElapsed >= STATIC_DUR_MS
+                       && sinceDropMs >= MIN_SINCE_DROP_MS
+                       && dist > 0
+                       && typeof anchorWatch.depthAtDropM === "number"
+                       && anchorWatch.depthAtDropM > 0;
+      if (canEstimate) {
+        const bowH = (lastAnchorCalc && typeof lastAnchorCalc.hBow === "number") ? lastAnchorCalc.hBow : 0;
+        // Corrección de marea desde el drop: si sube, h aumenta; si baja,
+        // h disminuye. Fallback a 0 si no tenemos alguna de las dos.
+        let tideDelta = 0;
+        if (typeof anchorWatch.tideAtDropM === "number") {
+          try {
+            const t = app.getSelfPath("environment.tide.heightNow");
+            const v = typeof t === "object" ? ((t as any).value ?? null) : t;
+            if (typeof v === "number" && Number.isFinite(v)) {
+              tideDelta = v - anchorWatch.tideAtDropM;
+            }
+          } catch { /* no tide */ }
+        }
+        const h = Math.max(0, (anchorWatch.depthAtDropM ?? 0) + bowH + tideDelta);
+        const CATENARY_FACTOR = 1.05; // ~5% margen por curvatura mínima aun tensada
+        const lEst = Math.sqrt(dist * dist + h * h) * CATENARY_FACTOR;
+        anchorWatch.chainDeployedEstimatedM = Math.round(lEst * 10) / 10;
+      }
+
+      // 3) Manual — lo que meta el user por el popup Fondeo (persistido en
+      //    anchorWatch.chainDeployed, sin sobreescribir aquí).
+      anchorWatch.chainDeployedManualM = anchorWatch.chainDeployed;
+
+      // Resolución con prioridad:
+      let effChain: number | null = null;
+      let source: "external" | "estimated" | "manual" | null = null;
+      if (extM != null) { effChain = extM; source = "external"; }
+      else if (anchorWatch.chainDeployedEstimatedM != null) { effChain = anchorWatch.chainDeployedEstimatedM; source = "estimated"; }
+      else if (anchorWatch.chainDeployedManualM != null && anchorWatch.chainDeployedManualM > 0) { effChain = anchorWatch.chainDeployedManualM; source = "manual"; }
+      anchorWatch.chainDeployedSource = source;
+
+      watchValues.push(
+        { path: "environment.anchor.mareasIhm.chainDeployedM" as Path, value: effChain as any },
+        { path: "environment.anchor.mareasIhm.chainDeployedSource" as Path, value: source as any },
+      );
+    } catch (e: any) { app.debug(`[IHM-CHAIN] estimation failed: ${e?.message ?? e}`); }
+
     if (anchorWatch.chainDeployed) {
       watchValues.push({ path: "environment.anchor.mareasIhm.chain" as Path, value: `${anchorWatch.chainDeployed} m` } as any);
     }
@@ -7154,32 +7783,35 @@ function evaluateAnchorWatch() {
       // risk (target inside swing radius, but no actual contact yet). 'warn'
       // still triggers a KIP/OP sound, just the less aggressive warn tone.
       // Garreo and grounding stay at 'alarm' (genuinely critical events).
+      /* Rev732 (feedback @jeyrb "text was all in Spanish" en push
+         WilhelmSK): mensajes AIS en EN para que WilhelmSK y otros
+         clientes internacionales muestren texto legible. */
       if (matureUnackedInZone.length > 0 && anchorWatch.aisAlarmEnabled && !_isAisSilenced()) {
         desiredState = 'warn';
         const localTime = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-        desiredMessage = `[${localTime}] AIS en zona borneo: ${matureUnackedInZone.map(t => t.name).join(", ")}`;
+        desiredMessage = `[${localTime}] AIS in swing zone: ${matureUnackedInZone.map(t => t.name).join(", ")}`;
         desiredSig = 'warn'; // marker only — we always emit regardless
       } else {
         desiredState = 'normal';
         const ackedCount = aisInZone.length - unackedInZone.length;
         if (!anchorWatch.aisAlarmEnabled) {
           desiredSig = 'normal:disabled';
-          desiredMessage = "Alarma AIS desactivada";
+          desiredMessage = "AIS alarm disabled";
         } else if (inDropGrace) {
           // Rev57: anchor just dropped — quiet window for skipper review.
           const remainSec = Math.ceil((AIS_DROP_GRACE_MS - (_nowMs - _anchorDroppedAt)) / 1000);
           desiredSig = 'normal:drop-grace:' + Math.floor(remainSec / 5);
-          desiredMessage = `Margen post-fondeo (${remainSec}s) — revisa AIS`;
+          desiredMessage = `Post-drop grace (${remainSec}s) — review AIS`;
         } else if (unackedInZone.length > 0) {
           // Targets in zone but not yet "mature" (still in 30s grace)
           desiredSig = 'normal:grace:' + unackedInZone.length;
-          desiredMessage = `Evaluando ${unackedInZone.length} target(s) en zona`;
+          desiredMessage = `Evaluating ${unackedInZone.length} target(s) in zone`;
         } else if (ackedCount > 0) {
           desiredSig = 'normal:all-acked:' + ackedCount;
-          desiredMessage = `${ackedCount} target(s) ACK — zona controlada`;
+          desiredMessage = `${ackedCount} target(s) ACK — zone under control`;
         } else {
           desiredSig = 'normal:zone-clear';
-          desiredMessage = "Zona de fondeo libre de AIS";
+          desiredMessage = "AIS zone clear";
         }
       }
 
@@ -8512,6 +9144,16 @@ function getAnchorWatchState() {
     fromBow: fromBow ?? (dLen ? dLen / 2 : 6),
     chainRecommended: lastAnchorCalc?.chainL ?? null,
     chainDeployed: anchorWatch.chainDeployed,
+    // Rev733: cadena efectiva resuelta por prioridad + fuente + temp agua.
+    chainDeployedEffective: anchorWatch.chainDeployedExternalM ?? anchorWatch.chainDeployedEstimatedM ?? anchorWatch.chainDeployedManualM ?? anchorWatch.chainDeployed ?? null,
+    chainDeployedSource: anchorWatch.chainDeployedSource ?? null,
+    waterTemperatureK: (() => {
+      try {
+        const v = app.getSelfPath("environment.water.temperature");
+        const raw = typeof v === "object" ? (v as any).value : v;
+        return (typeof raw === "number" && Number.isFinite(raw)) ? raw : null;
+      } catch { return null; }
+    })(),
     swingRadiusOverride: anchorWatch.swingRadiusOverride,
     anchorHistory: anchorWatch.anchorHistory?.slice(0, 20) ?? [],
     tideEvents,
@@ -12419,8 +13061,45 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", requireControlAcces
     } catch { /* no GPS */ }
   }
   if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: "no position available — provide {lat,lng} or ensure GPS is active" });
+  const _reqCtx = req; // Rev735: capturado para el helper de userAlias en el unshift más abajo.
   _setAnchored(true); // Rev331 item 13: registra anchoredSinceMs
   anchorWatch.anchorPosition = { lat, lng };
+  // Rev733: snapshot para la estimación de cadena tensada. Guardamos
+  // profundidad del sitio (belowSurface preferido, o belowKeel+draft) y
+  // altura de marea al momento del drop, para poder corregir h con la
+  // diferencia de marea desde entonces.
+  try {
+    let depthAtDrop: number | null = null;
+    try {
+      const dS = app.getSelfPath("environment.depth.belowSurface");
+      const v = typeof dS === "object" ? (dS as any).value : dS;
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) depthAtDrop = v;
+    } catch { /* no belowSurface */ }
+    if (depthAtDrop == null) {
+      try {
+        const dK = app.getSelfPath("environment.depth.belowKeel");
+        const v = typeof dK === "object" ? (dK as any).value : dK;
+        if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+          // belowKeel + draft ≈ belowSurface (profundidad del sitio)
+          const d = _skVal("design.draft");
+          const draftM = (typeof d === "number") ? d : (typeof d === "object" && d ? ((d as any).current ?? (d as any).maximum ?? 0) : 0);
+          depthAtDrop = v + (Number.isFinite(draftM) ? Number(draftM) : 0);
+        }
+      } catch { /* no belowKeel */ }
+    }
+    let tideAtDrop: number | null = null;
+    try {
+      const t = app.getSelfPath("environment.tide.heightNow");
+      const v = typeof t === "object" ? (t as any).value : t;
+      if (typeof v === "number" && Number.isFinite(v)) tideAtDrop = v;
+    } catch { /* no tide yet */ }
+    anchorWatch.depthAtDropM = depthAtDrop;
+    anchorWatch.tideAtDropM = tideAtDrop;
+    anchorWatch.chainStaticSinceMs = null;
+    anchorWatch.chainDeployedEstimatedM = null;
+    anchorWatch.chainDeployedSource = anchorWatch.chainDeployed != null ? "manual" : null;
+    app.debug(`[IHM-CHAIN] drop snapshot: depth=${depthAtDrop?.toFixed(2) ?? "?"} m, tide=${tideAtDrop?.toFixed(2) ?? "?"} m`);
+  } catch (e: any) { app.debug(`[IHM-CHAIN] drop snapshot failed: ${e?.message ?? e}`); }
   // Rev596: ownership eliminado.
   anchorWatch.anchorOwnerAlias = null;
   anchorWatch.anchorOwnerSetAtMs = null;
@@ -12451,7 +13130,9 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", requireControlAcces
   _restoreAisAckIfClose(lat, lng);
   // Add to history (max 5)
   if (!anchorWatch.anchorHistory) anchorWatch.anchorHistory = [];
-  anchorWatch.anchorHistory.unshift({ lat, lng, ts: new Date().toISOString() });
+  // Rev735: atribuir al PIN activo. userAlias se calcula fuera para
+  // permitir sitios sin req (KIP handler): allí se sobreescribe a null.
+  anchorWatch.anchorHistory.unshift({ lat, lng, ts: new Date().toISOString(), userAlias: __ihmActiveAliasFromReq(_reqCtx) });
   if (anchorWatch.anchorHistory.length > 20) anchorWatch.anchorHistory = anchorWatch.anchorHistory.slice(0, 20);
   await ihmCache.set("anchorWatch", anchorWatch);
   anchorDragAlarmActive = false;
@@ -12460,11 +13141,12 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", requireControlAcces
     const dropDelta: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [
         { path: "notifications.signalk-mareas-ihm.anchorDrag" as any,
-          value: { state: "normal", method: [] as string[], message: "Vigilancia de fondeo activa" } },
+          value: { state: "normal", method: [] as string[], message: "Anchor watch active" } },
       ]}] };
     app.handleMessage(plugin.id, dropDelta);
   } catch { /* non-critical */ }
   app.debug(`[IHM] Anchor dropped at ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+  _pushActivity({ action: "drop", req, position: { lat, lng } });
   res.json({ ok: true, ...anchorWatch });
   broadcastSSE("drop");
   try { _piAnchorDropConfirm(); } catch { /* non-critical */ }
@@ -12472,10 +13154,12 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", requireControlAcces
 });
 
 // Lift anchor
-expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", requireControlAccess, async (_req: any, res: any) => {
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", requireControlAccess, async (req: any, res: any) => {
   await _withAnchorLock("lift", res, async () => {
   // Snapshot ACKs into the grace-period buffer BEFORE clearing anchorPosition.
   _saveAisAckPending();
+  const _prevAnchorPos = anchorWatch.anchorPosition ? { lat: anchorWatch.anchorPosition.lat, lng: anchorWatch.anchorPosition.lng } : null;
+  _pushActivity({ action: "lift", req, position: _prevAnchorPos });
   _setAnchored(false); // Rev331 item 13: limpia anchoredSinceMs
   anchorWatch.anchorPosition = null;
   anchorWatch.anchorOwnerAlias = null;
@@ -12528,10 +13212,14 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", requireControlAcces
 
 // Sprint E: Toggle anchor (drop if not anchored, lift if anchored) — for home automation
 expressApp.post("/signalk-mareas-ihm/api/anchor-watch/toggle", requireControlAccess, async (req: any, res: any) => {
+  const _reqCtx = req; // Rev735: para atribuir userAlias en el unshift del history.
   await _withAnchorLock("toggle", res, async () => {
   if (anchorWatch.anchored) {
     // Lift
     _saveAisAckPending();
+    // Rev736: registrar en activity log ANTES de limpiar posición.
+    const _prevPos = anchorWatch.anchorPosition ? { lat: anchorWatch.anchorPosition.lat, lng: anchorWatch.anchorPosition.lng } : null;
+    _pushActivity({ action: "toggle", req, position: _prevPos, note: "lift via toggle" });
     _setAnchored(false); // Rev331 item 13
     anchorWatch.anchorPosition = null;
     anchorWatch.anchorOwnerAlias = null;
@@ -12581,11 +13269,14 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/toggle", requireControlAcc
     try { _autoDetectShelterIfPossible(lat, lng); } catch { /* defensive */ }
     _restoreAisAckIfClose(lat, lng);
     if (!anchorWatch.anchorHistory) anchorWatch.anchorHistory = [];
-    anchorWatch.anchorHistory.unshift({ lat, lng, ts: new Date().toISOString() });
+    // Rev735: atribuir al PIN activo. userAlias se calcula fuera para
+  // permitir sitios sin req (KIP handler): allí se sobreescribe a null.
+  anchorWatch.anchorHistory.unshift({ lat, lng, ts: new Date().toISOString(), userAlias: __ihmActiveAliasFromReq(_reqCtx) });
     if (anchorWatch.anchorHistory.length > 20) anchorWatch.anchorHistory = anchorWatch.anchorHistory.slice(0, 20);
     await ihmCache.set("anchorWatch", anchorWatch);
     anchorDragAlarmActive = false;
     app.debug(`[IHM] Anchor toggled → dropped at ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+    _pushActivity({ action: "toggle", req, position: { lat, lng }, note: "drop via toggle" });
     broadcastSSE("drop");
   try { _piAnchorDropConfirm(); } catch { /* non-critical */ }
     res.json({ action: "dropped", anchored: true, lat, lng });
@@ -12668,6 +13359,7 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/simple", (_req: any, res: a
 try {
   (app as any).registerPutHandler('vessels.self', 'environment.anchor.mareasIhm.anchorCommand',
     (context: string, path: string, value: any, callback: any) => {
+      const _reqCtx = null; // Rev735: KIP no lleva contexto de request PIN.
       const wantDrop = value === true || value === 1 || value === "true";
       if (wantDrop && !anchorWatch.anchored) {
         // Drop at current GPS bow position
@@ -12705,7 +13397,9 @@ try {
           try { _autoDetectShelterIfPossible(lat, lng); } catch { /* defensive */ }
           _restoreAisAckIfClose(lat, lng);
           if (!anchorWatch.anchorHistory) anchorWatch.anchorHistory = [];
-          anchorWatch.anchorHistory.unshift({ lat, lng, ts: new Date().toISOString() });
+          // Rev735: atribuir al PIN activo. userAlias se calcula fuera para
+  // permitir sitios sin req (KIP handler): allí se sobreescribe a null.
+  anchorWatch.anchorHistory.unshift({ lat, lng, ts: new Date().toISOString(), userAlias: __ihmActiveAliasFromReq(_reqCtx) });
           if (anchorWatch.anchorHistory.length > 20) anchorWatch.anchorHistory = anchorWatch.anchorHistory.slice(0, 20);
           ihmCache.set("anchorWatch", anchorWatch);
           anchorDragAlarmActive = false;
@@ -12717,7 +13411,7 @@ try {
                 { path: "environment.anchor.mareasIhm.anchorCommand" as Path, value: true },
                 { path: "environment.anchor.mareasIhm.garreoAlarmCommand" as Path, value: true },
                 { path: "environment.anchor.mareasIhm.aisAlarmCommand" as Path, value: true },
-                { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: "Vigilancia de fondeo activa" } },
+                { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: "Anchor watch active" } },
               ] as any}] };
             app.handleMessage(plugin.id, dropDelta);
           } catch { /* non-critical */ }
@@ -13083,7 +13777,11 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-favorite-toggle", requ
 // Estructura: { lat: number, lng: number, name: string, ts: number }
 // Persistencia: ihmCache key "favorites" — array.
 // Match radius: 10 m (un fondeo "es el mismo" si está a menos de 10 m).
-interface FavoriteAnchor { lat: number; lng: number; name: string; ts: number; }
+// Rev735 (feedback Carlos "log de fondeos por usuarios"): añadido userAlias
+// para atribuir cada favorito al PIN que lo creó. `null` = capa de
+// seguridad OFF cuando se creó, o legacy pre-Rev735. La migración al
+// startup asigna todos los null al alias del master.
+interface FavoriteAnchor { lat: number; lng: number; name: string; ts: number; userAlias?: string | null; }
 let _favoritesCache: FavoriteAnchor[] = [];
 (async () => {
   try {
@@ -13092,11 +13790,45 @@ let _favoritesCache: FavoriteAnchor[] = [];
       _favoritesCache = (cached as any[]).filter(f =>
         typeof f?.lat === "number" && typeof f?.lng === "number" &&
         typeof f?.name === "string" && typeof f?.ts === "number"
-      ) as FavoriteAnchor[];
+      ).map((f: any) => ({
+        lat: f.lat, lng: f.lng, name: f.name, ts: f.ts,
+        // Rev735: userAlias del cache si existe; si no, null (se migrará
+        // al master en _migrateLegacyOwnership tras cargar los PINs).
+        userAlias: typeof f.userAlias === "string" && f.userAlias.length > 0 ? f.userAlias : null,
+      })) as FavoriteAnchor[];
       app.debug(`[IHM-FAV] loaded ${_favoritesCache.length} favorites from cache`);
     }
   } catch (e: any) {
     app.debug(`[IHM-FAV] cache load failed: ${e?.message}`);
+  }
+  // Rev735 (feedback Carlos "legacy al master"): asignamos todas las
+  // entradas sin userAlias al alias del master si ya existe uno. Se
+  // ejecuta una vez tras cargar PINs. Si no hay master, las dejamos como
+  // null y quedará atribuido al primer master que se cree.
+  try {
+    const getPinsFn = (global as any)._ihmGetPins;
+    if (typeof getPinsFn === "function") {
+      const pins = await getPinsFn();
+      const master = Array.isArray(pins) ? pins.find((p: any) => p.isMaster) : null;
+      if (master && master.alias) {
+        let mutated = 0;
+        for (const f of _favoritesCache) {
+          if (!f.userAlias) { f.userAlias = master.alias; mutated++; }
+        }
+        if (anchorWatch.anchorHistory && Array.isArray(anchorWatch.anchorHistory)) {
+          for (const h of anchorWatch.anchorHistory as any[]) {
+            if (!h.userAlias) { h.userAlias = master.alias; mutated++; }
+          }
+        }
+        if (mutated > 0) {
+          try { await ihmCache.set("favorites", _favoritesCache); } catch { /* non-critical */ }
+          try { await ihmCache.set("anchorWatch", anchorWatch); } catch { /* non-critical */ }
+          app.debug(`[IHM-MIG] Rev735: ${mutated} entradas legacy asignadas a master "${master.alias}"`);
+        }
+      }
+    }
+  } catch (e: any) {
+    app.debug(`[IHM-MIG] migración legacy fallida: ${e?.message ?? e}`);
   }
 })();
 function _favDistM(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
@@ -13111,20 +13843,148 @@ async function _favPersist() {
   try { await ihmCache.set("favorites", _favoritesCache); } catch { /* non-critical */ }
 }
 
-expressApp.get("/signalk-mareas-ihm/api/anchor-watch/favorites", (_req: any, res: any) => {
-  res.json({ favorites: _favoritesCache });
+/* ========================================================================
+   Rev736 (feedback Carlos "log de fondeos por usuarios"): activityLog
+   ring buffer de 500 entradas. Cada acción de fondeo/alarma queda
+   registrada con timestamp, alias del PIN activo, acción, posición y
+   nota opcional. El master lo ve entero (con filtro ?user=), los guests
+   solo los suyos.
+   ======================================================================== */
+interface ActivityLogEntry {
+  ts: number;                                    // ms epoch
+  action: "drop" | "lift" | "auto-lift" | "toggle" | "alarm-ack" | "favorite-add" | "favorite-delete";
+  userAlias: string | null;                      // null si no hay capa de seguridad
+  position?: { lat: number; lng: number } | null;
+  note?: string | null;                          // e.g. "auto-lift 3.2 kn SOG"
+}
+const ACTIVITY_LOG_MAX = 500;
+let _activityLog: ActivityLogEntry[] = [];
+(async () => {
+  try {
+    const cached = await ihmCache.get("activityLog");
+    if (Array.isArray(cached)) {
+      _activityLog = (cached as any[]).filter(e =>
+        e && typeof e.ts === "number" && typeof e.action === "string"
+      ).slice(0, ACTIVITY_LOG_MAX) as ActivityLogEntry[];
+      app.debug(`[IHM-ACTIVITY] loaded ${_activityLog.length} entries`);
+    }
+  } catch (e: any) { app.debug(`[IHM-ACTIVITY] load failed: ${e?.message ?? e}`); }
+})();
+async function _activityPersist(): Promise<void> {
+  try { await ihmCache.set("activityLog", _activityLog); } catch { /* non-critical */ }
+}
+/* Helper — llamado desde cualquier sitio para registrar una acción.
+   Acepta req opcional (para capturar alias); si no hay req pasa null
+   (KIP handler / auto-lift). Fire-and-forget con persistencia async. */
+function _pushActivity(entry: Omit<ActivityLogEntry, "ts" | "userAlias"> & { req?: any; userAlias?: string | null }): void {
+  try {
+    const alias = entry.userAlias !== undefined
+      ? entry.userAlias
+      : __ihmActiveAliasFromReq(entry.req ?? null);
+    const rec: ActivityLogEntry = {
+      ts: Date.now(),
+      action: entry.action,
+      userAlias: alias,
+      position: entry.position ?? null,
+      note: entry.note ?? null,
+    };
+    _activityLog.unshift(rec);
+    if (_activityLog.length > ACTIVITY_LOG_MAX) _activityLog.length = ACTIVITY_LOG_MAX;
+    _activityPersist(); // async, no await — no bloqueamos la request
+  } catch (e: any) { app.debug(`[IHM-ACTIVITY] push failed: ${e?.message ?? e}`); }
+}
+
+expressApp.get("/signalk-mareas-ihm/api/activity-log", (req: any, res: any) => {
+  const activeAlias  = (global as any)._ihmActiveUserAlias?.(req)  ?? null;
+  const activeMaster = (global as any)._ihmActiveUserIsMaster?.(req) ?? false;
+  const requested = typeof req.query?.user === "string" && req.query.user.length > 0 ? String(req.query.user) : null;
+  const limit = Math.max(1, Math.min(500, Number(req.query?.limit) || 100));
+  let out: ActivityLogEntry[];
+  if (!activeAlias) {
+    // Capa OFF → todo (compat).
+    out = _activityLog.slice(0, limit);
+  } else if (activeMaster) {
+    // Master: filtrar por ?user si lo pide, si no todo (para su propio panel).
+    if (requested) {
+      out = _activityLog.filter(e => (e.userAlias ?? "") === requested).slice(0, limit);
+    } else {
+      out = _activityLog.slice(0, limit);
+    }
+  } else {
+    // Guest: solo los suyos.
+    out = _activityLog.filter(e => (e.userAlias ?? "") === activeAlias).slice(0, limit);
+  }
+  res.json({ entries: out, total: _activityLog.length, scopeUser: activeAlias, isMaster: activeMaster });
 });
+
+expressApp.delete("/signalk-mareas-ihm/api/activity-log", requireControlAccess, async (req: any, res: any) => {
+  const isMaster = (global as any)._ihmActiveUserIsMaster?.(req) ?? false;
+  if (!isMaster) return res.status(403).json({ error: "only_master" });
+  _activityLog = [];
+  await _activityPersist();
+  res.json({ ok: true });
+});
+
+/* Rev735 (feedback Carlos "log de fondeos por usuarios"): GET filtra por
+   user activo. El master puede consultar los de cualquier alias vía
+   ?user=<alias> (útil para la ficha de usuario). Si la capa de seguridad
+   está OFF (nadie tiene sesión) devolvemos TODO — mismo comportamiento
+   histórico. */
+expressApp.get("/signalk-mareas-ihm/api/anchor-watch/favorites", (req: any, res: any) => {
+  const activeAlias  = (global as any)._ihmActiveUserAlias?.(req)  ?? null;
+  const activeMaster = (global as any)._ihmActiveUserIsMaster?.(req) ?? false;
+  const requested = typeof req.query?.user === "string" && req.query.user.length > 0 ? String(req.query.user) : null;
+  let out: FavoriteAnchor[];
+  if (!activeAlias) {
+    // Sin sesión (capa OFF) → devolver todo para no romper compat.
+    out = _favoritesCache;
+  } else if (activeMaster) {
+    // Master: si pasa ?user=X → filtrar por X; si no → sus propios.
+    const target = requested ?? activeAlias;
+    out = _favoritesCache.filter(f => (f.userAlias ?? "") === target);
+  } else {
+    // Guest: siempre los suyos (ignora ?user=).
+    out = _favoritesCache.filter(f => (f.userAlias ?? "") === activeAlias);
+  }
+  res.json({ favorites: out, scopeUser: activeAlias, isMaster: activeMaster });
+});
+
+/* Rev735: helper — chequea que el user tenga permiso para
+   crear/borrar favoritos. Master siempre puede; guest necesita el flag
+   permissions.editAnchorages=true. Devuelve el alias resuelto o null si
+   no tiene permiso. */
+async function _canEditAnchorages(req: any): Promise<{ ok: boolean; alias: string | null; reason?: string }> {
+  const activeAlias  = (global as any)._ihmActiveUserAlias?.(req)  ?? null;
+  const activeMaster = (global as any)._ihmActiveUserIsMaster?.(req) ?? false;
+  if (!activeAlias) {
+    // Sin capa de seguridad activa → cualquier user autenticado por
+    // requireControlAccess puede editar (comportamiento histórico).
+    return { ok: true, alias: null };
+  }
+  if (activeMaster) return { ok: true, alias: activeAlias };
+  const pins = await ((global as any)._ihmGetPins?.() ?? []);
+  const me = Array.isArray(pins) ? pins.find((p: any) => p.alias === activeAlias) : null;
+  if (me && me.permissions && me.permissions.editAnchorages === true) {
+    return { ok: true, alias: activeAlias };
+  }
+  return { ok: false, alias: activeAlias, reason: "no_edit_permission" };
+}
 
 expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite", requireControlAccess, async (req: any, res: any) => {
   const lat = Number(req?.body?.lat);
   const lng = Number(req?.body?.lng);
   const rawName = String(req?.body?.name ?? "").trim();
   if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: "invalid coords" });
+  // Rev735: permiso edit.
+  const perm = await _canEditAnchorages(req);
+  if (!perm.ok) return res.status(403).json({ error: "permission_denied", message: "This user has no permission to edit anchorages. Ask the master to grant it in the user card." });
   const name = (rawName || "Favorito").slice(0, 60);
-  // Upsert: si existe uno a <=10 m, actualizar nombre + timestamp.
+  // Upsert: si existe uno a <=10 m del MISMO USER, actualizar nombre + timestamp.
+  // (Si dos users tienen favoritos en la misma zona son entradas separadas.)
   let updated: FavoriteAnchor | null = null;
   for (const f of _favoritesCache) {
-    if (_favDistM({ lat, lng }, { lat: f.lat, lng: f.lng }) <= 10) {
+    if ((f.userAlias ?? null) === (perm.alias ?? null)
+        && _favDistM({ lat, lng }, { lat: f.lat, lng: f.lng }) <= 10) {
       f.name = name;
       f.ts = Date.now();
       updated = f;
@@ -13132,11 +13992,12 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite", requireControlA
     }
   }
   if (!updated) {
-    updated = { lat, lng, name, ts: Date.now() };
+    updated = { lat, lng, name, ts: Date.now(), userAlias: perm.alias };
     _favoritesCache.unshift(updated);
   }
   await _favPersist();
   broadcastSSE("favorites");
+  _pushActivity({ action: "favorite-add", req, position: { lat, lng }, note: name });
   res.json({ ok: true, favorite: updated, total: _favoritesCache.length });
 });
 
@@ -13144,14 +14005,22 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite-delete", requireC
   const lat = Number(req?.body?.lat);
   const lng = Number(req?.body?.lng);
   if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: "invalid coords" });
+  const perm = await _canEditAnchorages(req);
+  if (!perm.ok) return res.status(403).json({ error: "permission_denied" });
+  const activeMaster = (global as any)._ihmActiveUserIsMaster?.(req) ?? false;
   const before = _favoritesCache.length;
-  _favoritesCache = _favoritesCache.filter(f =>
-    _favDistM({ lat, lng }, { lat: f.lat, lng: f.lng }) > 10
-  );
+  _favoritesCache = _favoritesCache.filter(f => {
+    const closeEnough = _favDistM({ lat, lng }, { lat: f.lat, lng: f.lng }) <= 10;
+    if (!closeEnough) return true;
+    // Rev735: guest solo puede borrar los suyos; master borra cualquiera.
+    if (activeMaster) return false;
+    return (f.userAlias ?? null) !== (perm.alias ?? null);
+  });
   const removed = before - _favoritesCache.length;
   if (removed > 0) {
     await _favPersist();
     broadcastSSE("favorites");
+    _pushActivity({ action: "favorite-delete", req, position: { lat, lng }, note: `removed ${removed} favorite(s)` });
   }
   res.json({ ok: true, removed, total: _favoritesCache.length });
 });
@@ -13199,6 +14068,59 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/silence-alarm", requireCon
     return res.json({ ok: true, kind, minutes, silencedUntil: _groundingSilencedUntil });
   }
   res.status(400).json({ error: "kind must be 'garreo', 'ais' or 'grounding'" });
+});
+
+/* Rev737 (Hoekens catch-up "Test alarm outside vessel position"):
+   endpoint que dispara una notification de garreo simulada durante 10 s
+   con method:["visual","sound","push"] para verificar TODO el pipeline
+   de alarmas — audio Pi, WilhelmSK push, Telegram, OpenPlotter
+   notifications y clientes web. Al cabo de 10 s se auto-limpia. */
+expressApp.post("/signalk-mareas-ihm/api/anchor-watch/test-alarm", requireControlAccess, (req: any, res: any) => {
+  const kind = String(req?.body?.kind ?? "garreo");
+  const validKinds = ["garreo", "grounding", "ais"];
+  if (validKinds.indexOf(kind) < 0) return res.status(400).json({ error: `kind must be one of: ${validKinds.join(", ")}` });
+  const notifPath = kind === "garreo" ? "notifications.signalk-mareas-ihm.anchorDrag"
+                  : kind === "grounding" ? "notifications.signalk-mareas-ihm.grounding"
+                  : "notifications.signalk-mareas-ihm.aisAnchorAlarm";
+  const state = kind === "ais" ? "warn" : "alarm";
+  const message = `[TEST] ${kind.toUpperCase()} alarm — simulated for 10 s to verify audio + push + notifications`;
+  try {
+    // Rev742 (feedback Carlos "alarmas test no funcionan"): además del
+    // delta SK, arrancar TAMBIÉN el audio Pi (paplay/espeak) durante el
+    // test — antes solo emitíamos el delta y sonaba KIP/OP externos pero
+    // NO el altavoz del propio Pi.
+    const piKind = kind === "garreo" ? "garreo" : kind === "grounding" ? "grounding" : "ais";
+    try { _piAlarmStart(piKind); } catch (e: any) { console.log(`[IHM-TEST-ALARM] pi-audio start failed: ${e?.message ?? e}`); }
+    // Fire delta SK (con method completo para que WilhelmSK dispare push nativo).
+    app.handleMessage(plugin.id, {
+      context: ("vessels." + app.selfId) as Context,
+      updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
+        path: notifPath as any,
+        value: { state, method: ["visual", "sound", "push"], message },
+      }]}],
+    });
+    console.log(`[IHM-TEST-ALARM] fired ${kind} for 10 s (audio Pi + delta SK + espejo canónico)`);
+    // Auto-clear tras 10 s.
+    setTimeout(() => {
+      try {
+        app.handleMessage(plugin.id, {
+          context: ("vessels." + app.selfId) as Context,
+          updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
+            path: notifPath as any,
+            value: { state: "normal", method: [], message: "[TEST] cleared" },
+          }]}],
+        });
+        // Rev742: parar audio Pi también.
+        try { _piAlarmStop(piKind); } catch { /* defensive */ }
+        console.log(`[IHM-TEST-ALARM] auto-cleared ${kind}`);
+      } catch { /* non-critical */ }
+    }, 10_000);
+    _pushActivity({ action: "alarm-ack", req, note: `test-alarm ${kind}` });
+    res.json({ ok: true, kind, state, durationMs: 10_000 });
+  } catch (e: any) {
+    console.log(`[IHM-TEST-ALARM] handler failed: ${e?.message ?? e}`);
+    res.status(500).json({ error: String(e?.message ?? e) });
+  }
 });
 
 // Rev48: cancel silence window (so backend audio re-arms when user re-enables
@@ -14154,10 +15076,9 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
         await _activateSafetyLatch(reasonCode);
         // Publicar alerta DEGRADADA (no normal). Mantiene el zumbador con
         // mensaje claro de por qué la alarma sigue.
-        const latchMsg = tr(
-          `⚠ RIESGO RETENIDO — ${reasonText}. Sensor degradado durante alarma activa. Volver al fondeo si fue real.`,
-          `⚠ RISK LATCHED — ${reasonText}. Sensor degraded during active alarm. Return to anchor if it was real.`,
-        );
+        // Rev732: EN por defecto en el mensaje de notification para push
+        // WilhelmSK y clientes internacionales.
+        const latchMsg = `⚠ RISK LATCHED — ${reasonText}. Sensor degraded during active alarm. Return to anchor if it was real.`;
         const latchNotifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
           updates: [{ timestamp: now.toISOString() as Timestamp, values: [{
             path: "notifications.signalk-mareas-ihm.grounding" as any,
@@ -14281,20 +15202,21 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
     // podían dispararse por leer el texto en vez del flag). El mensaje ahora
     // refleja el estado REAL: sólo dice "RIESGO DE VARADA" cuando existe
     // riesgo físico; si no, dice "SIN RIESGO" con la sonda esperada.
+    // Rev732 (feedback @jeyrb "text was all in Spanish" en push
+     // WilhelmSK): forzamos EN en el message de las notifications SK.
+     // Estos mensajes viajan a WilhelmSK y otros clientes internacionales
+     // como delta SK; el visor construye sus propios strings i18n desde
+     // el state estructurado, no lee `message`.
     let message: string;
     if (physicalRisk) {
       const minsLine = (minutesToRisk != null)
-        ? tr(`RIESGO DE VARADA en ${minutesToRisk} MINUTOS`, `GROUNDING RISK in ${minutesToRisk} MINUTES`)
-        : tr("RIESGO DE VARADA", "GROUNDING RISK");
-      const depthLine = (lang === "en")
-        ? `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`
-        : `Sonda final esperada: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
+        ? `GROUNDING RISK in ${minutesToRisk} MINUTES`
+        : `GROUNDING RISK`;
+      const depthLine = `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
       message = `${minsLine}\n${depthLine}`;
     } else {
-      const okLine = tr("SIN RIESGO", "NO RISK");
-      const depthLine = (lang === "en")
-        ? `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`
-        : `Sonda final esperada: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
+      const okLine = "NO RISK";
+      const depthLine = `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
       message = `${okLine}\n${depthLine}`;
     }
 

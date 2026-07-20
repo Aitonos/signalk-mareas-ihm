@@ -1,5 +1,175 @@
 # Changelog
 
+## [2.9.0] - 2026-07-20
+
+### English
+
+**Online AIS engine + multi-user anchoring log + tide provider coexistence + safety / UX**
+
+Big release. Highlights:
+
+#### 🚢 Online AIS engine (aisstream.io)
+
+- Optional online AIS feed via [aisstream.io](https://aisstream.io) — a free crowd-sourced service. Useful if you have no VHF AIS receiver on board, or to extend coverage beyond VHF range.
+- WebSocket client with **exponential-backoff reconnect + 30 s watchdog** that catches silent/zombie NAT drops (WS stuck "OPEN" with no traffic → force reconnect after 5 min of no messages). Reconnects itself if the server has an outage.
+- **Automatic dedup with your VHF AIS receiver**: any MMSI that came through your own VHF in the last 60 s wins over the online feed. Online only fills the gaps and extends the range.
+- **Republishes to the SignalK `vessels.*` tree** with `$source: mareas-ihm.aisstream`, so any consumer in your SignalK environment sees the targets alongside VHF ones (no duplicate branch, standard vocabulary).
+- Wizard step **"🚢 AIS over internet"** with sign-up links, docs link, `⚠ beta` warning, API-key field, and live "📊 Check status" button that shows WS state, msgs received/accepted, targets in cache, bounding box, and last error with a hint (e.g. link to known outage issues).
+- New endpoint `GET /api/aisstream/stats` with connection/message diagnostics.
+
+#### 👥 Anchoring log per user
+
+- Each `/drop`, `/lift`, `/toggle`, auto-lift and favourite add/delete is attributed to the PIN active at the time and persisted in a 500-entry ring buffer.
+- Every favourite and every `anchorHistory` entry now carries `userAlias`. Legacy entries created before this release are auto-migrated to the master's alias at first startup.
+- `GET /favorites`, `GET /anchor-watch/history` and new `GET /api/activity-log` filter by active user. Master can query anyone with `?user=<alias>`; guests only see their own.
+- Guests can be granted **`permissions.editAnchorages`** by the master (per-PIN) — without it, guests are read-only for their own history/favourites. Master always has full permissions implicitly.
+- Master → 👥 User control → tap on any guest → **new sub-sections**: 📌 Favorites, 📋 Recent anchor drops, 🕒 Activity log — each with **📍 Locate on map** button.
+- Toggle for `permissions.editAnchorages` inline in the guest card, POSTs immediately.
+
+#### 🌊 Tide provider coexistence (`shy provider`)
+
+*(Reported by [@andmayfi92](https://github.com/andmayfi92) — thank you)*
+
+SignalK only allows a single resource provider per type. Until this release we registered as tide provider unconditionally at startup, which **silently overwrote other tide plugins** (opentide, signalk-tides, signalk-tidal-currents) with our IHM/NEAPS output — problematic for users outside our coverage area, where we'd overwrite valid harmonic data with an empty `extremes:[]`.
+
+- **New `tidePublishToSk` setting** with three modes:
+  - **Auto** (default) — yield the `/signalk/v2/api/resources/tides` path if another tide provider is enabled on the server. Publish ourselves only if we're the only one.
+  - **Always** — force our provider (previous behaviour). Only for users who specifically want IHM/NEAPS output over anything else already installed.
+  - **Never** — don't register at all, this plugin's tide data is consumed only via its own web UI/panel.
+- **Detector** at plugin start scans `~/.signalk/plugin-config-data/*.json` for known tide providers (`signalk-opentide`, `signalk-tides`, `signalk-tidal-currents`) and their enabled state.
+- **Wizard step "🌊 Tides & weather"** gets a new **"📡 Publish to SignalK tide tree"** section with the 3-option radio, list of detected other providers, and live status: `📢 Currently publishing` / `🤐 Currently NOT publishing` with the reason (`auto + 'signalk-opentide' enabled → yielding`, etc.).
+- New endpoint `GET /api/tide/providers-detected`.
+- Fallback: if we do publish but our provider has no coverage for the current position, the response now carries a `_note` explaining "No tide coverage from mareas-ihm for this position — install another tide plugin for global coverage" instead of a misleading empty valid-looking object.
+
+#### 📐 Chain-deployed estimator + water temperature widgets
+
+- **New bottom-bar cell 🔗 Deployed chain**: computed from the geometry `L ≈ √(d² + h²) × 1.05` (bow-to-anchor distance + depth at drop + tide delta + bow height), only updated when boat is static (SOG<0.3 kn for ≥30 s) and ≥60 s past the drop, so it doesn't capture noise during the initial reverse-set. Priority: external path (`environment.anchor.chainLength` published by a windlass counter via any means) > geometric estimate > manual value from the anchor calculator. Badge shows source (📡 external / 🧮 estimate / ✋ manual).
+- **New bottom-bar cell 🌡 Water temperature**: reads `environment.water.temperature` (Kelvin → °C/°F according to unit system).
+- Both cells opt-in from Config → 📊 Bottom-bar widgets.
+- New published SK paths `environment.anchor.mareasIhm.chainDeployedM` and `.chainDeployedSource` for KIP/dashboards.
+
+#### 🛰 GPS glitch filter
+
+- **Speed-based rejection**: new setting `gpsGlitchMaxSpeedKt` (0 = off, default 0). If a new GPS fix implies a speed above the threshold vs the last accepted fix, the fix is rejected — up to 5 consecutive rejections; after that we concede the motion is real. Prevents false drag alarms triggered by GPS spikes on 4G/RF-noisy setups.
+- Emits `notifications.signalk-mareas-ihm.gpsGlitch` with `state:warn` (never on top of an active drag alarm).
+
+#### 🔔 Test alarms
+
+- New endpoint `POST /api/anchor-watch/test-alarm` fires a simulated alarm (`garreo` / `grounding` / `ais`) for 10 s with `method:["visual","sound","push"]` — verifies audio (Pi + web), push (WilhelmSK / Telegram) and SignalK notifications all reach every consumer. Auto-clears.
+- Wizard step **"📲 Mobile push alerts"** gets 3 buttons (⚓ Drag, 🚧 Grounding, 🚢 AIS) to fire each type. Does not affect the real anchor state.
+
+#### 🧙 Wizard rework
+
+- **Summary is now the HOME** of the wizard (was the last step). Every step shows a ✅/⚠ badge. Click any card to jump.
+- **New 📋 Home button** in the wizard footer between ← Back and → Next, jumps back to the Summary without exiting.
+- Steps completed via "Save & restart plugin" (IMU, notifications, aisFallback, tide-publish) now **auto-mark themselves as done** in the summary — no more red-tile-forever after saving.
+- New standalone steps split off from the modal Config: **🚢 AIS over internet**, **📐 Depth calculator** (embedded, was a stub), **📡 Paths published to SignalK** (with live traffic stats).
+- Anchor calculator (`⚓ Cálculo de fondeo`) stays accessible from the hamburger menu (frequent use); depth calculator (`📐 Cálculo de sonda`) is wizard-only.
+
+#### 🗺 Map polish
+
+- **Antimeridian wrap fix**: enabling `worldCopyJump:true` on the Leaflet map — layers no longer strand off the far side when panning across ±180° longitude.
+- **Auto-invert wheel zoom on MFDs** (`Navico|Zeus|Vulcan|B&G|Simrad-Chart` user-agent): those consoles report wheel deltas with the opposite sign, so scroll-to-zoom was inverted; the fix leaves desktop browsers untouched.
+- **AIS radius slider max** raised from **50 km → 500 km** to make sense of far AIS targets fetched via aisstream.io.
+
+#### 🎨 UI / copy
+
+- Every push-notification `message:` field is now emitted in **English by default** (drag, grounding, AIS, GPS lost). The internal viewer keeps its own i18n system for local display; this ensures third-party consumers (WilhelmSK, other apps) show a legible message in a lingua franca regardless of the plugin's UI language.
+- Removed duplicate emojis in menu entries `Enviar diagnóstico` and `Tu opinión cuenta` (icon was in both the menu row and the i18n string).
+- Text sizes bumped in the SignalK paths panel (+20% overall), categories collapsed by default with a rotating triangle.
+- Renamed panel "Publicación en SignalK" → **"Paths publicados en SignalK"** for clarity.
+
+#### 🐛 Fixes
+
+- **Bottom-bar new cells fully switchable**: `cad_larg` and `temp_agua` were rendered in the config picker but the backend whitelist (`BB_CELL_KEYS` in `sanitizeBBOrder`) silently dropped them at save time. Whitelist updated.
+- **NEAPS LAT datum** now computed over a 365-day window (was a 7-day + 5 cm safety margin, which drifted 30–60 cm below IHM in neap-tide weeks). Per-station cache TTL 30 d.
+- **Sensor check wizard step** completed (was `Under construction`): 16 live tiles including air temperature, humidity, magnetic heading, speed through water, AIS target count.
+- **SignalK paths panel — permission popup**: attempting to toggle a required 🔒 or deprecated 🗑 path shows a native modal (dark + amber border, keyboard/backdrop dismiss). The 401 (permission required) response when the security layer is on and no PIN is entered gets the same treatment. No more silent `<input disabled>` non-response on touch devices.
+
+### Español
+
+**Motor AIS online + log de fondeos por usuario + coexistencia de proveedores de marea + seguridad / UX**
+
+Release grande. Puntos clave:
+
+#### 🚢 Motor AIS online (aisstream.io)
+
+- Feed AIS opcional por internet vía [aisstream.io](https://aisstream.io) — servicio gratuito crowd-sourced. Útil si no tienes receptor AIS por VHF a bordo o para extender la cobertura más allá del alcance del VHF.
+- Cliente WebSocket con **reconnect exponencial + watchdog cada 30 s** que detecta caídas silenciosas/zombie de NAT (WS aparentemente "OPEN" pero sin tráfico → fuerza reconnect tras 5 min sin mensajes). Se recupera solo si el server tiene una incidencia.
+- **Dedupe automático con tu receptor VHF**: cualquier MMSI que llegó por tu VHF en los últimos 60 s prevalece sobre el feed online. Online solo rellena huecos y extiende el alcance.
+- **Republica en el árbol `vessels.*` de SignalK** con `$source: mareas-ihm.aisstream`, para que cualquier consumidor de tu entorno SK vea los targets al lado de los de VHF (sin rama duplicada, vocabulario estándar).
+- Paso del wizard **"🚢 AIS por internet"** con links de registro, docs, aviso `⚠ beta`, campo de API-key, y botón "📊 Comprobar estado" en vivo que muestra estado WS, msgs recibidos/aceptados, targets en cache, bounding box y último error con pista útil (por ejemplo link a issues conocidos).
+- Nuevo endpoint `GET /api/aisstream/stats` con diagnóstico de conexión/mensajes.
+
+#### 👥 Log de fondeos por usuario
+
+- Cada `/drop`, `/lift`, `/toggle`, auto-lift y alta/baja de favorito se atribuye al PIN activo en ese momento y se persiste en un ring buffer de 500 entradas.
+- Cada favorito y cada entrada de `anchorHistory` lleva ahora `userAlias`. Las entradas previas a esta release se migran automáticamente al alias del maestro al arrancar por primera vez.
+- `GET /favorites`, `GET /anchor-watch/history` y el nuevo `GET /api/activity-log` filtran por usuario activo. El maestro puede consultar los de cualquier alias con `?user=<alias>`; los invitados solo ven los suyos.
+- Los invitados pueden recibir del maestro el permiso **`permissions.editAnchorages`** (por PIN) — sin él, los invitados solo pueden leer sus propios fondeos/favoritos. El maestro tiene todos los permisos implícitamente.
+- Maestro → 👥 Control de usuarios → toca cualquier invitado → **nuevas sub-secciones**: 📌 Favoritos, 📋 Últimos fondeos, 🕒 Actividad — cada uno con botón **📍 Localizar en mapa**.
+- Toggle de `permissions.editAnchorages` inline en la ficha del invitado, POSTea al instante.
+
+#### 🌊 Coexistencia con otros proveedores de marea (`shy provider`)
+
+*(Reportado por [@andmayfi92](https://github.com/andmayfi92) — gracias)*
+
+SignalK sólo permite un resource provider por tipo. Hasta esta release nos registrábamos como proveedor de mareas incondicionalmente al arrancar, lo que **sobreescribía silenciosamente** a otros plugins (opentide, signalk-tides, signalk-tidal-currents) con nuestro output IHM/NEAPS — un problema para usuarios fuera de nuestra cobertura, donde sobreescribíamos datos armónicos válidos con un `extremes:[]` vacío.
+
+- **Nuevo ajuste `tidePublishToSk`** con tres modos:
+  - **Auto** (por defecto) — cede el path `/signalk/v2/api/resources/tides` si hay otro proveedor de mareas activo en el server. Publica el nuestro sólo si somos los únicos.
+  - **Always** — fuerza nuestro proveedor (comportamiento previo). Sólo para quien quiera específicamente el output IHM/NEAPS sobre lo que ya esté instalado.
+  - **Never** — no nos registramos en absoluto; los datos de marea de este plugin se consumen sólo desde su propio panel/visor.
+- **Detector** al arrancar el plugin escanea `~/.signalk/plugin-config-data/*.json` buscando proveedores de mareas conocidos (`signalk-opentide`, `signalk-tides`, `signalk-tidal-currents`) y su estado enabled.
+- **Paso del wizard "🌊 Mareas y meteo"** gana una nueva sección **"📡 Publicar en el árbol de mareas SignalK"** con el radio de 3 opciones, listado de otros proveedores detectados y estado en vivo: `📢 Actualmente publicando` / `🤐 Actualmente NO publica` con el motivo (`auto + 'signalk-opentide' enabled → yielding`, etc.).
+- Nuevo endpoint `GET /api/tide/providers-detected`.
+- Fallback: si sí publicamos pero nuestro proveedor no tiene cobertura para la posición actual, la respuesta lleva ahora un `_note` explicando "No tide coverage from mareas-ihm for this position — install another tide plugin for global coverage" en lugar de un objeto vacío que parece válido pero engaña.
+
+#### 📐 Estimador de cadena largada + widget de temperatura del agua
+
+- **Nueva celda bottom-bar 🔗 Cadena largada**: calculada por geometría `L ≈ √(d² + h²) × 1.05` (distancia proa-ancla + sonda al drop + delta de marea + altura de la roldana), sólo actualizada cuando el barco está estático (SOG<0.3 kn durante ≥30 s) y han pasado ≥60 s desde el drop, para no capturar ruido durante el tensado inicial. Prioridad: path externo (`environment.anchor.chainLength` publicado por un contador de cabestrante por cualquier vía) > estimación geométrica > valor manual del calculador de fondeo. Badge muestra la fuente (📡 externo / 🧮 estimado / ✋ manual).
+- **Nueva celda bottom-bar 🌡 Temperatura del agua**: lee `environment.water.temperature` (Kelvin → °C/°F según sistema de unidades).
+- Ambas celdas opt-in desde Config → 📊 Widgets bottom-bar.
+- Nuevos paths SK publicados `environment.anchor.mareasIhm.chainDeployedM` y `.chainDeployedSource` para KIP/dashboards.
+
+#### 🛰 Filtro anti-glitch del GPS
+
+- **Rechazo por velocidad**: nuevo ajuste `gpsGlitchMaxSpeedKt` (0 = off, default 0). Si un fix GPS nuevo implica una velocidad por encima del umbral respecto al último fix aceptado, se rechaza — hasta 5 rechazos consecutivos; después concede que el movimiento es real. Evita alarmas de garreo falsas por picos GPS en instalaciones 4G/con ruido RF.
+- Emite `notifications.signalk-mareas-ihm.gpsGlitch` con `state:warn` (nunca sobre una alarma de garreo activa).
+
+#### 🔔 Probar alarmas
+
+- Nuevo endpoint `POST /api/anchor-watch/test-alarm` dispara una alarma simulada (`garreo` / `grounding` / `ais`) durante 10 s con `method:["visual","sound","push"]` — verifica que audio (Pi + web), push (WilhelmSK / Telegram) y notifications SK llegan a todos los consumidores. Auto-limpia.
+- Paso del wizard **"📲 Alertas al móvil"** gana 3 botones (⚓ Garreo, 🚧 Varada, 🚢 AIS) para disparar cada tipo. No afecta al estado real del fondeo.
+
+#### 🧙 Rediseño del wizard
+
+- **El Resumen ahora es la HOME** del wizard (era el último paso). Cada paso muestra un badge ✅/⚠. Click en cualquier tarjeta salta al paso.
+- **Nuevo botón 📋 Home** en el pie del wizard entre ← Atrás y → Siguiente, vuelve al Resumen sin salir del wizard.
+- Los pasos que se completan con "Guardar y reiniciar plugin" (IMU, notifications, aisFallback, tide-publish) ahora **se auto-marcan como hechos** en el resumen — no más tarjeta roja permanente tras guardar.
+- Nuevos pasos independientes extraídos del modal Config: **🚢 AIS por internet**, **📐 Cálculo de sonda** (embebido, era un stub), **📡 Paths publicados en SignalK** (con estadísticas de tráfico en vivo).
+- El cálculo de fondeo (`⚓ Cálculo de fondeo`) se mantiene accesible desde el menú hamburguesa (uso frecuente); el cálculo de sonda (`📐 Cálculo de sonda`) es sólo del wizard.
+
+#### 🗺 Pulido del mapa
+
+- **Fix wrap del antimeridiano**: activado `worldCopyJump:true` en el mapa Leaflet — las capas ya no se quedan varadas en el otro lado del mapa al panorámica cruzando ±180° de longitud.
+- **Invertir zoom con rueda automáticamente en MFDs** (user-agent `Navico|Zeus|Vulcan|B&G|Simrad-Chart`): esas consolas reportan wheel deltas con signo invertido, por lo que scroll-to-zoom iba al revés; el fix no afecta a browsers de escritorio.
+- **Máximo del slider de radio AIS** subido de **50 km → 500 km** para tener sentido con los targets AIS lejanos que vienen por aisstream.io.
+
+#### 🎨 UI / copy
+
+- Cada mensaje `message:` de push notification se emite ahora en **inglés por defecto** (garreo, varada, AIS, GPS perdido). El visor interno sigue con su propio sistema i18n para display local; esto asegura que consumidores de terceros (WilhelmSK, otras apps) muestren un mensaje legible en lingua franca independientemente del idioma UI del plugin.
+- Quitados emojis duplicados en las entradas de menú `Enviar diagnóstico` y `Tu opinión cuenta` (el icono estaba en la fila del menú Y en el string i18n).
+- Tamaños de texto subidos en el panel de paths SignalK (+20% en general), categorías plegadas por defecto con triángulo rotante.
+- Renombrado panel "Publicación en SignalK" → **"Paths publicados en SignalK"** para mayor claridad.
+
+#### 🐛 Fixes
+
+- **Nuevas celdas del bottom-bar activables de verdad**: `cad_larg` y `temp_agua` se pintaban en el selector de config pero la whitelist del backend (`BB_CELL_KEYS` en `sanitizeBBOrder`) las tiraba silenciosamente al guardar. Whitelist actualizada.
+- **Datum LAT de NEAPS** ahora calculado sobre ventana de 365 días (era 7 días + 5 cm de margen, que desviaba 30–60 cm por debajo de IHM en semanas de mareas muertas). Cache por estación TTL 30 d.
+- **Paso de sensores del wizard** completado (era `Under construction`): 16 tarjetas en vivo incluyendo temperatura del aire, humedad, rumbo magnético, velocidad por el agua, contador de targets AIS.
+- **Panel de paths SignalK — popup de permisos**: al intentar togglear un path 🔒 imprescindible o 🗑 obsoleto sale un modal nativo (dark + borde ámbar, cierre por teclado/backdrop). El 401 (permisos requeridos) cuando la capa de seguridad está activa y no hay PIN introducido recibe el mismo trato. Se acabó el `<input disabled>` mudo en dispositivos táctiles.
+
 ## [2.8.0] - 2026-07-18
 
 ### English

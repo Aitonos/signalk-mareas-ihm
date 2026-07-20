@@ -29,7 +29,9 @@ A single Signal K plugin that turns your boat computer into a serious **anchor w
 - 📱 **Works on any screen** — from a phone in hand to the big bridge monitor. The viewer reorders itself and buttons stay the right size for finger-touch use.
 - 🇬🇧 🇪🇸 **Fully bilingual UI** (English / Spanish) — switch live from the menu.
 - 👥 **Multi-user PIN control** — protect boat actions (drop/lift anchor, alarms, settings) with a master PIN + optional guest PINs (charter crew, family, etc.) with per-user notes and optional expiry. Read stays open.
-- 🔗 **Standard SignalK vocabulary** — publishes canonical `navigation.anchor.*` and `notifications.navigation.anchor` in parallel to our own paths, so Hoekens anchor alarm, Y2K, WilhelmSK et al. see and react to our anchor state. WilhelmSK iOS/iPadOS push works out of the box (all critical alarms carry `method:["push"]`).
+- 🔗 **Standard SignalK vocabulary** — publishes canonical `navigation.anchor.*` and `notifications.navigation.anchor` in parallel to our own paths, so any anchor watch app in your SK environment sees and reacts to our anchor state. WilhelmSK iOS/iPadOS push works out of the box (all critical alarms carry `method:["push"]`).
+- 🚢 **Online AIS engine** (aisstream.io) — optional free crowd-sourced AIS feed for boats without a VHF AIS receiver, or to extend VHF coverage. Auto-dedup: your VHF always takes priority; the online feed only fills gaps. Republished to the SignalK `vessels.*` tree so any consumer in your environment sees the targets.
+- 🌊 **Shy tide provider** — auto-yields the `/signalk/v2/api/resources/tides` path if another tide plugin (opentide, signalk-tides, tidal-currents) is enabled on your server, so you can install this alongside them without conflicts. Configurable per user preference (auto / always publish / never publish).
 
 Runs on **Raspberry Pi** (OpenPlotter), **any Linux box** or **macOS / Windows** with Signal K Server.
 
@@ -190,7 +192,8 @@ Issues, PRs and feature requests welcome at the [GitHub repo](https://github.com
 
 ### Acknowledgements
 
-- **[@jeyrb](https://github.com/jeyrb)** — reported that other anchor watch apps in the SignalK ecosystem (Hoekens anchor alarm, Y2K, WilhelmSK) share the canonical vocabulary `navigation.anchor.*` and `notifications.navigation.anchor`, and that this plugin was living in its own custom namespace. That report drove the 2.8.0 interop work: canonical anchor paths are now published in parallel, notifications are auto-mirrored to standard SK paths, and every critical alarm carries `method:["push"]` for WilhelmSK iOS/iPadOS push. Thank you.
+- **[@jeyrb](https://github.com/jeyrb)** — reported that other anchor watch apps in the SignalK ecosystem share the canonical vocabulary `navigation.anchor.*` and `notifications.navigation.anchor`, and that this plugin was living in its own custom namespace. That report drove the 2.8.0 interop work: canonical anchor paths are now published in parallel, notifications are auto-mirrored to standard SK paths, and every critical alarm carries `method:["push"]` for WilhelmSK iOS/iPadOS push. Thank you.
+- **[@andmayfi92](https://github.com/andmayfi92)** — reported that when running outside our tide coverage area we were silently overwriting the `/signalk/v2/api/resources/tides` output of other tide plugins (opentide etc.) with our own empty response. That drove the 2.9.0 "shy provider" behaviour: we now detect other tide providers on the server and yield by default. Thank you.
 
 ### License
 
@@ -224,7 +227,9 @@ Un único plugin de Signal K que convierte el ordenador del barco en un **gestor
 - 📱 **Versátil en cualquier pantalla** — desde el móvil en mano hasta el monitor grande del puente. El visor se reordena solo y los botones se mantienen del tamaño adecuado para tocar sin equivocarte.
 - 🇬🇧 🇪🇸 **UI bilingüe** con cambio en vivo desde el menú.
 - 👥 **Control de usuarios por PIN** — protege las acciones del barco (echar/levar, alarmas, configuración) con un PIN maestro + PINs de invitado opcionales (tripulación de charter, familia, etc.) con notas y caducidad opcional. La lectura queda abierta.
-- 🔗 **Vocabulario estándar de SignalK** — publica los paths canónicos `navigation.anchor.*` y `notifications.navigation.anchor` en paralelo a los nuestros propios, para que Hoekens anchor alarm, Y2K, WilhelmSK y demás vean y reaccionen a nuestro estado de fondeo. El push nativo iOS/iPadOS de WilhelmSK funciona directamente (todas las alarmas críticas llevan `method:["push"]`).
+- 🔗 **Vocabulario estándar de SignalK** — publica los paths canónicos `navigation.anchor.*` y `notifications.navigation.anchor` en paralelo a los nuestros propios, para que cualquier app de anchor watch de tu entorno SK vea y reaccione a nuestro estado de fondeo. El push nativo iOS/iPadOS de WilhelmSK funciona directamente (todas las alarmas críticas llevan `method:["push"]`).
+- 🚢 **Motor AIS online** (aisstream.io) — feed AIS opcional gratuito crowd-sourced para barcos sin receptor AIS por VHF o para extender la cobertura del VHF. Auto-dedupe: tu VHF siempre prevalece; el feed online sólo rellena huecos. Republicado al árbol `vessels.*` de SignalK para que cualquier consumidor de tu entorno vea los targets.
+- 🌊 **Proveedor de mareas "tímido"** — cede automáticamente el path `/signalk/v2/api/resources/tides` si hay otro plugin de mareas (opentide, signalk-tides, tidal-currents) activo en tu server, para que puedas instalarlo junto a ellos sin conflictos. Configurable por preferencia del usuario (auto / siempre publicar / nunca publicar).
 
 Funciona en **Raspberry Pi** (OpenPlotter), **cualquier Linux** o **macOS / Windows** con Signal K Server.
 
@@ -385,7 +390,8 @@ Issues, PRs y peticiones de funcionalidad en el [repo de GitHub](https://github.
 
 ### Agradecimientos
 
-- **[@jeyrb](https://github.com/jeyrb)** — reportó que otras apps de anchor watch del ecosistema SignalK (Hoekens anchor alarm, Y2K, WilhelmSK) comparten el vocabulario canónico `navigation.anchor.*` y `notifications.navigation.anchor`, y que este plugin vivía en su propio namespace. Ese reporte fue el que dio pie al trabajo de interop de la 2.8.0: los paths canónicos de fondeo se publican en paralelo, las notificaciones se espejan automáticamente a los paths estándar SK, y toda alarma crítica lleva `method:["push"]` para el push nativo iOS/iPadOS de WilhelmSK. Gracias.
+- **[@jeyrb](https://github.com/jeyrb)** — reportó que otras apps de anchor watch del ecosistema SignalK comparten el vocabulario canónico `navigation.anchor.*` y `notifications.navigation.anchor`, y que este plugin vivía en su propio namespace. Ese reporte fue el que dio pie al trabajo de interop de la 2.8.0: los paths canónicos de fondeo se publican en paralelo, las notificaciones se espejan automáticamente a los paths estándar SK, y toda alarma crítica lleva `method:["push"]` para el push nativo iOS/iPadOS de WilhelmSK. Gracias.
+- **[@andmayfi92](https://github.com/andmayfi92)** — reportó que al ejecutarse fuera de nuestra área de cobertura de mareas estábamos sobreescribiendo silenciosamente el output de `/signalk/v2/api/resources/tides` de otros plugins (opentide etc.) con nuestra respuesta vacía. Eso dio pie al comportamiento "proveedor tímido" de la 2.9.0: ahora detectamos otros proveedores de mareas en el server y cedemos por defecto. Gracias.
 
 ### Licencia
 

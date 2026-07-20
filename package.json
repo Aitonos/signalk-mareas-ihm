@@ -1,6 +1,6 @@
 {
   "name": "signalk-mareas-ihm",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "description": "A complete anchor watch and marine safety webapp for Signal K — intelligent anchor monitoring with predictive swing radius, voice alarms (drag/AIS/grounding), AIS anti-collision with cross-session cache, shelter forecast, on-board wave measurement from IMU, multi-source global tides with automatic engine selection by proximity (IHM Spain official → the openwatersio signalk-tides plugin if installed → NEAPS harmonic-constants engine embedded ~7600 stations NOAA + TICON-4 → Open-Meteo global as last resort), setup wizard with Auto/Manual picker and city-search station selector, multi-layer chart viewer, and multi-user PIN control (master + guests with per-user session, notes and optional expiry). Runs on OpenPlotter / Raspberry Pi.",
   "type": "module",
   "main": "./dist/index.js",
@@ -131,7 +131,8 @@
     "leaflet": "^1.9.4",
     "moment-timezone": "^0.6.2",
     "neaps": "^0.7.0",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
