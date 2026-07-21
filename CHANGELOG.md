@@ -1,5 +1,83 @@
 # Changelog
 
+## [2.10.0] - 2026-07-21
+
+### English
+
+**Two more online AIS engines (aishub.net + aisfriends.com), source-aware AIS list, motor-triggered auto-lift, Feedback modal rework, Firefox cache safety-net, docs cleanup**
+
+Follow-up release to 2.9.0. The online AIS engine goes from one to three independent sources, the AIS list now tells you which one served each target, and the anchor auto-lift gets a dedicated trigger when your engine starts.
+
+#### 🚢 Triple online AIS engine
+
+- **aishub.net** (Rev754) — HTTP polling client (1 request/min, hard rate-limit) against `https://data.aishub.net/ws.php`. Peer-to-peer model: to obtain an API username you must share your own AIS feed with the AISHub network (join at [aishub.net](https://www.aishub.net/join-us)). Bounding box is refreshed every 30 min around your boat.
+- **aisfriends.com** (Rev756) — HTTP polling client (1 request/min) against the public v1 API at `https://www.aisfriends.com/api/public/v1/vessels/bounding-box`. Bearer-token auth. Peer-to-peer model with quality gate: the API returns HTTP 403 until your station has fed for 7 days with ≥10 vessels in coverage and ≥90 % uptime. The plugin surfaces this state clearly in the wizard so users know when to wait vs when to check their setup.
+- **Symmetric dedup across all sources** (Rev758/759): priority is VHF ▶ aisstream (real-time WebSocket) ▶ aishub/aisfriends (both peers, 1/min, symmetric — first one to arrive wins in a 2 min freshness window). Fixed a bug where the endpoint re-processed our own SK republishes as if they were VHF, contaminating the source field: the cache is now authoritative for `source`, not `$source` on the SignalK bus.
+- **Source badge in the AIS list** (Rev758): the vessel name is followed by a compact **VHF** (green) / **AS** / **AH** / **AF** (blue) label so you can see at a glance which engine served each target.
+- **Bbox reduced 3° → 1°** (~78 km radius) on all three online engines (Rev757) to avoid saturating the map with hundreds of far-away markers; the AIS radius slider is also capped at 100 km. Both changes are pure performance wins — you still see everything your VHF hears, and the online engines only fill the gaps.
+- Diagnostics endpoints: `GET /api/aishub/stats` and `GET /api/aisfriends/stats` with pollCount, HTTP status, dedupVhf / dedupAisstream / dedupAishub / adopted counters, targets in cache, bbox and last error. Wizard `📊 Check status` buttons for each engine surface it with hints for the most common failure codes (401/403/429/503).
+
+#### ⚙️ Auto-lift when engine starts
+
+- New primary trigger (Rev751) that reads `propulsion.<name>.state` and `propulsion.<name>.revolutions` from the SignalK bus. When an engine is `started` (or RPM > 0) AND SOG > 0.5 kn sustained for 30 s while anchored, the plugin auto-lifts. This catches your intent much earlier than the pure SOG > 3 kn / 60 s fallback (which still applies as fallback when no propulsion path exists in your SK tree).
+- Activity log entries now include `trigger=motor` or `trigger=sog` so you can audit exactly what fired an auto-lift.
+
+#### 💬 Feedback modal rework
+
+- The "Tu opinión cuenta" / "Your feedback matters" modal now uses the project's native window style (orange sticky header with big Back arrow, standard `popup-overlay` + `popup-box`).
+- The four CTAs (⭐ Star on GitHub, 🐛 Capture diagnostic, 🐛 Open issue, 📦 View on NPM) are strictly uniform in size, padding, font and icon width — no more "one button bigger than the rest" from generic CSS overriding one HTML tag but not the others.
+- The diagnostic capture (previously a separate menu entry) is now integrated inside this modal: one flow to review your JSON, copy it, and paste it into the issue. The standalone menu entry is removed to avoid duplication.
+
+#### 🔥 Firefox cache safety-net
+
+- New JS guard at load (Rev761) that fetches `/api/build-info` with no-cache and compares against localStorage; on mismatch it forces a `location.reload()` once (sessionStorage-protected to avoid loops). Fixes cases where Firefox served an old `mobile.html` from cache despite `Cache-Control: no-cache`.
+
+#### 📄 Docs cleanup
+
+- 22 one-shot `PROMPT_FOR_LLM_*.md` files (from earlier bug-triage sessions with GPT/Gemini) archived under `docs/archive/legacy-prompts/`.
+- `KNOWN_BUGS.md`, `BACKLOG.md`, `SPRINTS.md`, `QA_PENDIENTE.md` and `BOOTSTRAP_PROMPT.md` rewritten against the real state at Rev761 — all 22 bugs B-01…B-22 of the May snapshot were resolved months ago, snapshots preserved in `docs/archive/`.
+- `CLAUDE.md` refreshed with the new doc map, extended invariants and updated feature list.
+
+---
+
+### Español
+
+**Dos motores AIS online adicionales (aishub.net + aisfriends.com), fuente por target en el listado AIS, auto-lift al arrancar motor, remake del modal Feedback, safety-net cache Firefox, limpieza docs**
+
+Release de continuación de 2.9.0. El motor AIS online pasa de una a tres fuentes independientes, el listado AIS ahora indica cuál sirvió cada target, y el auto-lift del ancla obtiene un trigger dedicado cuando arrancas motor.
+
+#### 🚢 Motor AIS online triple
+
+- **aishub.net** (Rev754) — cliente HTTP polling (1 req/min, rate-limit duro) contra `https://data.aishub.net/ws.php`. Modelo peer-to-peer: para obtener un username API tienes que compartir TU feed AIS con la red AISHub (regístrate en [aishub.net](https://www.aishub.net/join-us)). El bounding box se refresca cada 30 min alrededor de tu barco.
+- **aisfriends.com** (Rev756) — cliente HTTP polling (1 req/min) contra el API público v1 en `https://www.aisfriends.com/api/public/v1/vessels/bounding-box`. Auth con Bearer token. Modelo peer-to-peer con puerta de calidad: el API devuelve HTTP 403 hasta que tu estación haya alimentado durante 7 días con ≥10 vessels en cobertura y ≥90 % de uptime. El plugin muestra este estado claramente en el wizard para que el usuario sepa cuándo esperar y cuándo revisar su setup.
+- **Dedupe simétrica entre las 3 fuentes** (Rev758/759): prioridad VHF ▶ aisstream (WebSocket real-time) ▶ aishub/aisfriends (los dos peers, 1/min, simétrico — el primero que llegue gana en una ventana de 2 min). Arreglado bug donde el endpoint reprocesaba nuestros propios republishes SK como si fueran VHF, contaminando el campo source: el cache ahora es autoritativo para `source`, no el `$source` del bus SignalK.
+- **Badge de fuente en el listado AIS** (Rev758): detrás del nombre del vessel aparece una etiqueta compacta **VHF** (verde) / **AS** / **AH** / **AF** (azul) para que veas de un vistazo qué motor sirvió cada target.
+- **Bbox reducido 3° → 1°** (~78 km radio) en los 3 motores online (Rev757) para no saturar el mapa con cientos de markers lejanos; el slider de radio AIS también topado a 100 km. Ambos cambios son mejoras de rendimiento puras — sigues viendo todo lo que oye tu VHF y los motores online sólo rellenan huecos.
+- Endpoints de diagnóstico: `GET /api/aishub/stats` y `GET /api/aisfriends/stats` con pollCount, HTTP status, contadores dedupVhf / dedupAisstream / dedupAishub / adopted, targets en cache, bbox y último error. Los botones `📊 Comprobar estado` del wizard lo muestran con pistas para los códigos de error más comunes (401/403/429/503).
+
+#### ⚙️ Auto-lift al arrancar motor
+
+- Nuevo trigger primario (Rev751) que lee `propulsion.<name>.state` y `propulsion.<name>.revolutions` del bus SignalK. Cuando algún motor está `started` (o RPM > 0) Y la SOG > 0,5 kn sostenidos 30 s estando fondeado, el plugin auto-liva. Detecta tu intención mucho antes que el fallback SOG > 3 kn / 60 s (que se mantiene como fallback cuando no hay path `propulsion` en tu árbol SK).
+- El activity log ahora incluye `trigger=motor` o `trigger=sog` para que puedas auditar exactamente qué disparó cada auto-lift.
+
+#### 💬 Remake del modal Feedback
+
+- El modal "Tu opinión cuenta" ahora usa el estilo de ventana nativo del proyecto (header naranja sticky con botón Atrás grande, `popup-overlay` + `popup-box` estándar).
+- Los cuatro CTAs (⭐ Estrella en GitHub, 🐛 Capturar diagnóstico, 🐛 Abrir issue, 📦 Ver en NPM) son estrictamente uniformes en tamaño, padding, fuente y ancho de icono — se acabaron los "un botón más grande que el resto" por CSS genérico que sobreescribía sólo una etiqueta HTML.
+- La captura de diagnóstico (antes entrada separada del menú) queda integrada dentro de este modal: un solo flujo para revisar el JSON, copiarlo y pegarlo en la issue. La entrada suelta del menú se retira para evitar duplicados.
+
+#### 🔥 Safety-net cache Firefox
+
+- Nuevo guard JS al cargar (Rev761) que hace fetch de `/api/build-info` sin cache y lo compara con localStorage; si difieren fuerza un `location.reload()` una única vez (protegido con sessionStorage para no bucle). Cubre los casos donde Firefox servía un `mobile.html` viejo desde su cache pese al `Cache-Control: no-cache`.
+
+#### 📄 Limpieza docs
+
+- 22 archivos `PROMPT_FOR_LLM_*.md` (prompts one-shot para GPT/Gemini de sesiones antiguas de bug hunt) archivados en `docs/archive/legacy-prompts/`.
+- `KNOWN_BUGS.md`, `BACKLOG.md`, `SPRINTS.md`, `QA_PENDIENTE.md` y `BOOTSTRAP_PROMPT.md` reescritos contra el estado real Rev761 — los 22 bugs B-01…B-22 del snapshot de mayo estaban todos resueltos hace meses, snapshots preservados en `docs/archive/`.
+- `CLAUDE.md` refrescado con el nuevo mapa de docs, invariantes ampliados y features al día.
+
+---
+
 ## [2.9.0] - 2026-07-20
 
 ### English

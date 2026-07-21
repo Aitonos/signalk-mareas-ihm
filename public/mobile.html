@@ -1342,6 +1342,39 @@ body.mobile-ui .popup-overlay .popup-box button:not(.m-back){
   min-height:64px;font-size:26px!important;padding:18px 24px!important;
   font-weight:800;border-radius:14px;letter-spacing:-.2px;
 }
+/* Rev763/Rev764 (feedback Carlos "textos pequeños no acorde a lo normal
+   del plugin"): override específico para #m-feedback-pop. Iguala los 4
+   CTAs (3 `<a>` + 1 `<button>`) en tamaños EN LÍNEA con el resto de
+   modales del plugin — título 24 px, sublabel 16 px, iconos 32/26 px,
+   alto 96 px, padding 20 × 22. La regla global L1341 sigue viva pero
+   aquí la re-sobreescribimos con specificity mayor por id. */
+body.mobile-ui #m-feedback-pop .popup-box button:not(.m-back),
+body.mobile-ui #m-feedback-pop .popup-box a{
+  font-size:24px!important;font-weight:800!important;
+  padding:20px 22px!important;min-height:96px!important;
+  border-radius:14px!important;letter-spacing:-.2px!important;
+  line-height:1.25!important;
+}
+/* Sublabels (github.com/..., GPS/PIN/...) unificados a 16 px. */
+body.mobile-ui #m-feedback-pop .popup-box button span[data-fb-sub],
+body.mobile-ui #m-feedback-pop .popup-box a span[data-fb-sub]{
+  font-size:16px!important;font-weight:600!important;opacity:.75;margin-top:5px!important;
+}
+/* Iconos izq/dcha con contenedor y font-size fijos para que emojis de
+   distinto ancho (📋 vs ↗) no descompensen las 4 filas. */
+body.mobile-ui #m-feedback-pop .popup-box [data-fb-ico-l]{
+  font-size:32px!important;flex:0 0 48px!important;text-align:center;line-height:1;
+}
+body.mobile-ui #m-feedback-pop .popup-box [data-fb-ico-r]{
+  font-size:26px!important;flex:0 0 40px!important;text-align:center;line-height:1;opacity:.7;
+}
+/* Intro + leads del modal Feedback también acordes al plugin: 20 px
+   con line-height cómodo. Los `<div>` con inline style="font-size:15px"
+   quedaban minúsculos al lado de los CTAs; los subimos por specificity
+   del id. */
+body.mobile-ui #m-feedback-pop .popup-box > div{
+  font-size:20px!important;line-height:1.55!important;
+}
 /* Inputs / selects / textareas grandes */
 body.mobile-ui .popup-overlay .popup-box input[type=text],
 body.mobile-ui .popup-overlay .popup-box input[type=number],
@@ -19462,29 +19495,38 @@ window.m_openFeedback = function(){
   var npmLead   = isEn
     ? 'Or check the package page on NPM to read release notes and get direct install commands.'
     : 'O visita la página del paquete en NPM para leer las notas de versión y comandos de instalación.';
-  /* CTA link (abre pestaña externa). */
-  var linkBtn = function(href, bg, textColor, borderColor, iconHtml, labelHtml){
-    return '<a href="'+href+'" target="_blank" rel="noopener noreferrer" style="'
-      + 'display:flex;align-items:center;gap:14px;padding:16px 18px;margin-bottom:12px;'
-      + 'background:'+bg+';color:'+textColor+';border:2px solid '+borderColor+';'
-      + 'border-radius:12px;text-decoration:none;font-size:18px;font-weight:800;'
-      + 'min-height:64px">'
-      +   '<span style="font-size:30px;line-height:1;flex-shrink:0">'+iconHtml+'</span>'
-      +   '<span style="flex:1;line-height:1.35">'+labelHtml+'</span>'
-      +   '<span style="font-size:24px;opacity:.7">↗</span>'
-      + '</a>';
-  };
-  /* CTA acción interna — dispara m_captureDiagnostic. */
-  var actBtn = function(bg, textColor, borderColor, iconHtml, labelHtml, cornerHtml){
-    return '<button type="button" data-fb-action="diagnostic" style="'
-      + 'width:100%;text-align:left;cursor:pointer;'
-      + 'display:flex;align-items:center;gap:14px;padding:16px 18px;margin-bottom:12px;'
-      + 'background:'+bg+';color:'+textColor+';border:2px solid '+borderColor+';'
-      + 'border-radius:12px;font-size:18px;font-weight:800;min-height:64px">'
-      +   '<span style="font-size:30px;line-height:1;flex-shrink:0">'+iconHtml+'</span>'
-      +   '<span style="flex:1;line-height:1.35">'+labelHtml+'</span>'
-      +   '<span style="font-size:24px;opacity:.7">'+cornerHtml+'</span>'
-      + '</button>';
+  /* Rev762 (feedback Carlos "ajusta tamaños botones todos iguales y
+     tamaño fuentes en tu opinión cuenta"): helper único para los 4
+     CTAs. Estructura idéntica en todos (icono-40 fijo | texto flex
+     | icono-40 fijo) y estilo idéntico (min-height 76 px, padding
+     16px 18px, font-size 17 px principal, 13 px sublabel). Reemplaza
+     linkBtn+actBtn separados que divergían en font-size. */
+  var FB_BASE = 'display:flex;align-items:center;gap:14px;'
+    + 'padding:16px 18px;margin-bottom:12px;'
+    + 'border-radius:12px;font-size:17px;font-weight:800;'
+    + 'line-height:1.3;min-height:76px;box-sizing:border-box;'
+    + 'text-decoration:none;text-align:left;cursor:pointer;';
+  /* Los estilos concretos (tamaños fuente + icono width) los fuerza el
+     CSS externo Rev763 en #m-feedback-pop para ganar sobre la regla
+     global body.mobile-ui .popup-box button. Aquí solo lo estructural. */
+  var FB_LABEL      = 'flex:1;min-width:0';
+  var FB_SUB        = 'display:block;margin-top:3px';
+  var feedBtn = function(opts){
+    // opts: { href?, action?, bg, color, border, icon, title, sub, corner }
+    var isBtn = !!opts.action;
+    var tag = isBtn ? 'button' : 'a';
+    var extra = isBtn
+      ? 'type="button" data-fb-action="'+opts.action+'"'
+      : 'href="'+opts.href+'" target="_blank" rel="noopener noreferrer"';
+    var bgWrap = isBtn ? 'width:100%;border:2px solid '+opts.border+';' : 'border:2px solid '+opts.border+';';
+    return '<'+tag+' '+extra+' style="'+FB_BASE+bgWrap
+      + 'background:'+opts.bg+';color:'+opts.color+'">'
+      +   '<span data-fb-ico-l>'+opts.icon+'</span>'
+      +   '<span style="'+FB_LABEL+'">'+opts.title
+      +     (opts.sub ? '<span data-fb-sub style="'+FB_SUB+'">'+opts.sub+'</span>' : '')
+      +   '</span>'
+      +   '<span data-fb-ico-r>'+opts.corner+'</span>'
+      + '</'+tag+'>';
   };
   /* Rev753: overlay reutilizable. Se crea 1 vez y se refresca el contenido
      en cada apertura para que el idioma actual se aplique. */
@@ -19498,24 +19540,45 @@ window.m_openFeedback = function(){
     document.body.appendChild(overlay);
   }
   var box = overlay.querySelector('.popup-box');
-  /* El <h4> es el título que _mInjectModalHeader lee para el header naranja
-     y luego oculta (display:none) para no duplicar. Ver L14347-14351. */
+  /* Rev762: intro + leads unificados a font-size:15px, line-height:1.55.
+     El <h4> es el título que _mInjectModalHeader lee para el header
+     naranja y luego oculta (display:none) para no duplicar. */
+  var LEAD_STYLE = 'font-size:15px;line-height:1.55;color:#cfd8dc;margin:16px 0 10px';
   box.innerHTML =
       '<h4 style="margin:0">'+titleTxt+'</h4>'
-    + '<div style="font-size:16px;line-height:1.55;color:#d8d8d8;margin:0 0 20px">'+introTxt+'</div>'
-    + '<div style="font-size:15px;line-height:1.55;color:#cfd8dc;margin-bottom:10px">'+starLead+'</div>'
-    + linkBtn(repoUrl, 'linear-gradient(135deg,#fdd835,#ff9800)', '#0a1929', '#ffcf80', '⭐',
-        (isEn?'Star on GitHub':'Dar estrella en GitHub')+'<br><span style="font-size:12px;opacity:.75;font-weight:600">github.com/Aitonos/signalk-mareas-ihm</span>')
-    + '<div style="font-size:15px;line-height:1.55;color:#cfd8dc;margin:16px 0 10px">'+diagLead+'</div>'
-    + actBtn('rgba(255,193,7,.16)', '#ffd54f', '#ffb300', '🐛',
-        (isEn?'Capture diagnostic (Copy JSON)':'Capturar diagnóstico (Copiar JSON)')+'<br><span style="font-size:12px;opacity:.75;font-weight:600">'
-        + (isEn?'GPS/PIN/Telegram auto-redacted':'GPS/PIN/Telegram auto-ocultados')+'</span>', '📋')
-    + '<div style="font-size:15px;line-height:1.55;color:#cfd8dc;margin:16px 0 10px">'+bugLead+'</div>'
-    + linkBtn(issuesUrl, 'rgba(229,57,53,.18)', '#ff8a80', '#e53935', '🐛',
-        (isEn?'Open an issue / request a feature':'Abrir issue / pedir función')+'<br><span style="font-size:12px;opacity:.75;font-weight:600">github.com/…/issues/new</span>')
-    + '<div style="font-size:15px;line-height:1.55;color:#cfd8dc;margin:16px 0 10px">'+npmLead+'</div>'
-    + linkBtn(npmUrl, 'rgba(203,56,55,.15)', '#ff9e9e', 'rgba(203,56,55,.55)', '📦',
-        (isEn?'View on NPM':'Ver en NPM')+'<br><span style="font-size:12px;opacity:.75;font-weight:600">npmjs.com/package/signalk-mareas-ihm</span>');
+    + '<div style="font-size:15px;line-height:1.55;color:#d8d8d8;margin:0 0 18px">'+introTxt+'</div>'
+    + '<div style="'+LEAD_STYLE+';margin-top:0">'+starLead+'</div>'
+    + feedBtn({
+        href: repoUrl,
+        bg: 'linear-gradient(135deg,#fdd835,#ff9800)', color: '#0a1929', border: '#ffcf80',
+        icon: '⭐', corner: '↗',
+        title: (isEn?'Star on GitHub':'Dar estrella en GitHub'),
+        sub: 'github.com/Aitonos/signalk-mareas-ihm',
+      })
+    + '<div style="'+LEAD_STYLE+'">'+diagLead+'</div>'
+    + feedBtn({
+        action: 'diagnostic',
+        bg: 'rgba(255,193,7,.16)', color: '#ffd54f', border: '#ffb300',
+        icon: '🐛', corner: '📋',
+        title: (isEn?'Capture diagnostic (Copy JSON)':'Capturar diagnóstico (Copiar JSON)'),
+        sub: (isEn?'GPS/PIN/Telegram auto-redacted':'GPS/PIN/Telegram auto-ocultados'),
+      })
+    + '<div style="'+LEAD_STYLE+'">'+bugLead+'</div>'
+    + feedBtn({
+        href: issuesUrl,
+        bg: 'rgba(229,57,53,.18)', color: '#ff8a80', border: '#e53935',
+        icon: '🐛', corner: '↗',
+        title: (isEn?'Open an issue / request a feature':'Abrir issue / pedir función'),
+        sub: 'github.com/…/issues/new',
+      })
+    + '<div style="'+LEAD_STYLE+'">'+npmLead+'</div>'
+    + feedBtn({
+        href: npmUrl,
+        bg: 'rgba(203,56,55,.15)', color: '#ff9e9e', border: 'rgba(203,56,55,.55)',
+        icon: '📦', corner: '↗',
+        title: (isEn?'View on NPM':'Ver en NPM'),
+        sub: 'npmjs.com/package/signalk-mareas-ihm',
+      });
   var diagBtn = box.querySelector('[data-fb-action="diagnostic"]');
   if (diagBtn) diagBtn.onclick = function(){
     closePopup('m-feedback-pop');
