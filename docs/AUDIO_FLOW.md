@@ -1,6 +1,7 @@
 # AUDIO_FLOW — gestión de audio en signalk-mareas-ihm
 
-Estado: **Rev202** (B-01 neutralizado tras incidente de alarma atascada).
+Estado: **Rev761 / v2.9.0** (revisado 2026-07-21 — arquitectura estable
+desde Rev202, sin cambios de fondo desde entonces).
 
 ## Dos salidas de audio independientes
 

@@ -112,7 +112,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev750";
+const PLUGIN_REVISION = "Rev761";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -902,6 +902,21 @@ let _aisstreamBoundingBoxTimer: any = null;
 // savePluginOptions). Se define en start() y se invoca desde el POST
 // /api/plugin-options al guardar el token.
 let _aisstreamStartIfConfigured: ((opts: any) => Promise<void>) | null = null;
+// Rev754: handle del cliente aishub (polling HTTP 1/min, opt-in) + su
+// timer de refresco de bbox. Semántica idéntica a aisstream pero con
+// dedupe adicional: aishub cede tanto a vhf como a aisstream por ser
+// la fuente más lenta.
+let _aishubHandle: any = null;
+let _aishubBoundingBoxTimer: any = null;
+let _aishubStartIfConfigured: ((opts: any) => Promise<void>) | null = null;
+// Rev756: handle del cliente aisfriends.com. Tercer motor peer-to-peer
+// (equivalente a aishub en cuanto a modelo y rate limit). Requiere
+// Bearer token + calidad de contribución (7d/10 vessels/90% uptime,
+// TOS de aisfriends). Dedupe simétrica con aishub — el primero que
+// llegue gana, el otro cede si el MMSI está fresco (<120 s).
+let _aisfriendsHandle: any = null;
+let _aisfriendsBoundingBoxTimer: any = null;
+let _aisfriendsStartIfConfigured: ((opts: any) => Promise<void>) | null = null;
 async function _loadSkPathsConfig(cache: any): Promise<Record<string, boolean>> {
   if (_skPathsConfigCache) return _skPathsConfigCache;
   try {
@@ -1322,6 +1337,14 @@ export default function (app: SignalKApp): Plugin {
       try { _aisstreamHandle?.close(); } catch { /* defensive */ }
       _aisstreamHandle = null;
       if (_aisstreamBoundingBoxTimer) { clearInterval(_aisstreamBoundingBoxTimer); _aisstreamBoundingBoxTimer = null; }
+      // Rev754: parar polling del cliente aishub.
+      try { _aishubHandle?.close(); } catch { /* defensive */ }
+      _aishubHandle = null;
+      if (_aishubBoundingBoxTimer) { clearInterval(_aishubBoundingBoxTimer); _aishubBoundingBoxTimer = null; }
+      // Rev756: parar polling del cliente aisfriends.
+      try { _aisfriendsHandle?.close(); } catch { /* defensive */ }
+      _aisfriendsHandle = null;
+      if (_aisfriendsBoundingBoxTimer) { clearInterval(_aisfriendsBoundingBoxTimer); _aisfriendsBoundingBoxTimer = null; }
       // Rev113: parar el sampling rodante de wave detection.
       try { _waveStopSamplingOuter(); } catch { /* defensive */ }
       // Rev123: parar el sampler de historial 15-min.
@@ -1718,7 +1741,13 @@ export default function (app: SignalKApp): Plugin {
               lat = gLat; lng = gLng;
             }
           } catch { /* fallback */ }
-          const halfDeg = 3.0;
+          /* Rev757 (feedback Carlos "visor lento — limitar radio AIS
+             para no saturar"): bajado de 3.0° a 1.0° (~111 km lado,
+             ~78 km radio útil). Suficiente para anti-colisión — VHF
+             alcanza 30-50 km, los motores online extienden a ~78 km.
+             Más allá no aporta seguridad y satura el visor con cientos
+             de markers innecesarios. */
+          const halfDeg = 1.0;
           return [
             [lat - halfDeg, lng - halfDeg],
             [lat + halfDeg, lng + halfDeg],
@@ -1746,6 +1775,113 @@ export default function (app: SignalKApp): Plugin {
     };
     // Arranque inicial al start del plugin.
     _aisstreamStartIfConfigured(props);
+    /* Rev754: cliente aishub — polling HTTP 1/min. Opt-in con API key
+       personal del usuario (cada usuario obtiene la suya al contribuir
+       su feed en aishub.net → JOIN US). Ver src/sources/aishub.ts. */
+    _aishubStartIfConfigured = async (opts: any) => {
+      const aishubApiKey = String(opts?.aishubApiKey || "").trim();
+      try { _aishubHandle?.close(); } catch { /* defensive */ }
+      _aishubHandle = null;
+      if (_aishubBoundingBoxTimer) { clearInterval(_aishubBoundingBoxTimer); _aishubBoundingBoxTimer = null; }
+      if (!aishubApiKey) {
+        console.log(`[IHM-AISHUB] apiKey vacío → cliente aishub desactivado`);
+        return;
+      }
+      try {
+        const mod = await import("./sources/aishub.js");
+        const bboxFromGps = (): [[number, number], [number, number]] => {
+          let lat = 43.0, lng = -8.0; // fallback Galicia
+          try {
+            const pos = app.getSelfPath("navigation.position");
+            const gLat = (pos as any)?.value?.latitude ?? (pos as any)?.latitude;
+            const gLng = (pos as any)?.value?.longitude ?? (pos as any)?.longitude;
+            if (typeof gLat === "number" && typeof gLng === "number") {
+              lat = gLat; lng = gLng;
+            }
+          } catch { /* fallback */ }
+          /* Rev757 (feedback Carlos "visor lento — limitar radio AIS
+             para no saturar"): bajado de 3.0° a 1.0° (~111 km lado,
+             ~78 km radio útil). Suficiente para anti-colisión — VHF
+             alcanza 30-50 km, los motores online extienden a ~78 km.
+             Más allá no aporta seguridad y satura el visor con cientos
+             de markers innecesarios. */
+          const halfDeg = 1.0;
+          return [
+            [lat - halfDeg, lng - halfDeg],
+            [lat + halfDeg, lng + halfDeg],
+          ];
+        };
+        _aishubHandle = mod.startAishub({
+          apiKey: aishubApiKey,
+          boundingBox: bboxFromGps(),
+          onDebug: (m) => console.log(`[IHM-AISHUB] ${m}`),
+          onError: (m) => console.log(`[IHM-AISHUB] err: ${m}`),
+          onUpdate: (u: any) => {
+            (globalThis as any)._aishubMergeUpdateFn?.(u);
+          },
+        });
+        _aishubBoundingBoxTimer = setInterval(() => {
+          try { _aishubHandle?.updateBoundingBox(bboxFromGps()); } catch { /* defensive */ }
+        }, 30 * 60_000);
+        console.log(`[IHM-AISHUB] cliente arrancado (apiKey len=${aishubApiKey.length})`);
+      } catch (e: any) {
+        console.log(`[IHM-AISHUB] arranque fallido: ${e?.message ?? e}`);
+      }
+    };
+    _aishubStartIfConfigured(props);
+    /* Rev756: cliente aisfriends — polling HTTP 1/min con Bearer token.
+       Semántica idéntica a aishub. Ver src/sources/aisfriends.ts. */
+    _aisfriendsStartIfConfigured = async (opts: any) => {
+      const aisfriendsToken = String(opts?.aisfriendsToken || "").trim();
+      try { _aisfriendsHandle?.close(); } catch { /* defensive */ }
+      _aisfriendsHandle = null;
+      if (_aisfriendsBoundingBoxTimer) { clearInterval(_aisfriendsBoundingBoxTimer); _aisfriendsBoundingBoxTimer = null; }
+      if (!aisfriendsToken) {
+        console.log(`[IHM-AISFRIENDS] token vacío → cliente aisfriends desactivado`);
+        return;
+      }
+      try {
+        const mod = await import("./sources/aisfriends.js");
+        const bboxFromGps = (): [[number, number], [number, number]] => {
+          let lat = 43.0, lng = -8.0;
+          try {
+            const pos = app.getSelfPath("navigation.position");
+            const gLat = (pos as any)?.value?.latitude ?? (pos as any)?.latitude;
+            const gLng = (pos as any)?.value?.longitude ?? (pos as any)?.longitude;
+            if (typeof gLat === "number" && typeof gLng === "number") {
+              lat = gLat; lng = gLng;
+            }
+          } catch { /* fallback */ }
+          /* Rev757 (feedback Carlos "visor lento — limitar radio AIS
+             para no saturar"): bajado de 3.0° a 1.0° (~111 km lado,
+             ~78 km radio útil). Suficiente para anti-colisión — VHF
+             alcanza 30-50 km, los motores online extienden a ~78 km.
+             Más allá no aporta seguridad y satura el visor con cientos
+             de markers innecesarios. */
+          const halfDeg = 1.0;
+          return [
+            [lat - halfDeg, lng - halfDeg],
+            [lat + halfDeg, lng + halfDeg],
+          ];
+        };
+        _aisfriendsHandle = mod.startAisfriends({
+          token: aisfriendsToken,
+          boundingBox: bboxFromGps(),
+          onDebug: (m) => console.log(`[IHM-AISFRIENDS] ${m}`),
+          onError: (m) => console.log(`[IHM-AISFRIENDS] err: ${m}`),
+          onUpdate: (u: any) => {
+            (globalThis as any)._aisfriendsMergeUpdateFn?.(u);
+          },
+        });
+        _aisfriendsBoundingBoxTimer = setInterval(() => {
+          try { _aisfriendsHandle?.updateBoundingBox(bboxFromGps()); } catch { /* defensive */ }
+        }, 30 * 60_000);
+        console.log(`[IHM-AISFRIENDS] cliente arrancado (token len=${aisfriendsToken.length})`);
+      } catch (e: any) {
+        console.log(`[IHM-AISFRIENDS] arranque fallido: ${e?.message ?? e}`);
+      }
+    };
+    _aisfriendsStartIfConfigured(props);
     _telegramBotToken = String((props as any)?.telegramBotToken || "").trim();
     _telegramChatId   = String((props as any)?.telegramChatId   || "").trim();
     try {
@@ -5172,6 +5308,15 @@ try {
       // opcional para aisstream.io — extiende cobertura AIS cuando no
       // hay receptor VHF o hay pérdida de señal. VHF prevalece siempre.
       "aisstreamToken",
+      // Rev754 (feedback Carlos "aishub — usuarios con su key personal
+      // tras contribuir su feed"): API key opcional para aishub.net —
+      // pool AIS crowd-sourced, 1 request/min. Cede ante VHF y aisstream
+      // (aishub es el más lento).
+      "aishubApiKey",
+      // Rev756: Bearer token para aisfriends.com API v1. Mismo modelo
+      // peer-to-peer (contribuir para consumir). 1 req/min. Dedupe
+      // simétrica con aishub.
+      "aisfriendsToken",
       /* Rev750: modo de publicación en /signalk/v2/api/resources/tides.
          "auto" (default): cede si hay otro provider enabled.
          "always": fuerza el nuestro (sobreescribe otros).
@@ -5205,6 +5350,60 @@ try {
       } catch (e: any) { res.status(500).json({ error: String(e?.message ?? e) }); }
     });
 
+    /* Rev754: diagnóstico del cliente aishub — pollCount, últimos ms,
+       último error, targets aceptados. Espeja el endpoint aisstream. */
+    expressApp.get("/signalk-mareas-ihm/api/aishub/stats", (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        if (!_aishubHandle) {
+          return res.json({ enabled: false, reason: "no apiKey or client not started" });
+        }
+        const stats = _aishubHandle.getStats();
+        let count = 0;
+        try {
+          for (const e of Object.values(_aisKnownDB) as any[]) {
+            if (e && e.source === "aishub") count++;
+          }
+        } catch { /* defensive */ }
+        res.json({
+          enabled: true,
+          ...stats,
+          targetsInDB: count,
+          dedupVhf: _aishubDedupVhf,
+          dedupAisstream: _aishubDedupAisstream,
+          adopted: _aishubAdopted,
+        });
+      } catch (e: any) { res.status(500).json({ error: String(e?.message ?? e) }); }
+    });
+
+    /* Rev756: diagnóstico del cliente aisfriends. Mismos contadores +
+       lastHttpStatus (útil para distinguir 401/403/429 sin ir a
+       journalctl). */
+    expressApp.get("/signalk-mareas-ihm/api/aisfriends/stats", (_req: any, res: any) => {
+      res.set("Cache-Control", "no-store");
+      try {
+        if (!_aisfriendsHandle) {
+          return res.json({ enabled: false, reason: "no token or client not started" });
+        }
+        const stats = _aisfriendsHandle.getStats();
+        let count = 0;
+        try {
+          for (const e of Object.values(_aisKnownDB) as any[]) {
+            if (e && e.source === "aisfriends") count++;
+          }
+        } catch { /* defensive */ }
+        res.json({
+          enabled: true,
+          ...stats,
+          targetsInDB: count,
+          dedupVhf: _aisfriendsDedupVhf,
+          dedupAisstream: _aisfriendsDedupAisstream,
+          dedupAishub: _aisfriendsDedupAishub,
+          adopted: _aisfriendsAdopted,
+        });
+      } catch (e: any) { res.status(500).json({ error: String(e?.message ?? e) }); }
+    });
+
     /* Rev750 (feedback Carlos "detector de data + elegir fuente en
        config"): lista los otros plugins tide provider disponibles y
        muestra qué decisión tomará el runtime según el modo actual. */
@@ -5235,6 +5434,14 @@ try {
           } else if (k === "aisstreamToken") {
             // Rev738: token secreto — enmascarado en el GET, no
             // sobrescribible con ••• en el POST.
+            out[k] = cfg[k] ? _maskSecret(String(cfg[k])) : "";
+            out[k + "Set"] = !!cfg[k];
+          } else if (k === "aishubApiKey") {
+            // Rev754: key aishub secreta — mismo tratamiento.
+            out[k] = cfg[k] ? _maskSecret(String(cfg[k])) : "";
+            out[k + "Set"] = !!cfg[k];
+          } else if (k === "aisfriendsToken") {
+            // Rev756: Bearer token aisfriends secreto — mismo tratamiento.
             out[k] = cfg[k] ? _maskSecret(String(cfg[k])) : "";
             out[k + "Set"] = !!cfg[k];
           } else {
@@ -5272,6 +5479,12 @@ try {
           } else if (k === "aisstreamToken" && typeof v === "string" && v.includes("•")) {
             // Rev738: token enmascarado (••••) → no sobreescribir.
             continue;
+          } else if (k === "aishubApiKey" && typeof v === "string" && v.includes("•")) {
+            // Rev754: key aishub enmascarada — no pisar.
+            continue;
+          } else if (k === "aisfriendsToken" && typeof v === "string" && v.includes("•")) {
+            // Rev756: token aisfriends enmascarado — no pisar.
+            continue;
           } else {
             cur[k] = typeof v === "string" ? v : (v == null ? "" : String(v));
           }
@@ -5287,6 +5500,14 @@ try {
           try {
             if (applied.includes("aisstreamToken") && _aisstreamStartIfConfigured) {
               _aisstreamStartIfConfigured(cur).catch(() => { /* logged in helper */ });
+            }
+            // Rev754: mismo patrón para aishub.
+            if (applied.includes("aishubApiKey") && _aishubStartIfConfigured) {
+              _aishubStartIfConfigured(cur).catch(() => { /* logged in helper */ });
+            }
+            // Rev756: mismo patrón para aisfriends.
+            if (applied.includes("aisfriendsToken") && _aisfriendsStartIfConfigured) {
+              _aisfriendsStartIfConfigured(cur).catch(() => { /* logged in helper */ });
             }
             /* Rev750: si cambia tidePublishToSk, el registerResourceProvider
                es one-shot al start() — no se puede unregister/reregister
@@ -6249,11 +6470,14 @@ type AisKnownEntry = {
   lastPosMs?: number | null;   // ms epoch del lastLat/lastLng
   firstSeenMs?: number | null; // Rev400: timestamp del primer avistamiento (no se sobreescribe).
   lastSeenMs: number;          // ms epoch; controla TTL para datos estaticos (72h)
-  // Rev738 (aisstream.io fallback): origen del último dato dinámico.
+  // Rev738/Rev754/Rev756 (fuentes AIS online): origen del último dato
+  // dinámico.
   // "vhf" = receptor AIS local (VHF) — máxima prioridad, prevalece siempre.
-  // "aisstream" = red terrestre — solo se usa si no hay VHF fresco para el MMSI.
+  // "aisstream" = red terrestre real-time — cede a VHF fresco.
+  // "aishub" = pool crowd-sourced polling 1/min — cede a VHF y aisstream.
+  // "aisfriends" = pool contributor-only polling 1/min — mismo tier que aishub.
   // null / undefined = origen desconocido (targets pre-Rev738 en cache).
-  source?: "vhf" | "aisstream" | null;
+  source?: "vhf" | "aisstream" | "aishub" | "aisfriends" | null;
 };
 const _AIS_DB_TTL_MS = 72 * 60 * 60 * 1000;   // 72h para datos ESTATICOS
 const _AIS_LAST_POS_TTL_MS = 5 * 60 * 1000;   // 5 min para posicion (target sigue visible si se cae del feed)
@@ -6406,6 +6630,124 @@ function _aisstreamRepublishToSK(u: _AisstreamMergePayload): void {
 // Rev738: expuesta en globalThis para que el callback del cliente
 // aisstream (arrancado en start(), scope diferente) pueda invocarla.
 (globalThis as any)._aisstreamMergeUpdateFn = _aisstreamMergeUpdate;
+
+/* Rev754: merge del cliente aishub. Mismo patrón que aisstream pero con
+   dedupe adicional — aishub es la fuente más lenta (1 req/min) y por
+   tanto la de menor prioridad:
+   - Si el MMSI ya tiene VHF fresco (<60 s) → ignorar.
+   - Si el MMSI ya tiene aisstream fresco (<120 s) → ignorar.
+   - Cualquier otro caso → aceptar y marcar source="aishub".
+   Reutiliza _aisstreamRepublishToSK para publicar al árbol vessels.*
+   (mismo formato, distinto $source implícito). */
+/* Rev755: contadores de decisión de dedup para diagnóstico. Sin esto el
+   frontend ve "196 aceptados / 0 targets in cache" y confunde el
+   silencio esperado con un bug. Los contadores dicen "196 → 196 por
+   VHF fresco → 0 adoptados", el usuario entiende inmediatamente. */
+let _aishubDedupVhf = 0;
+let _aishubDedupAisstream = 0;
+let _aishubAdopted = 0;
+function _aishubMergeUpdate(u: _AisstreamMergePayload): void {
+  const cur = _aisKnownDB[u.mmsi];
+  const nowMs = Date.now();
+  const VHF_FRESH_MS = 60_000;
+  const AISSTREAM_FRESH_MS = 120_000;
+  const AISFRIENDS_FRESH_MS = 120_000;
+  if (cur && cur.source === "vhf" && cur.lastPosMs && (nowMs - cur.lastPosMs) < VHF_FRESH_MS) {
+    _aishubDedupVhf++;
+    return; // VHF fresco → ignorar aishub
+  }
+  if (cur && cur.source === "aisstream" && cur.lastPosMs && (nowMs - cur.lastPosMs) < AISSTREAM_FRESH_MS) {
+    _aishubDedupAisstream++;
+    return; // aisstream fresco → ignorar aishub (aisstream es real-time)
+  }
+  /* Rev756: dedupe simétrica con aisfriends (mismo tier peer 1/min).
+     El primero que llegue en cada ventana de 2 min gana; el otro cede.
+     Sin esto ambos motores compiten por escribir el mismo MMSI y el
+     source flip-flopea cada 65 s. */
+  if (cur && cur.source === "aisfriends" && cur.lastPosMs && (nowMs - cur.lastPosMs) < AISFRIENDS_FRESH_MS) {
+    _aishubDedupVhf++; // reuse counter (no worth a new one — visibility is same tier)
+    return;
+  }
+  _aishubAdopted++;
+  const merged: AisKnownEntry = {
+    mmsi: u.mmsi,
+    name: u.name ?? cur?.name ?? null,
+    length: u.length ?? cur?.length ?? null,
+    beam: u.beam ?? cur?.beam ?? null,
+    shipType: u.shipType ?? cur?.shipType ?? null,
+    aisClass: cur?.aisClass ?? null,
+    callsign: u.callsign ?? cur?.callsign ?? null,
+    imo: u.imo ?? cur?.imo ?? null,
+    lastLat: u.lat ?? cur?.lastLat ?? null,
+    lastLng: u.lng ?? cur?.lastLng ?? null,
+    lastSog: (u.sog != null ? u.sog * 1.94384 : (cur?.lastSog ?? null)),
+    lastHeading: u.heading ?? cur?.lastHeading ?? null,
+    lastCog: u.cog ?? cur?.lastCog ?? null,
+    lastPosMs: u.lat != null ? u.tsMs : (cur?.lastPosMs ?? null),
+    firstSeenMs: cur?.firstSeenMs ?? u.tsMs,
+    lastSeenMs: u.tsMs,
+    source: "aishub",
+  };
+  _aisKnownDB[u.mmsi] = merged;
+  _aisKnownDBDirty = true;
+  try { _aisstreamRepublishToSK(u); } catch { /* nice-to-have */ }
+}
+(globalThis as any)._aishubMergeUpdateFn = _aishubMergeUpdate;
+
+/* Rev756: helper equivalente para aisfriends. Dedupe:
+   - VHF fresco (60 s) → ignorar
+   - aisstream fresco (120 s) → ignorar
+   - aishub fresco (120 s) → ignorar (mismo tier, primero llegó)
+   - resto → adoptar como source="aisfriends"
+   Publica en el árbol vessels.* de SK vía _aisstreamRepublishToSK,
+   igual que hacen aisstream y aishub. */
+let _aisfriendsDedupVhf = 0;
+let _aisfriendsDedupAisstream = 0;
+let _aisfriendsDedupAishub = 0;
+let _aisfriendsAdopted = 0;
+function _aisfriendsMergeUpdate(u: _AisstreamMergePayload): void {
+  const cur = _aisKnownDB[u.mmsi];
+  const nowMs = Date.now();
+  const VHF_FRESH_MS = 60_000;
+  const AISSTREAM_FRESH_MS = 120_000;
+  const AISHUB_FRESH_MS = 120_000;
+  if (cur && cur.source === "vhf" && cur.lastPosMs && (nowMs - cur.lastPosMs) < VHF_FRESH_MS) {
+    _aisfriendsDedupVhf++;
+    return;
+  }
+  if (cur && cur.source === "aisstream" && cur.lastPosMs && (nowMs - cur.lastPosMs) < AISSTREAM_FRESH_MS) {
+    _aisfriendsDedupAisstream++;
+    return;
+  }
+  if (cur && cur.source === "aishub" && cur.lastPosMs && (nowMs - cur.lastPosMs) < AISHUB_FRESH_MS) {
+    _aisfriendsDedupAishub++;
+    return;
+  }
+  _aisfriendsAdopted++;
+  const merged: AisKnownEntry = {
+    mmsi: u.mmsi,
+    name: u.name ?? cur?.name ?? null,
+    length: u.length ?? cur?.length ?? null,
+    beam: u.beam ?? cur?.beam ?? null,
+    shipType: u.shipType ?? cur?.shipType ?? null,
+    aisClass: cur?.aisClass ?? null,
+    callsign: u.callsign ?? cur?.callsign ?? null,
+    imo: u.imo ?? cur?.imo ?? null,
+    lastLat: u.lat ?? cur?.lastLat ?? null,
+    lastLng: u.lng ?? cur?.lastLng ?? null,
+    lastSog: (u.sog != null ? u.sog * 1.94384 : (cur?.lastSog ?? null)),
+    lastHeading: u.heading ?? cur?.lastHeading ?? null,
+    lastCog: u.cog ?? cur?.lastCog ?? null,
+    lastPosMs: u.lat != null ? u.tsMs : (cur?.lastPosMs ?? null),
+    firstSeenMs: cur?.firstSeenMs ?? u.tsMs,
+    lastSeenMs: u.tsMs,
+    source: "aisfriends",
+  };
+  _aisKnownDB[u.mmsi] = merged;
+  _aisKnownDBDirty = true;
+  try { _aisstreamRepublishToSK(u); } catch { /* nice-to-have */ }
+}
+(globalThis as any)._aisfriendsMergeUpdateFn = _aisfriendsMergeUpdate;
 
 function _aisDBPersistMaybe() {
   if (!_aisKnownDBDirty) return;
@@ -7059,34 +7401,90 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
 // Se considera salida intencional si SOG > _INTENTIONAL_DEP_SOG_KT sostenido
 // durante > _INTENTIONAL_DEP_DUR_MS estando anchored. Si la velocidad baja
 // del umbral en cualquier tick, se resetea el contador (debouncing).
+// Rev751 (feedback Carlos "si salimos de fondeo con motor arrancado auto
+// lift anchor, hay un path especifico en SK para motor encendido"): añade
+// trigger primario por motor running (propulsion.*.state="started" o
+// revolutions>0) sostenido durante MOTOR_DUR_MS y con SOG > MOTOR_MIN_SOG_KT
+// (evita disparar con motor en ralentí atado a pantalán). SOG-only sigue
+// como fallback cuando no hay path de motor publicado.
 const _INTENTIONAL_DEP_SOG_KT = 3.0;
 const _INTENTIONAL_DEP_DUR_MS = 60_000;
+const _INTENTIONAL_MOTOR_DUR_MS = 30_000;   // motor running sostenido
+const _INTENTIONAL_MOTOR_MIN_SOG_KT = 0.5;  // + barco ya moviéndose (no ralentí atado)
 let _intentionalDepartureSinceMs: number | null = null;
+let _intentionalMotorSinceMs: number | null = null;
+let _lastIntentionalTrigger: "sog" | "motor" | null = null;
+/* Rev751: escanea propulsion.* en el árbol SK para detectar cualquier
+   motor arrancado. Devuelve:
+   - true → hay al menos un motor con state="started" o revolutions>0.
+   - false → hay paths de propulsion pero ningún motor está en marcha.
+   - null → NO hay ningún path propulsion.* publicado (barco sin motor
+     instrumentado en SK) → fallback a SOG. */
+function _isAnyMotorRunning(): boolean | null {
+  try {
+    const propulsion = (app as any).getPath?.("vessels.self.propulsion") ?? null;
+    if (!propulsion || typeof propulsion !== "object") return null;
+    const engines = Object.keys(propulsion);
+    if (engines.length === 0) return null;
+    const _v = (raw: any): any => (raw != null && typeof raw === "object" && "value" in raw) ? (raw as any).value : raw;
+    for (const name of engines) {
+      const eng = (propulsion as any)[name];
+      if (!eng || typeof eng !== "object") continue;
+      const stateVal = _v(eng.state);
+      if (typeof stateVal === "string" && stateVal.toLowerCase() === "started") return true;
+      const rpmVal = _v(eng.revolutions);
+      if (typeof rpmVal === "number" && Number.isFinite(rpmVal) && rpmVal > 0) return true;
+    }
+    return false;
+  } catch { return null; }
+}
 function _checkIntentionalDeparture(sogKt: number): boolean {
   if (!anchorWatch.anchored) {
     _intentionalDepartureSinceMs = null;
+    _intentionalMotorSinceMs = null;
     return false;
   }
+  const nowMs = Date.now();
+  // Trigger primario: motor running + barco moviéndose (>0.5 kn).
+  const motorRunning = _isAnyMotorRunning();
+  if (motorRunning === true && sogKt > _INTENTIONAL_MOTOR_MIN_SOG_KT) {
+    if (_intentionalMotorSinceMs == null) _intentionalMotorSinceMs = nowMs;
+    if ((nowMs - _intentionalMotorSinceMs) >= _INTENTIONAL_MOTOR_DUR_MS) {
+      _lastIntentionalTrigger = "motor";
+      return true;
+    }
+  } else {
+    _intentionalMotorSinceMs = null;
+  }
+  // Fallback SOG-only (barco sin path de motor, o motor apagado y salimos
+  // por vela o corriente): comportamiento histórico Rev468.
   if (sogKt > _INTENTIONAL_DEP_SOG_KT) {
     if (_intentionalDepartureSinceMs == null) {
-      _intentionalDepartureSinceMs = Date.now();
+      _intentionalDepartureSinceMs = nowMs;
       return false;
     }
-    return (Date.now() - _intentionalDepartureSinceMs) >= _INTENTIONAL_DEP_DUR_MS;
+    if ((nowMs - _intentionalDepartureSinceMs) >= _INTENTIONAL_DEP_DUR_MS) {
+      _lastIntentionalTrigger = "sog";
+      return true;
+    }
+    return false;
   } else {
     _intentionalDepartureSinceMs = null;
     return false;
   }
 }
 async function _autoLiftAnchorIntentional(sogKt: number) {
-  app.debug(`[IHM-AUTOLIFT] Salida intencional detectada: SOG=${sogKt.toFixed(2)} kn sostenido >${_INTENTIONAL_DEP_DUR_MS / 1000}s → auto-lift`);
+  /* Rev751: log claro del trigger real (SOG-only vs motor+SOG). */
+  const trig = _lastIntentionalTrigger ?? "sog";
+  const trigMs = trig === "motor" ? _INTENTIONAL_MOTOR_DUR_MS : _INTENTIONAL_DEP_DUR_MS;
+  app.debug(`[IHM-AUTOLIFT] Salida intencional detectada (trigger=${trig}): SOG=${sogKt.toFixed(2)} kn sostenido >${trigMs / 1000}s → auto-lift`);
   // Replica el flujo de POST /api/anchor-watch/lift sin response HTTP.
   _saveAisAckPending();
   /* Rev736: registrar en activityLog antes de limpiar la posición. Sin req
      (es una acción interna disparada por el evaluador). userAlias = null
      porque nadie manualmente pidió la salida — fue el sistema. */
   const _prevPos = anchorWatch.anchorPosition ? { lat: anchorWatch.anchorPosition.lat, lng: anchorWatch.anchorPosition.lng } : null;
-  _pushActivity({ action: "auto-lift", userAlias: null, position: _prevPos, note: `SOG ${sogKt.toFixed(1)} kn sostenido` });
+  _pushActivity({ action: "auto-lift", userAlias: null, position: _prevPos, note: `trigger=${trig} SOG ${sogKt.toFixed(1)} kn sostenido` });
   _setAnchored(false);
   anchorWatch.anchorPosition = null;
   anchorWatch.anchorOwnerAlias = null;       // Rev592
@@ -12799,7 +13197,7 @@ expressApp.post("/signalk-mareas-ihm/api/audio/test", requireControlAccess, asyn
 expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any) => {
   // Rev387: targets ahora pueden traer `fromCache: string[]` listando
   // que propiedades estaticas fueron rellenadas desde aisKnownDB (TTL 72h).
-  const targets: Array<{ mmsi: string; name: string; lat: number; lng: number; sog: number | null; heading: number | null; cog: number | null; isStatic: boolean; length: number | null; beam: number | null; aisClass: "A" | "B" | null; shipType: number | null; callsign?: string | null; imo?: string | null; firstSeenMs?: number | null; lastSeenMs?: number | null; fromCache?: string[] }> = [];
+  const targets: Array<{ mmsi: string; name: string; lat: number; lng: number; sog: number | null; heading: number | null; cog: number | null; isStatic: boolean; length: number | null; beam: number | null; aisClass: "A" | "B" | null; shipType: number | null; callsign?: string | null; imo?: string | null; firstSeenMs?: number | null; lastSeenMs?: number | null; fromCache?: string[]; source?: "vhf" | "aisstream" | "aishub" | "aisfriends" | null }> = [];
   try {
     const vessels = (app as any).getPath?.("vessels") ?? {};
     const selfId = app.selfId;
@@ -12808,6 +13206,19 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
       const v = vessel as any;
       const pos = v?.navigation?.position?.value;
       if (!pos?.latitude || !pos?.longitude) continue;
+      /* Rev758 (feedback Carlos "los nombres van saliendo poco a poco,
+         nuestro AIS no parece el primero"): saltarse vessels que hemos
+         republishado nosotros mismos desde aisstream/aishub/aisfriends.
+         El republish (Rev738+, para que Freeboard/KIP los vean) escribe
+         con $source = "signalk-mareas-ihm.aisstream". Sin este filtro,
+         el endpoint volvía a procesar esos vessels marcándolos como
+         source="vhf" en _aisKnownDB → dedupe posterior bloqueaba
+         updates reales del online + nombres se perdían.
+         Estos targets se recuperan más abajo desde _aisKnownDB con su
+         source original (aisstream/aishub/aisfriends) por la vía de
+         "fantasmas Rev387". */
+      const posSource = String(v?.navigation?.position?.$source || "");
+      if (posSource.startsWith(plugin.id + ".")) continue;
       const sog = v?.navigation?.speedOverGround?.value ?? null;
       // Rev458 (BUG AIS-1): SK puede devolver vessel.name/mmsi como string crudo
       // O como { value, timestamp, $source } segun la version y el productor.
@@ -12930,6 +13341,18 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
         if (finalCallsign == null && cached.callsign != null) { finalCallsign = cached.callsign; fromCache.push("callsign"); }
         if (finalImo == null && cached.imo != null) { finalImo = cached.imo; /* imo no se marca como cache: el frontend lo usa para lookup */ }
       }
+      /* Rev758b: source authoritative desde _aisKnownDB. Sin esto, el
+         filter posSource anterior a veces falla porque SK sobrescribe
+         el $source de position al llegar el VHF real DESPUÉS de un
+         republish nuestro. El cache es el ground truth — su source lo
+         setea _aisstream/aishub/aisfriendsMergeUpdate cuando el update
+         pasa la dedupe, y _aisDBUpdate cuando llega VHF fresco. Si el
+         cache dice source != vhf y su lastPosMs es fresco (<30 s),
+         confiamos en él. */
+      let liveSource: "vhf" | "aisstream" | "aishub" | "aisfriends" = "vhf";
+      if (cached && cached.source && cached.source !== "vhf" && cached.lastPosMs) {
+        if ((Date.now() - cached.lastPosMs) < 30_000) liveSource = cached.source;
+      }
       targets.push({
         mmsi: id, name: finalName, lat: pos.latitude, lng: pos.longitude,
         sog: sog != null ? sog * 1.94384 : null,
@@ -12944,6 +13367,7 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
         imo: finalImo,
         firstSeenMs: cached?.firstSeenMs ?? null,
         lastSeenMs: cached?.lastSeenMs ?? null,
+        source: liveSource,
         ...(fromCache.length > 0 ? { fromCache } : {}),
       });
     }
@@ -12980,7 +13404,18 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
       imo: e.imo ?? null,
       firstSeenMs: e.firstSeenMs ?? null,
       lastSeenMs: e.lastSeenMs ?? null,
-      fromCache: ["position", "sog", "heading", "cog",
+      /* Rev758: exponer el source al frontend para que el listado AIS
+         pueda mostrar la fuente (propia/aisstream/aishub/aisfriends)
+         detrás del nombre. Los targets que llegan por esta rama son
+         siempre "fantasmas" — o VHF perdió el feed, o son de motor
+         online (aisstream/aishub/aisfriends). */
+      source: e.source ?? "vhf",
+      /* Rev758: si el target viene de motor online (source != vhf),
+         NO marcar position como fromCache — es dato fresco del motor,
+         no cache VHF. Si es VHF fantasma sí es cache. */
+      fromCache: e.source && e.source !== "vhf" ? [
+        ...(e.name ? [] : ["name"]),
+      ] : ["position", "sog", "heading", "cog",
         ...(e.name ? ["name"] : []),
         ...(e.length != null ? ["length"] : []),
         ...(e.beam != null ? ["beam"] : []),
@@ -13732,12 +14167,54 @@ expressApp.get("/signalk-mareas-ihm/api/ais/db-debug", (req: any, res: any) => {
   const withImo = entries.filter(e => !!e.imo).length;
   const withPos = entries.filter(e => e.lastLat != null && e.lastLng != null).length;
   const ageMins = entries.map(e => Math.round((now - e.lastSeenMs) / 60000));
+  /* Rev760: breakdown por source y por distancia al barco propio. Para
+     diagnosticar "targets a 220 km todos como VHF". */
+  const bySource: Record<string, number> = { vhf: 0, aisstream: 0, aishub: 0, aisfriends: 0, unknown: 0 };
+  for (const e of entries) {
+    const k = e.source ?? "unknown";
+    bySource[k] = (bySource[k] ?? 0) + 1;
+  }
+  let ownLat: number | null = null, ownLng: number | null = null;
+  try {
+    const pos = app.getSelfPath("navigation.position");
+    ownLat = (pos as any)?.value?.latitude ?? (pos as any)?.latitude ?? null;
+    ownLng = (pos as any)?.value?.longitude ?? (pos as any)?.longitude ?? null;
+  } catch { /* ignore */ }
+  const hav = (a: {lat: number, lng: number}, b: {lat: number, lng: number}) => {
+    const R = 6371_000;
+    const toRad = (x: number) => x * Math.PI / 180;
+    const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
+    const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(s));
+  };
+  const distBuckets: Record<string, number> = { "0-50km": 0, "50-100km": 0, "100-200km": 0, "200-500km": 0, ">500km": 0, "noPos": 0 };
+  const farTargets: Array<{ mmsi: string; name: string | null; distKm: number; source: string | null; lastSeenMin: number }> = [];
+  if (ownLat != null && ownLng != null) {
+    for (const e of entries) {
+      if (e.lastLat == null || e.lastLng == null) { distBuckets.noPos++; continue; }
+      const dKm = hav({ lat: ownLat, lng: ownLng }, { lat: e.lastLat, lng: e.lastLng }) / 1000;
+      if (dKm < 50) distBuckets["0-50km"]++;
+      else if (dKm < 100) distBuckets["50-100km"]++;
+      else if (dKm < 200) distBuckets["100-200km"]++;
+      else if (dKm < 500) distBuckets["200-500km"]++;
+      else distBuckets[">500km"]++;
+      if (dKm > 100) {
+        farTargets.push({
+          mmsi: e.mmsi, name: e.name ?? null, distKm: Math.round(dKm),
+          source: e.source ?? null,
+          lastSeenMin: Math.round((now - e.lastSeenMs) / 60000),
+        });
+      }
+    }
+    farTargets.sort((a, b) => b.distKm - a.distKm);
+  }
   const sample = entries
     .sort((a, b) => (b.lastSeenMs ?? 0) - (a.lastSeenMs ?? 0))
     .slice(0, 10)
     .map(e => ({
       mmsi: e.mmsi, name: e.name, length: e.length, beam: e.beam,
       shipType: e.shipType, aisClass: e.aisClass, imo: e.imo,
+      source: e.source ?? null,  // Rev760
       lastSeenMin: Math.round((now - e.lastSeenMs) / 60000),
       firstSeenMin: e.firstSeenMs ? Math.round((now - e.firstSeenMs) / 60000) : null,
       hasLastPos: e.lastLat != null && e.lastLng != null,
@@ -13747,6 +14224,10 @@ expressApp.get("/signalk-mareas-ihm/api/ais/db-debug", (req: any, res: any) => {
     ok: true,
     total: entries.length,
     withName, withImo, withPos,
+    bySource,       // Rev760
+    distBuckets,    // Rev760
+    farTargets: farTargets.slice(0, 20),  // Rev760
+    ownPos: (ownLat != null && ownLng != null) ? { lat: Math.round(ownLat*10)/10, lng: Math.round(ownLng*10)/10 } : null,
     ageMinsP50: ageMins.length ? ageMins.sort((a, b) => a - b)[Math.floor(ageMins.length / 2)] : null,
     ageMinsMax: ageMins.length ? Math.max(...ageMins) : null,
     sample,

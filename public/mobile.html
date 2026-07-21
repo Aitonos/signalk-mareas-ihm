@@ -2561,11 +2561,12 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openUserControl&&m_openUserControl()"><span class="ico">👥</span><span data-i18n="menu_user_control">Control de usuarios</span></button>
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openConfig&&m_openConfig()"><span class="ico">⚙️</span><span data-i18n="menu_config">Configuración</span></button>
     <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_openInstructions()"><span class="ico">📖</span><span data-i18n="menu_instrucciones">Instrucciones y aviso legal</span></button>
-    <!-- Rev646 (Sprint I-4, feedback Carlos "Hay que hacer un script automatico
-         para feedback debug con los usuarios que no les funciona; solo le den
-         un botón y nos manden lo que le salga"). Captura /api/diagnostic +
-         copia al portapapeles + confirma. -->
-    <button class="ml-row" onclick="document.getElementById('m-menu').classList.remove('open');m_captureDiagnostic&&m_captureDiagnostic()"><span class="ico">🐛</span><span data-i18n="menu_diag">Enviar diagnóstico</span></button>
+    <!-- Rev753 (feedback Carlos "quítalo del menu ya que lo metemos dentro,
+         para que duplicar"): entrada "🐛 Enviar diagnóstico" retirada del
+         menú principal. El flujo ahora vive dentro del modal "Tu opinión
+         cuenta" → botón "Capturar diagnóstico (Copiar JSON)". La función
+         m_captureDiagnostic() sigue accesible por si algún handler externo
+         la invoca. -->
     <!-- Rev715 (feedback Carlos "Añade botón feedback al menú Hamb invitando a
          compartir experiencia, bugs o demas, Y de paso haz un llamamiento a
          dar estrellita en Github para darle visibilidad. Pon links a NPM y
@@ -3197,7 +3198,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
      AIS    = solo iconos de targets en mapa (no afecta a alarmas ni ACKs).
      Tracks = tracks de otros AIS (NO afecta al track del barco propio).
      Alarma = alarmas AIS (delega en setAlarm legacy: cierra popups, ACKs, etc).
-     Click stopPropagation para no colapsar el panel. --><span class="ais-hdr-toggles" onclick="event.stopPropagation()"><label id="ais-hdr-icons-lbl" title="Mostrar/ocultar iconos AIS en el mapa"><input type="checkbox" id="ais-hdr-icons-chk" onchange="m_aisHdrToggleIcons(this.checked)"><span data-i18n="ais_hdr_icons">AIS</span></label><label id="ais-hdr-tracks-lbl" title="Mostrar/ocultar tracks de otros AIS (no afecta al propio)"><input type="checkbox" id="ais-hdr-tracks-chk" onchange="m_aisHdrToggleTracks(this.checked)"><span data-i18n="ais_hdr_tracks">Tracks</span></label><label id="ais-hdr-alarm-lbl" title="Activar/desactivar alarmas de proximidad AIS"><input type="checkbox" id="ais-hdr-alarm-chk" onchange="m_aisHdrToggleAlarm(this.checked)"><span data-i18n="ais_hdr_alarm">Alarma</span></label></span></h5><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_radio_lbl">Radio:</span><input type="range" id="ais-radius-slider" min="0.5" max="500" step="0.5" value="5" style="flex:1" oninput="_setAisRadius(this.value)"><span id="ais-radius-val" style="min-width:60px;text-align:right;font-weight:700;color:#fff">5 km</span></div><!-- Rev400: linea de ordenar+filtro mitad/mitad del ancho. --><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_sort_lbl" style="flex:0 0 auto">Ordenar:</span><select id="ais-sort-by" onchange="_setAisSort(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"><option value="dist" data-i18n="ais_sort_dist">Distancia</option><option value="name" data-i18n="ais_sort_name">Nombre</option><option value="fav" data-i18n="ais_sort_fav">Favoritos</option><option value="mmsi" data-i18n="ais_sort_mmsi">MMSI</option><option value="type" data-i18n="ais_sort_type">Tipo</option></select><input type="text" id="ais-filter-txt" placeholder="🔎" data-i18n-placeholder="ais_filter_ph" oninput="_setAisFilter(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"></div></div><div id="ais-alarm-list"></div></div>
+     Click stopPropagation para no colapsar el panel. --><span class="ais-hdr-toggles" onclick="event.stopPropagation()"><label id="ais-hdr-icons-lbl" title="Mostrar/ocultar iconos AIS en el mapa"><input type="checkbox" id="ais-hdr-icons-chk" onchange="m_aisHdrToggleIcons(this.checked)"><span data-i18n="ais_hdr_icons">AIS</span></label><label id="ais-hdr-tracks-lbl" title="Mostrar/ocultar tracks de otros AIS (no afecta al propio)"><input type="checkbox" id="ais-hdr-tracks-chk" onchange="m_aisHdrToggleTracks(this.checked)"><span data-i18n="ais_hdr_tracks">Tracks</span></label><label id="ais-hdr-alarm-lbl" title="Activar/desactivar alarmas de proximidad AIS"><input type="checkbox" id="ais-hdr-alarm-chk" onchange="m_aisHdrToggleAlarm(this.checked)"><span data-i18n="ais_hdr_alarm">Alarma</span></label></span></h5><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_radio_lbl">Radio:</span><input type="range" id="ais-radius-slider" min="0.5" max="100" step="0.5" value="5" style="flex:1" oninput="_setAisRadius(this.value)"><span id="ais-radius-val" style="min-width:60px;text-align:right;font-weight:700;color:#fff">5 km</span></div><!-- Rev400: linea de ordenar+filtro mitad/mitad del ancho. --><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_sort_lbl" style="flex:0 0 auto">Ordenar:</span><select id="ais-sort-by" onchange="_setAisSort(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"><option value="dist" data-i18n="ais_sort_dist">Distancia</option><option value="name" data-i18n="ais_sort_name">Nombre</option><option value="fav" data-i18n="ais_sort_fav">Favoritos</option><option value="mmsi" data-i18n="ais_sort_mmsi">MMSI</option><option value="type" data-i18n="ais_sort_type">Tipo</option></select><input type="text" id="ais-filter-txt" placeholder="🔎" data-i18n-placeholder="ais_filter_ph" oninput="_setAisFilter(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"></div></div><div id="ais-alarm-list"></div></div>
 <div class="popup-overlay" id="levar-confirm-pop" onclick="closePopup('levar-confirm-pop')">
   <div class="popup-box" onclick="event.stopPropagation()" style="min-width:300px;text-align:center">
     <h4 style="font-size:18px"data-i18n="levar_titulo">⚓ Levar ancla</h4>
@@ -3574,6 +3575,37 @@ if ('serviceWorker' in navigator) {
     }).catch(function(){});
   } catch(_){}
 }
+/* Rev761 (feedback Carlos "Firefox sigue con slider 500 incluso con hard
+   reload"): safety net contra cache HTML agresivo del navegador. Firefox
+   a veces ignora Cache-Control: no-cache en /visorfondeo y sirve el HTML
+   viejo sin pedir al servidor. Mecanismo:
+   1) Al cargar, pedimos /api/build-info sin cache.
+   2) Comparamos con lo guardado en localStorage.
+   3) Si mismatch → reload forzado UNA vez (guardamos flag para no bucle).
+   Mecanismo Rev540 (redirect 302 server-side) sigue siendo el principal;
+   este es defensivo para cuando el navegador no consulta al server. */
+(function(){
+  try {
+    var buster = Date.now();
+    fetch(B + '/api/build-info?_=' + buster, { cache: 'no-store' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(j){
+        if (!j || !j.builtAt) return;
+        var currentBuild = String(j.builtAt);
+        var savedBuild   = localStorage.getItem('ihm-build-loaded') || '';
+        var reloadFlag   = sessionStorage.getItem('ihm-reload-done') || '';
+        if (savedBuild && savedBuild !== currentBuild && reloadFlag !== currentBuild) {
+          console.warn('[IHM-BUILD] mismatch — saved=' + savedBuild + ' current=' + currentBuild + ' → forcing reload');
+          sessionStorage.setItem('ihm-reload-done', currentBuild);
+          localStorage.setItem('ihm-build-loaded', currentBuild);
+          location.reload();
+          return;
+        }
+        localStorage.setItem('ihm-build-loaded', currentBuild);
+      })
+      .catch(function(){});
+  } catch(_){}
+})();
 /* === i18n SYSTEM === */
 /* Rev318: idioma default EN al instalar (antes ES). El usuario puede cambiar
    a ES desde el menú banderas; se persiste en localStorage. */
@@ -12442,6 +12474,20 @@ function checkAisBorneoAlarm(targets){
       var statusPrefix=a.isDragging?'\uD83D\uDD34':(a.inBorneo?(a.acked?'\uD83D\uDFE0':'\u26A0\uFE0F'):'');
       var ico=statusPrefix?(statusPrefix+' '+typeEmoji):typeEmoji;
       var suffix=a.isDragging?' <small style="color:var(--red)">(\u00A1GARREANDO!)</small>':(a.acked?' <small style="color:var(--org)">(ACK)</small>':'');
+      /* Rev758 (feedback Carlos "poin en el listado detras del nombre
+         la fuente (propia/AISHUB/etc)"): badge min\u00FAsculo detr\u00E1s del
+         nombre mostrando de qu\u00E9 motor viene el target \u2014 VHF propio,
+         aisstream, aishub o aisfriends. Ayuda a diagnosticar si tu
+         receptor propio est\u00E1 trabajando bien o si dependemos mucho
+         de las fuentes online. */
+      var _srcLbl='', _srcCol='';
+      switch(a.target&&a.target.source){
+        case 'vhf':        _srcLbl='VHF'; _srcCol='#3aa856'; break; // verde: propio
+        case 'aisstream':  _srcLbl='AS';  _srcCol='#9ad';    break;
+        case 'aishub':     _srcLbl='AH';  _srcCol='#9ad';    break;
+        case 'aisfriends': _srcLbl='AF';  _srcCol='#9ad';    break;
+      }
+      var srcBadge=_srcLbl?' <small style="color:'+_srcCol+';font-weight:700;opacity:.75;font-size:10px;letter-spacing:.5px" title="Fuente: '+_srcLbl+'">'+_srcLbl+'</small>':'';
       /* Rev399\u2192Rev400: estrella favorito + boton vesselfinder por fila.
          Tama\u00F1os touch friendly (\u2605 26px, \uD83D\uDD0D 18px). Mas separacion del nombre. */
       var isFav=_isAisFavorite(a.cleanMmsi);
@@ -12451,7 +12497,7 @@ function checkAisBorneoAlarm(targets){
       var vfBtn='<span class="ais-vf-btn" data-vfurl="'+_vfUrl+'" style="cursor:pointer;font-size:18px;line-height:1;color:#9ad;margin-left:10px;padding:6px 10px;border:1px solid rgba(154,170,221,.5);border-radius:5px;user-select:none;flex:0 0 auto" title="Buscar en vesselfinder">\uD83D\uDD0D</span>';
       /* Rev561 (feedback Carlos): listado AIS usa distanceLand → m/km en
          métrico, ft/mi en imperial. Nunca NM aunque sistema sea náutico. */
-      item.innerHTML='<span style="display:flex;align-items:center;min-width:0;flex:1">'+favStar+'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ico+' '+dispName+(fl?' '+fl:'')+suffix+'</span>'+vfBtn+'</span><b style="color:'+dCol+';flex:0 0 auto">'+unitFmt.distanceLand(a.dist)+'</b>';
+      item.innerHTML='<span style="display:flex;align-items:center;min-width:0;flex:1">'+favStar+'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ico+' '+dispName+(fl?' '+fl:'')+srcBadge+suffix+'</span>'+vfBtn+'</span><b style="color:'+dCol+';flex:0 0 auto">'+unitFmt.distanceLand(a.dist)+'</b>';
       item.onclick=(function(tgt,bor){
         return function(ev){
           /* Rev399: \u2605 y \uD83D\uDD0D no abren el popup; tienen su propia accion. */
@@ -15801,6 +15847,130 @@ window.m_aisstreamStatsCheck = function(){
     });
 };
 
+/* Rev754: espejo de m_aisstreamStatsCheck para el endpoint aishub.
+   Muestra polls hechos, último poll, targets aceptados, bbox y último
+   error si lo hubiera. Rate limit 1/min → el primer poll aparece a los
+   ~5 s del arranque; a partir de ahí uno cada 65 s. */
+window.m_aishubStatsCheck = function(){
+  var host = document.getElementById('wopt-aishub-stats');
+  if (!host) return;
+  host.textContent = '⏳ ' + ((_lang==='en')?'Loading…':'Cargando…');
+  fetch(A+'/aishub/stats',{cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .catch(function(){ return null; })
+    .then(function(j){
+      if (!j){ host.textContent = '✗ ' + ((_lang==='en')?'Endpoint failed':'Endpoint falló'); host.style.color='#e53935'; return; }
+      if (!j.enabled){
+        host.innerHTML = '⚪ ' + ((_lang==='en')?'Disabled':'Desactivado') + ' (' + (j.reason||'?') + ')';
+        host.style.color = '#9aa';
+        return;
+      }
+      var isEn = (_lang==='en');
+      var connected = j.connected ? '✓' : '✗';
+      var lastAge = j.lastMsgMs ? Math.round((Date.now() - j.lastMsgMs)/1000) : null;
+      var lastTxt = lastAge != null ? (lastAge < 60 ? (lastAge+' s') : (Math.round(lastAge/60)+' min')) : '—';
+      var bb = j.boundingBox;
+      var bbTxt = bb ? ('['+bb[0][0].toFixed(1)+','+bb[0][1].toFixed(1)+']…['+bb[1][0].toFixed(1)+','+bb[1][1].toFixed(1)+']') : '—';
+      var errLine = '';
+      if (j.lastError && !j.connected){
+        errLine = '<div style="color:#e53935;margin-top:4px">✗ ' + (isEn?'Last error':'Último error') + ': <b>' + j.lastError + '</b></div>';
+        if (/rate|empty|429/i.test(j.lastError)){
+          errLine += '<div style="color:#ffb23f;margin-top:2px;font-style:italic;line-height:1.5">💡 ' + (isEn
+              ? 'Rate limit is 1 request/min. If you also have another instance polling with the same key, they will collide.'
+              : 'Límite es 1 request/min. Si tienes otra instancia usando la misma key, colisionarán.')
+              + '</div>';
+        }
+      }
+      /* Rev755: breakdown del dedup — "196 recibidos → 196 duplicados
+         VHF, 0 duplicados aisstream, 0 adoptados". Sin esto, el "0 en
+         cache" con "196 aceptados" parece un bug cuando en realidad
+         significa que el VHF ya cubre el 100% de esos MMSIs y aishub
+         está haciendo bien su trabajo de fuente secundaria. */
+      var dupVhf = j.dedupVhf|0, dupAis = j.dedupAisstream|0, adopted = j.adopted|0;
+      var dedupLine = '';
+      if (dupVhf > 0 || dupAis > 0 || adopted > 0){
+        dedupLine = '<div>🔁 ' + (isEn?'dedup':'dedup') + ': '
+          + dupVhf + ' ' + (isEn?'by VHF':'por VHF')
+          + ' · ' + dupAis + ' ' + (isEn?'by aisstream':'por aisstream')
+          + ' · <b style="color:#3aa856">' + adopted + ' ' + (isEn?'adopted':'adoptados') + '</b></div>';
+      }
+      host.innerHTML = ''
+        + '<div>' + connected + ' ' + (isEn?'HTTP poll':'HTTP poll') + ' · #' + j.pollCount + ' polls · ' + j.received + ' ' + (isEn?'msgs recv':'msgs recv') + '</div>'
+        + dedupLine
+        + '<div>📦 ' + j.targetsInDB + ' ' + (isEn?'targets in cache':'targets en cache') + ' · ' + (isEn?'last msg':'último msg') + ': ' + lastTxt + ' ' + (isEn?'ago':'atrás') + '</div>'
+        + '<div>🌍 bbox: ' + bbTxt + ' · ' + (isEn?'interval':'intervalo') + ': ' + Math.round(j.intervalMs/1000) + ' s</div>'
+        + errLine;
+      /* Rev755: verde si adoptamos algo O si el VHF está deduplicando
+         (buena señal: nuestro barco tiene AIS potente). Ámbar solo si
+         no llega nada. */
+      host.style.color = (j.received > 0) ? '#3aa856' : '#ffb23f';
+    });
+};
+
+/* Rev756: espejo para el endpoint aisfriends. Muestra pollCount +
+   HTTP status del último request (útil para distinguir 401/403/429),
+   contadores dedup (VHF/aisstream/aishub) y adoptados. */
+window.m_aisfriendsStatsCheck = function(){
+  var host = document.getElementById('wopt-aisfriends-stats');
+  if (!host) return;
+  host.textContent = '⏳ ' + ((_lang==='en')?'Loading…':'Cargando…');
+  fetch(A+'/aisfriends/stats',{cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .catch(function(){ return null; })
+    .then(function(j){
+      if (!j){ host.textContent = '✗ ' + ((_lang==='en')?'Endpoint failed':'Endpoint falló'); host.style.color='#e53935'; return; }
+      if (!j.enabled){
+        host.innerHTML = '⚪ ' + ((_lang==='en')?'Disabled':'Desactivado') + ' (' + (j.reason||'?') + ')';
+        host.style.color = '#9aa';
+        return;
+      }
+      var isEn = (_lang==='en');
+      var connected = j.connected ? '✓' : '✗';
+      var lastAge = j.lastMsgMs ? Math.round((Date.now() - j.lastMsgMs)/1000) : null;
+      var lastTxt = lastAge != null ? (lastAge < 60 ? (lastAge+' s') : (Math.round(lastAge/60)+' min')) : '—';
+      var bb = j.boundingBox;
+      var bbTxt = bb ? ('['+bb[0][0].toFixed(1)+','+bb[0][1].toFixed(1)+']…['+bb[1][0].toFixed(1)+','+bb[1][1].toFixed(1)+']') : '—';
+      var httpTxt = j.lastHttpStatus ? ('HTTP '+j.lastHttpStatus) : '—';
+      var errLine = '';
+      if (j.lastError && !j.connected){
+        errLine = '<div style="color:#e53935;margin-top:4px">✗ ' + (isEn?'Last error':'Último error') + ': <b>' + j.lastError + '</b></div>';
+        /* Pistas para los 3 códigos más frecuentes de aisfriends. */
+        if (/403|quality/i.test(j.lastError)){
+          errLine += '<div style="color:#ffb23f;margin-top:2px;font-style:italic;line-height:1.5">💡 ' + (isEn
+              ? 'Your station is not yet meeting the API quality requirements (7 days + 10 vessels + 90% uptime). Keep feeding and try again in a few days.'
+              : 'Tu estación aún no cumple los requisitos de calidad para el API (7 días + 10 vessels + 90% uptime). Sigue alimentando y prueba en unos días.')
+              + '</div>';
+        } else if (/401|invalid/i.test(j.lastError)){
+          errLine += '<div style="color:#ffb23f;margin-top:2px;font-style:italic;line-height:1.5">💡 ' + (isEn
+              ? 'Token invalid. Regenerate at aisfriends.com → Account → Details → API Tokens.'
+              : 'Token inválido. Regenera en aisfriends.com → Account → Details → API Tokens.')
+              + '</div>';
+        } else if (/429|rate/i.test(j.lastError)){
+          errLine += '<div style="color:#ffb23f;margin-top:2px;font-style:italic;line-height:1.5">💡 ' + (isEn
+              ? 'Rate limit is 1 request/min. Another instance using the same token will collide.'
+              : 'Límite 1 request/min. Si otra instancia usa el mismo token, chocarán.')
+              + '</div>';
+        }
+      }
+      var dupVhf = j.dedupVhf|0, dupAis = j.dedupAisstream|0, dupHub = j.dedupAishub|0, adopted = j.adopted|0;
+      var dedupLine = '';
+      if (dupVhf > 0 || dupAis > 0 || dupHub > 0 || adopted > 0){
+        dedupLine = '<div>🔁 ' + (isEn?'dedup':'dedup') + ': '
+          + dupVhf + ' ' + (isEn?'by VHF':'por VHF')
+          + ' · ' + dupAis + ' ' + (isEn?'by aisstream':'por aisstream')
+          + ' · ' + dupHub + ' ' + (isEn?'by aishub':'por aishub')
+          + ' · <b style="color:#3aa856">' + adopted + ' ' + (isEn?'adopted':'adoptados') + '</b></div>';
+      }
+      host.innerHTML = ''
+        + '<div>' + connected + ' ' + httpTxt + ' · #' + j.pollCount + ' polls · ' + j.received + ' ' + (isEn?'msgs recv':'msgs recv') + '</div>'
+        + dedupLine
+        + '<div>📦 ' + j.targetsInDB + ' ' + (isEn?'targets in cache':'targets en cache') + ' · ' + (isEn?'last msg':'último msg') + ': ' + lastTxt + ' ' + (isEn?'ago':'atrás') + '</div>'
+        + '<div>🌍 bbox: ' + bbTxt + ' · ' + (isEn?'interval':'intervalo') + ': ' + Math.round(j.intervalMs/1000) + ' s</div>'
+        + errLine;
+      host.style.color = (j.received > 0) ? '#3aa856' : '#ffb23f';
+    });
+};
+
 /* Rev737 (Hoekens catch-up): dispara alarma de prueba durante 10 s. */
 window.m_testAlarmFire = function(kind){
   var st = document.getElementById('m-testalarm-status');
@@ -17251,8 +17421,8 @@ window.m_wizardStep_aisFallback = function(body){
     + '<div style="max-width:820px;margin:0 auto">'
     +   '<div style="font-size:18px;color:#cfd8dc;line-height:1.55;margin-bottom:22px">'
     +     ((lang==='en')
-        ? 'Optional online AIS feed via <b>aisstream.io</b>. Complements or replaces your VHF AIS receiver. Targets from your VHF always take priority (dedup 60 s). Publishes to the SignalK <code>vessels.*</code> tree so anything in your SK environment can consume them.'
-        : 'Feed AIS opcional por internet vía <b>aisstream.io</b>. Complementa o sustituye a tu receptor AIS por VHF. Los targets del VHF siempre prevalecen (dedupe 60 s). Publica al árbol <code>vessels.*</code> de SignalK para que cualquier consumidor de tu entorno SK pueda verlos también.')
+        ? 'Three independent online AIS sources — configure any combination. <b>aisstream.io</b> is a free real-time WebSocket feed; <b>aishub.net</b> and <b>aisfriends.com</b> are peer networks (you contribute your VHF, they give you the pool) polled once per minute each. Priority: VHF ▶ aisstream ▶ aishub / aisfriends (symmetric). Everything is republished to the SignalK <code>vessels.*</code> tree.'
+        : 'Tres fuentes AIS online independientes — puedes combinar como quieras. <b>aisstream.io</b> es un WebSocket real-time gratuito; <b>aishub.net</b> y <b>aisfriends.com</b> son redes peer-to-peer (tú compartes tu VHF, ellos te dan el pool) con polling 1 vez/minuto cada una. Prioridad: VHF ▶ aisstream ▶ aishub / aisfriends (simétrico). Todo se republica al árbol <code>vessels.*</code> de SignalK.')
     +   '</div>'
     +   '<div id="m-wiz-ais-cfg">'
     +     '<div style="text-align:center;padding:20px;font-size:16px;color:#9ad;opacity:.8">⏳ '
@@ -17344,6 +17514,66 @@ window.m_wizPluginOptsRenderHtml = function(o, scope, hostId){
          +   '<div id="wopt-aisstream-stats" style="margin-top:8px;font-size:13px;color:#cfd8dc;font-family:ui-monospace,Consolas,monospace;min-height:18px"></div>'
          + '</div>';
     html += '</div>';
+    /* Rev754 (feedback Carlos "AISHub — cada usuario con su key tras
+       contribuir su feed"): segunda tarjeta dentro del mismo step para
+       la fuente aishub.net. Independiente del aisstream: puede activarse
+       una, ambas o ninguna. */
+    html += '<div style="'+sec+'">';
+    html += '<div style="'+h3+'">🌐 '+(isEn?'aishub.net — peer AIS pool':'aishub.net — pool AIS peer-to-peer')+'</div>';
+    html += '<div style="padding:10px 12px;margin-bottom:10px;background:rgba(255,178,63,.12);border:1px solid rgba(255,178,63,.4);border-radius:8px;font-size:13px;color:#ffd18a;line-height:1.4">⚠ '
+         + (isEn
+            ? '<b>Give-to-get model:</b> to get an API key you must share YOUR AIS feed with the AISHub network (they give you host + UDP port to send NMEA to). This plugin only <b>consumes</b> — for sharing you install their <a href="https://www.aishub.net/ais-dispatcher" target="_blank" rel="noopener" style="color:#ffd18a;text-decoration:underline">AIS Dispatcher</a> or forward from OpenPlotter. Rate limit: 1 request/minute.'
+            : '<b>Modelo peer-to-peer:</b> para obtener API key tienes que compartir TU feed AIS con la red AISHub (te dan host + puerto UDP para enviar NMEA). Este plugin solo <b>consume</b> — para compartir instala su <a href="https://www.aishub.net/ais-dispatcher" target="_blank" rel="noopener" style="color:#ffd18a;text-decoration:underline">AIS Dispatcher</a> o reenvía desde OpenPlotter. Límite: 1 request/minuto.')
+         + '</div>';
+    html += '<div style="'+hint+';margin-bottom:8px">'+(isEn
+      ? 'Complements aisstream (better coverage in some regions, especially Mediterranean and northern Europe). Cedes to VHF (60 s) and to aisstream (120 s) — aishub is the slowest source, lowest priority.'
+      : 'Complementa a aisstream (mejor cobertura en algunas zonas, especialmente Mediterráneo y norte de Europa). Cede ante VHF (60 s) y ante aisstream (120 s) — aishub es la más lenta, menor prioridad.')+'</div>';
+    html += '<div style="'+hint+';margin-bottom:12px">'
+         + (isEn ? '1. Register + share your feed: ' : '1. Regístrate y comparte tu feed: ')
+         + '<a href="https://www.aishub.net/join-us" target="_blank" rel="noopener" style="color:var(--org)">aishub.net/join-us</a>'
+         + '<br>' + (isEn ? '2. After validation you receive your API username. Paste it below.' : '2. Tras validación recibes tu username API. Pégalo abajo.')
+         + '<br>' + (isEn ? '3. API docs: ' : '3. Documentación API: ')
+         + '<a href="https://www.aishub.net/api" target="_blank" rel="noopener" style="color:var(--org)">aishub.net/api</a>'
+         + '</div>';
+    html += '<label style="'+lbl+'">'+(isEn?'API username (key)':'Username API (key)')+'</label>';
+    html += '<input id="wopt-aishubApiKey" type="text" style="'+inpBase+'" placeholder="AH_XXXX_XXXXXXXX" value="'+esc(o.aishubApiKey||'')+'" autocomplete="off">';
+    html += '<div style="'+hint+'">'+(o.aishubApiKeySet ? (isEn?'✓ Key stored (edit to change)':'✓ Key guardada (edita para cambiar)') : (isEn?'No key stored — aishub disabled':'Sin key — aishub desactivado'))+'</div>';
+    html += '<div style="margin-top:12px">'
+         +   '<button onclick="m_aishubStatsCheck()" style="background:rgba(154,170,221,.15);color:#9ad;border:1px solid rgba(154,170,221,.4);padding:10px 18px;font-size:14px;font-weight:700;border-radius:8px;cursor:pointer">📊 '+(isEn?'Check aishub status':'Comprobar estado')+'</button>'
+         +   '<div id="wopt-aishub-stats" style="margin-top:8px;font-size:13px;color:#cfd8dc;font-family:ui-monospace,Consolas,monospace;min-height:18px"></div>'
+         + '</div>';
+    html += '</div>';
+    /* Rev756 (feedback Carlos "NUEVO SERVICIO AIS ONLINE: AIS Friends,
+       implementa como los otros"): tercera tarjeta para aisfriends.com.
+       Modelo peer + API v1 con Bearer token. TOS advertidos: 7d + 10
+       vessels + 90% uptime antes de que el token funcione, y solo 1
+       device por cuenta a la vez. */
+    html += '<div style="'+sec+'">';
+    html += '<div style="'+h3+'">🤝 '+(isEn?'aisfriends.com — contributor API v1':'aisfriends.com — API v1 para contribuidores')+'</div>';
+    html += '<div style="padding:10px 12px;margin-bottom:10px;background:rgba(255,178,63,.12);border:1px solid rgba(255,178,63,.4);border-radius:8px;font-size:13px;color:#ffd18a;line-height:1.4">⚠ '
+         + (isEn
+            ? '<b>Access requires quality contribution first:</b> ≥7 days feeding + ≥10 vessels in coverage + ≥90% uptime. Until you meet those, the token returns HTTP 403. Also <b>one device per account at a time</b> — if you open aisfriends.com in a browser while the plugin runs, one will lose access.'
+            : '<b>El acceso exige contribución de calidad primero:</b> ≥7 días alimentando + ≥10 vessels en cobertura + ≥90% uptime. Hasta cumplirlo, el token devolverá HTTP 403. Además <b>1 device por cuenta a la vez</b> — si abres aisfriends.com en el navegador mientras el plugin corre, uno perderá acceso.')
+         + '</div>';
+    html += '<div style="'+hint+';margin-bottom:8px">'+(isEn
+      ? 'Complements aishub with a different peer pool. Cedes to VHF (60 s), aisstream (120 s) and aishub (120 s) — symmetric with aishub (same tier).'
+      : 'Complementa a aishub con un pool peer distinto. Cede ante VHF (60 s), aisstream (120 s) y aishub (120 s) — simétrico con aishub (mismo tier).')+'</div>';
+    html += '<div style="'+hint+';margin-bottom:12px">'
+         + (isEn ? '1. Register + set up your station: ' : '1. Regístrate y monta tu estación: ')
+         + '<a href="https://www.aisfriends.com/register" target="_blank" rel="noopener" style="color:var(--org)">aisfriends.com/register</a>'
+         + '<br>' + (isEn ? '2. Feed AIS data via UDP to the port they send you by email (AIS Catcher, SDRAngel or forwarding from OpenPlotter).' : '2. Alimenta datos AIS por UDP al puerto que te enviaron por email (AIS Catcher, SDRAngel o reenviando desde OpenPlotter).')
+         + '<br>' + (isEn ? '3. After the 7-day quality check, go to Account → Details → API Tokens, generate a token, paste it below.' : '3. Tras la verificación de calidad de 7 días, ve a Account → Details → API Tokens, genera un token y pégalo abajo.')
+         + '<br>' + (isEn ? '4. API docs: ' : '4. Documentación API: ')
+         + '<a href="https://www.aisfriends.com/docs/api/v1" target="_blank" rel="noopener" style="color:var(--org)">aisfriends.com/docs/api/v1</a>'
+         + '</div>';
+    html += '<label style="'+lbl+'">'+(isEn?'Bearer token':'Token Bearer')+'</label>';
+    html += '<input id="wopt-aisfriendsToken" type="text" style="'+inpBase+'" placeholder="eyJhbGci..." value="'+esc(o.aisfriendsToken||'')+'" autocomplete="off">';
+    html += '<div style="'+hint+'">'+(o.aisfriendsTokenSet ? (isEn?'✓ Token stored (edit to change)':'✓ Token guardado (edita para cambiar)') : (isEn?'No token stored — aisfriends disabled':'Sin token — aisfriends desactivado'))+'</div>';
+    html += '<div style="margin-top:12px">'
+         +   '<button onclick="m_aisfriendsStatsCheck()" style="background:rgba(154,170,221,.15);color:#9ad;border:1px solid rgba(154,170,221,.4);padding:10px 18px;font-size:14px;font-weight:700;border-radius:8px;cursor:pointer">📊 '+(isEn?'Check aisfriends status':'Comprobar estado')+'</button>'
+         +   '<div id="wopt-aisfriends-stats" style="margin-top:8px;font-size:13px;color:#cfd8dc;font-family:ui-monospace,Consolas,monospace;min-height:18px"></div>'
+         + '</div>';
+    html += '</div>';
   } else if (scope === 'imu'){
     /* IMU manager */
     html += '<div style="'+sec+'">';
@@ -17424,8 +17654,12 @@ window.m_wizPluginOptsSave = function(scope, hostId){
     payload.telegramBotToken = gv('wopt-telegramBotToken');
     payload.telegramChatId   = gv('wopt-telegramChatId');
   } else if (scope === 'aisstream'){
-    /* Rev741: scope propio para el token aisstream. */
+    /* Rev741: scope propio para el token aisstream. Rev754/Rev756:
+       mismo step incluye también aishub y aisfriends (3 fuentes
+       online). */
     payload.aisstreamToken   = gv('wopt-aisstreamToken');
+    payload.aishubApiKey     = gv('wopt-aishubApiKey');
+    payload.aisfriendsToken  = gv('wopt-aisfriendsToken');
   } else if (scope === 'imu'){
     payload.pypilotEnabled       = gc('wopt-pypilotEnabled');
     payload.pypilotHost          = gv('wopt-pypilotHost');
@@ -19199,93 +19433,95 @@ window._deleted_m_wizardStep_locale = function(body){
     });
 };
 
-/* Rev715 (feedback Carlos "añade botón feedback al menú Hamb… llamamiento
-   a dar estrellita en Github… links a NPM y Github"): modal fullscreen
-   con CSS propio (dark + naranja) invitando a compartir experiencia y
-   reportar bugs. CTAs: ⭐ GitHub star, 🐛 nuevo issue, 📦 NPM.
-   Bilingüe. */
+/* Rev715 → Rev753 (feedback Carlos "para la ventana de tu opinión cuenta,
+   usa estilo de ventanas CSS propio con su botón atrás arriba, su header
+   con título, etc"): modal con el patrón nativo del proyecto —
+   .popup-overlay + .popup-box + <h4>. El observer global de
+   _mInjectModalHeader detecta al añadir 'open' y monta el header naranja
+   sticky con "‹ Atrás" y el título grande. Ver src L14329-14407.
+   Contenido: intro + CTAs ⭐ GitHub star, 🐛 Capturar diagnóstico (Copiar
+   JSON, integrado desde Rev752), 🐛 Abrir issue, 📦 NPM. Bilingüe. */
 window.m_openFeedback = function(){
   var isEn = (_lang==='en');
   var repoUrl   = 'https://github.com/Aitonos/signalk-mareas-ihm';
   var issuesUrl = repoUrl + '/issues/new';
   var npmUrl    = 'https://www.npmjs.com/package/signalk-mareas-ihm';
-  var old = document.getElementById('m-feedback-modal');
-  if (old && old.parentNode) old.parentNode.removeChild(old);
-  var overlay = document.createElement('div');
-  overlay.id = 'm-feedback-modal';
-  overlay.setAttribute('style',
-    'position:fixed;inset:0;z-index:99998;'
-  + 'background:rgba(0,0,0,.78);'
-  + 'display:flex;align-items:center;justify-content:center;'
-  + 'padding:14px;box-sizing:border-box;'
-  + 'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;');
-  var titleTxt = isEn ? 'Your feedback matters' : 'Tu opinión cuenta';
-  var introTxt = isEn
+  var titleTxt  = isEn ? '💬 Your feedback matters' : '💬 Tu opinión cuenta';
+  var introTxt  = isEn
     ? 'AnchorWatch Pro is built by <b>one skipper</b> for the community. Everything you tell us — good and bad — feeds directly into the next release.'
     : 'AnchorWatch Pro lo mantiene <b>un solo armador</b> para toda la comunidad. Todo lo que nos cuentes — bueno y malo — va directo a la próxima versión.';
-  var starLead = isEn
+  var starLead  = isEn
     ? 'If it helps you at anchor, please give the project a ⭐ star on GitHub — it is the single easiest way to make other sailors find it.'
     : 'Si te ayuda cuando fondeas, dale una ⭐ estrellita al proyecto en GitHub — es la forma más fácil de que otros marineros lo descubran.';
-  var bugLead = isEn
-    ? 'Found a bug or want to request a feature? Open an issue and describe what happened; include the diagnostic bundle (menu → 🐛) if you can.'
-    : '¿Ves un bug o quieres pedir una función? Abre una issue contando qué pasó; adjunta el paquete de diagnóstico (menú → 🐛) si puedes.';
-  var npmLead = isEn
+  var diagLead  = isEn
+    ? 'Before opening the issue, capture a diagnostic bundle: it collects plugin version, dependencies, IMU, wave engine, config and SK paths (GPS/PIN/Telegram are auto-redacted). You review the JSON, hit Copy, and paste it into the issue.'
+    : 'Antes de abrir la issue, captura un paquete de diagnóstico: recoge versión del plugin, dependencias, IMU, motor de olas, configuración y paths SK (GPS/PIN/Telegram se ocultan automáticamente). Revisa el JSON, dale a Copiar y pégalo en la issue.';
+  var bugLead   = isEn
+    ? 'Then open the issue and describe what happened; paste the diagnostic JSON so we can reproduce it.'
+    : 'Luego abre la issue contando qué pasó; pega el JSON del diagnóstico para que podamos reproducirlo.';
+  var npmLead   = isEn
     ? 'Or check the package page on NPM to read release notes and get direct install commands.'
     : 'O visita la página del paquete en NPM para leer las notas de versión y comandos de instalación.';
-  var btn = function(href, bg, textColor, borderColor, iconHtml, labelHtml){
+  /* CTA link (abre pestaña externa). */
+  var linkBtn = function(href, bg, textColor, borderColor, iconHtml, labelHtml){
     return '<a href="'+href+'" target="_blank" rel="noopener noreferrer" style="'
       + 'display:flex;align-items:center;gap:14px;padding:16px 18px;margin-bottom:12px;'
       + 'background:'+bg+';color:'+textColor+';border:2px solid '+borderColor+';'
-      + 'border-radius:12px;text-decoration:none;font-size:17px;font-weight:800;'
-      + 'transition:transform .05s,filter .15s" onmousedown="this.style.transform=\'scale(.99)\'"'
-      + ' onmouseup="this.style.transform=\'scale(1)\'"'
-      + ' onmouseover="this.style.filter=\'brightness(1.15)\'"'
-      + ' onmouseout="this.style.filter=\'brightness(1)\'">'
-      +   '<span style="font-size:28px;line-height:1;flex-shrink:0">'+iconHtml+'</span>'
+      + 'border-radius:12px;text-decoration:none;font-size:18px;font-weight:800;'
+      + 'min-height:64px">'
+      +   '<span style="font-size:30px;line-height:1;flex-shrink:0">'+iconHtml+'</span>'
       +   '<span style="flex:1;line-height:1.35">'+labelHtml+'</span>'
-      +   '<span style="font-size:22px;opacity:.7">↗</span>'
+      +   '<span style="font-size:24px;opacity:.7">↗</span>'
       + '</a>';
   };
-  overlay.innerHTML =
-    '<div style="'
-  + '  background:#1a1a1a;color:#f0f0f0;'
-  + '  border:2px solid var(--org);border-radius:14px;'
-  + '  box-shadow:0 12px 40px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.06);'
-  + '  max-width:560px;width:100%;max-height:88vh;overflow-y:auto;'
-  + '  padding:24px 26px 20px;box-sizing:border-box;">'
-  + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">'
-  +   '<span style="font-size:36px;line-height:1">💬</span>'
-  +   '<h3 style="margin:0;font-size:22px;color:var(--org);font-weight:700">'+titleTxt+'</h3>'
-  + '</div>'
-  + '<div style="font-size:15px;line-height:1.55;color:#d8d8d8;margin-bottom:20px">'+introTxt+'</div>'
-  + '<div style="font-size:14px;line-height:1.55;color:#cfd8dc;margin-bottom:10px">'+starLead+'</div>'
-  + btn(repoUrl, 'linear-gradient(135deg,#fdd835,#ff9800)', '#0a1929', '#ffcf80', '⭐',
-        (isEn?'Star on GitHub':'⭐ Dar estrella en GitHub')+'<br><span style="font-size:12px;opacity:.7;font-weight:600">github.com/Aitonos/signalk-mareas-ihm</span>')
-  + '<div style="font-size:14px;line-height:1.55;color:#cfd8dc;margin:16px 0 10px">'+bugLead+'</div>'
-  + btn(issuesUrl, 'rgba(229,57,53,.18)', '#ff8a80', '#e53935', '🐛',
-        (isEn?'Open an issue / request a feature':'Abrir issue / pedir función')+'<br><span style="font-size:12px;opacity:.7;font-weight:600">github.com/…/issues/new</span>')
-  + '<div style="font-size:14px;line-height:1.55;color:#cfd8dc;margin:16px 0 10px">'+npmLead+'</div>'
-  + btn(npmUrl, 'rgba(203,56,55,.15)', '#ff9e9e', 'rgba(203,56,55,.55)', '📦',
-        (isEn?'View on NPM':'Ver en NPM')+'<br><span style="font-size:12px;opacity:.7;font-weight:600">npmjs.com/package/signalk-mareas-ihm</span>')
-  + '<div style="margin-top:20px;text-align:right">'
-  +   '<button type="button" id="m-feedback-close" style="'
-  +     'background:transparent;color:#9aa;border:1px solid rgba(255,255,255,.25);border-radius:8px;'
-  +     'padding:10px 22px;font-size:14px;font-weight:600;cursor:pointer;'
-  +     'min-height:44px;min-width:100px">'
-  +     (isEn?'Close':'Cerrar')
-  +   '</button>'
-  + '</div>'
-  + '</div>';
-  var close = function(){
-    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    document.removeEventListener('keydown', escHandler);
+  /* CTA acción interna — dispara m_captureDiagnostic. */
+  var actBtn = function(bg, textColor, borderColor, iconHtml, labelHtml, cornerHtml){
+    return '<button type="button" data-fb-action="diagnostic" style="'
+      + 'width:100%;text-align:left;cursor:pointer;'
+      + 'display:flex;align-items:center;gap:14px;padding:16px 18px;margin-bottom:12px;'
+      + 'background:'+bg+';color:'+textColor+';border:2px solid '+borderColor+';'
+      + 'border-radius:12px;font-size:18px;font-weight:800;min-height:64px">'
+      +   '<span style="font-size:30px;line-height:1;flex-shrink:0">'+iconHtml+'</span>'
+      +   '<span style="flex:1;line-height:1.35">'+labelHtml+'</span>'
+      +   '<span style="font-size:24px;opacity:.7">'+cornerHtml+'</span>'
+      + '</button>';
   };
-  var escHandler = function(e){ if (e.key === 'Escape') close(); };
-  overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
-  document.addEventListener('keydown', escHandler);
-  document.body.appendChild(overlay);
-  var cb = document.getElementById('m-feedback-close');
-  if (cb) cb.addEventListener('click', close);
+  /* Rev753: overlay reutilizable. Se crea 1 vez y se refresca el contenido
+     en cada apertura para que el idioma actual se aplique. */
+  var overlay = document.getElementById('m-feedback-pop');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'm-feedback-pop';
+    overlay.className = 'popup-overlay';
+    overlay.onclick = function(e){ if(e.target===overlay) closePopup('m-feedback-pop'); };
+    overlay.innerHTML = '<div class="popup-box" onclick="event.stopPropagation()"></div>';
+    document.body.appendChild(overlay);
+  }
+  var box = overlay.querySelector('.popup-box');
+  /* El <h4> es el título que _mInjectModalHeader lee para el header naranja
+     y luego oculta (display:none) para no duplicar. Ver L14347-14351. */
+  box.innerHTML =
+      '<h4 style="margin:0">'+titleTxt+'</h4>'
+    + '<div style="font-size:16px;line-height:1.55;color:#d8d8d8;margin:0 0 20px">'+introTxt+'</div>'
+    + '<div style="font-size:15px;line-height:1.55;color:#cfd8dc;margin-bottom:10px">'+starLead+'</div>'
+    + linkBtn(repoUrl, 'linear-gradient(135deg,#fdd835,#ff9800)', '#0a1929', '#ffcf80', '⭐',
+        (isEn?'Star on GitHub':'Dar estrella en GitHub')+'<br><span style="font-size:12px;opacity:.75;font-weight:600">github.com/Aitonos/signalk-mareas-ihm</span>')
+    + '<div style="font-size:15px;line-height:1.55;color:#cfd8dc;margin:16px 0 10px">'+diagLead+'</div>'
+    + actBtn('rgba(255,193,7,.16)', '#ffd54f', '#ffb300', '🐛',
+        (isEn?'Capture diagnostic (Copy JSON)':'Capturar diagnóstico (Copiar JSON)')+'<br><span style="font-size:12px;opacity:.75;font-weight:600">'
+        + (isEn?'GPS/PIN/Telegram auto-redacted':'GPS/PIN/Telegram auto-ocultados')+'</span>', '📋')
+    + '<div style="font-size:15px;line-height:1.55;color:#cfd8dc;margin:16px 0 10px">'+bugLead+'</div>'
+    + linkBtn(issuesUrl, 'rgba(229,57,53,.18)', '#ff8a80', '#e53935', '🐛',
+        (isEn?'Open an issue / request a feature':'Abrir issue / pedir función')+'<br><span style="font-size:12px;opacity:.75;font-weight:600">github.com/…/issues/new</span>')
+    + '<div style="font-size:15px;line-height:1.55;color:#cfd8dc;margin:16px 0 10px">'+npmLead+'</div>'
+    + linkBtn(npmUrl, 'rgba(203,56,55,.15)', '#ff9e9e', 'rgba(203,56,55,.55)', '📦',
+        (isEn?'View on NPM':'Ver en NPM')+'<br><span style="font-size:12px;opacity:.75;font-weight:600">npmjs.com/package/signalk-mareas-ihm</span>');
+  var diagBtn = box.querySelector('[data-fb-action="diagnostic"]');
+  if (diagBtn) diagBtn.onclick = function(){
+    closePopup('m-feedback-pop');
+    if (typeof m_captureDiagnostic === 'function') m_captureDiagnostic();
+  };
+  openPopup('m-feedback-pop');
 };
 
 function m_captureDiagnostic(){
