@@ -65,6 +65,11 @@ import {
   type AutoShelterResult,
 } from "./sources/coastline.js";
 import { isSyntheticStationId } from "./sources/synthetic.js";
+import {
+  sendTelegram as sendTelegramMessage,
+  formatTelegramMessage,
+  TELEGRAM_THROTTLE_MS,
+} from "./telegram.js";
 
 // Rev680 (feedback Carlos "aunque pongamos NEAPS en curvas siguen saliendo
 // datos de IHM"): las pseudo-estaciones no-IHM (sin-marea, mediterráneo,
@@ -112,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev764";
+const PLUGIN_REVISION = "Rev766";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1252,6 +1257,10 @@ export default function (app: SignalKApp): Plugin {
   // descubrimiento + diagnóstico + soporte de fuentes adicionales.
   let _imuManager: ImuManager | null = null;
 
+  // Rev766: forward decl — Telegram formatTelegramMessage uses boat-global lang
+  // (same mirror as Pi voice). Real value refreshed from ihmCache /settings.
+  let _currentLang: UiLang = DEFAULT_LANG;
+
   // v1.3.1 Rev38: Crash diagnostics — log uncaught errors to identify if our plugin causes SK restarts
   const _ihmCrashLog = (type: string, err: any) => {
     const msg = `[signalk-mareas-ihm CRASH] ${type}: ${err?.message ?? err}\n${err?.stack ?? "no stack"}`;
@@ -1417,34 +1426,22 @@ export default function (app: SignalKApp): Plugin {
   let _telegramChatId: string = "";              // del schema (manual)
   let _telegramChatIdCached: string = "";        // de ihmCache (auto-detect)
   const _telegramLastSent: Record<string, number> = {};
-  const TELEGRAM_THROTTLE_MS = 60_000;
   function _telegramEffectiveChatId(): string {
     return _telegramChatId || _telegramChatIdCached || "";
   }
+  // Rev765: thin wrapper around extracted sendTelegram() so unit tests can
+  // exercise the POST path without booting the full plugin.
   function _sendTelegram(kind: string, text: string) {
-    const chatId = _telegramEffectiveChatId();
-    if (!_telegramBotToken || !chatId) return;
-    const now = Date.now();
-    if (now - (_telegramLastSent[kind] || 0) < TELEGRAM_THROTTLE_MS) {
-      return;
-    }
-    _telegramLastSent[kind] = now;
-    const url = `https://api.telegram.org/bot${encodeURIComponent(_telegramBotToken)}/sendMessage`;
-    const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" });
-    const req = https.request(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload).toString() },
-      timeout: 8000,
-    }, (res: any) => {
-      if (res.statusCode >= 400) {
-        app.debug(`[IHM-TELEGRAM] sendMessage HTTP ${res.statusCode}`);
-      }
-      res.on("data", () => { /* drain */ });
+    sendTelegramMessage({
+      botToken: _telegramBotToken,
+      chatId: _telegramEffectiveChatId(),
+      kind,
+      text,
+      lastSent: _telegramLastSent,
+      throttleMs: TELEGRAM_THROTTLE_MS,
+      httpsRequest: https.request.bind(https) as any,
+      onDebug: (m) => app.debug(m),
     });
-    req.on("error", (e: any) => app.debug(`[IHM-TELEGRAM] send failed: ${e?.message || e}`));
-    req.on("timeout", () => { try { req.destroy(); } catch { /* ignore */ } });
-    req.write(payload);
-    req.end();
   }
   function _telegramDiscoverChatId(reason: string): Promise<string | null> {
     return new Promise((resolve) => {
@@ -1897,14 +1894,14 @@ export default function (app: SignalKApp): Plugin {
           if (id) {
             _telegramChatIdCached = id;
             ihmCache.set("telegramChatIdAuto", id).catch(() => { /* best effort */ });
-            _sendTelegram("startup", `🚀 *Bot conectado* — Mareas IHM ${PLUGIN_REVISION}.\nChat ID auto-detectado: \`${id}\`.\nLas alarmas (garreo / AIS / varada) llegarán aquí cuando se disparen.`);
+            _sendTelegram("startup", formatTelegramMessage("startup_autodetect", { revision: PLUGIN_REVISION, chatId: id }, _currentLang));
           } else {
             app.debug(`[IHM-TELEGRAM] no chat_id available yet — user must /start the bot`);
           }
         });
       } else {
         app.debug(`[IHM-TELEGRAM] enabled, chat=${_telegramEffectiveChatId()}`);
-        _sendTelegram("startup", `🚀 Mareas IHM ${PLUGIN_REVISION} arrancado. Las alarmas garreo/AIS/varada llegarán aquí cuando se disparen en el barco.`);
+        _sendTelegram("startup", formatTelegramMessage("startup", { revision: PLUGIN_REVISION }, _currentLang));
       }
     }
 
@@ -7394,7 +7391,7 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
   // aún → fallback a espeak con la frase configurada (Rev353 añadiría OGG).
   try { _piAlarmStart('gps_lost'); } catch { /* defensive */ }
   // Telegram push.
-  try { _sendTelegram("gps_lost", `⚠️ *PÉRDIDA DE GPS* — sin posición durante ${Math.round(elapsed / 1000)}s. El barco está fondeado; no se puede detectar garreo sin GPS.`); } catch { /* defensive */ }
+  try { _sendTelegram("gps_lost", formatTelegramMessage("gps_lost", { elapsedSec: Math.round(elapsed / 1000) }, _currentLang)); } catch { /* defensive */ }
 }
 
 // Rev468: estado interno para detectar salida intencional por motorizado.
@@ -7530,7 +7527,7 @@ async function _autoLiftAnchorIntentional(sogKt: number) {
     app.handleMessage(plugin.id, notifDelta);
   } catch { /* never break */ }
   // Telegram opcional.
-  try { _sendTelegram("autolift", `⚓ Auto-lift por salida motorizada: SOG ${sogKt.toFixed(1)} kn sostenido durante 1 min. Si fue garreo real, vuelve al fondeo.`); } catch { /* non-critical */ }
+  try { _sendTelegram("autolift", formatTelegramMessage("autolift", { sogKt }, _currentLang)); } catch { /* non-critical */ }
 }
 
 function evaluateAnchorWatch() {
@@ -7831,7 +7828,7 @@ function evaluateAnchorWatch() {
       // el usuario decida si volver al barco.
       const distM = Math.round(dist);
       const radM  = Math.round(alarmRadius);
-      _sendTelegram("garreo", `⚠️ *GARREO* detectado.\nDistancia: ${distM} m (radio alarma: ${radM} m).\nEl barco se mueve fuera del fondeo.`);
+      _sendTelegram("garreo", formatTelegramMessage("garreo", { distM, radM }, _currentLang));
     }
     if (isFirstEmit || minuteElapsed) {
       _lastDragEmitMs = nowMs;
@@ -8302,7 +8299,7 @@ function evaluateAnchorWatch() {
       if (desiredState === 'warn' && !_isAisSilenced()) {
         _piAlarmStart('ais');
         // Rev166: Telegram push para AIS dentro de radio borneo.
-        _sendTelegram("ais", `🚢 *Target AIS* dentro del radio de fondeo. Posible colisión.`);
+        _sendTelegram("ais", formatTelegramMessage("ais", {}, _currentLang));
       } else {
         _piAlarmStop('ais');
       }
@@ -8828,7 +8825,7 @@ expressApp.post("/signalk-mareas-ihm/api/telegram/test", requireControlAccess, (
   }
   // Bypass throttle for explicit user test
   delete _telegramLastSent["test"];
-  _sendTelegram("test", `🧪 *Test Telegram* desde Mareas IHM ${PLUGIN_REVISION}.\nSi recibes este mensaje, el bot está bien configurado y las alarmas reales también llegarán.`);
+  _sendTelegram("test", formatTelegramMessage("test", { revision: PLUGIN_REVISION }, _currentLang));
   res.json({ ok: true });
 });
 // Force re-discover of chat_id by polling getUpdates. Llama el móvil después
@@ -8843,7 +8840,7 @@ expressApp.post("/signalk-mareas-ihm/api/telegram/discover", requireControlAcces
   }
   _telegramChatIdCached = id;
   try { await ihmCache.set("telegramChatIdAuto", id); } catch { /* ignore */ }
-  _sendTelegram("startup", `🔗 Chat conectado a Mareas IHM. chat_id=\`${id}\``);
+  _sendTelegram("startup", formatTelegramMessage("startup_connected", { chatId: id }, _currentLang));
   res.json({ ok: true, chatId: id });
 });
 
@@ -12348,7 +12345,7 @@ function _silenceGrounding(minutes: number) {
 }
 
 // In-memory language cache, refreshed when /api/settings POST changes lang.
-let _currentLang: "es" | "en" = "es";
+// Declaration lives near other plugin forward decls (Rev766); boot load here.
 (async () => {
   try {
     const saved = await ihmCache.get("lang");
