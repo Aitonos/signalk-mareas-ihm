@@ -194,6 +194,7 @@ Issues, PRs and feature requests welcome at the [GitHub repo](https://github.com
 
 - **[@jeyrb](https://github.com/jeyrb)** — reported that other anchor watch apps in the SignalK ecosystem share the canonical vocabulary `navigation.anchor.*` and `notifications.navigation.anchor`, and that this plugin was living in its own custom namespace. That report drove the 2.8.0 interop work: canonical anchor paths are now published in parallel, notifications are auto-mirrored to standard SK paths, and every critical alarm carries `method:["push"]` for WilhelmSK iOS/iPadOS push. Thank you.
 - **[@andmayfi92](https://github.com/andmayfi92)** — reported that when running outside our tide coverage area we were silently overwriting the `/signalk/v2/api/resources/tides` output of other tide plugins (opentide etc.) with our own empty response. That drove the 2.9.0 "shy provider" behaviour: we now detect other tide providers on the server and yield by default. Thank you.
+- **[@s991116](https://github.com/s991116)** — reported that Telegram push messages were hardcoded in Spanish regardless of the language setting, and delivered [PR #26](https://github.com/Aitonos/signalk-mareas-ihm/pull/26) with the fix: `sendTelegram` / `formatTelegramMessage` extracted to `src/telegram.ts` so the POST stays language-agnostic and the copy follows boat-global `_currentLang` (ES/EN), plus characterization tests. Landed in 2.10.1. Thank you.
 
 ### License
 
@@ -392,6 +393,7 @@ Issues, PRs y peticiones de funcionalidad en el [repo de GitHub](https://github.
 
 - **[@jeyrb](https://github.com/jeyrb)** — reportó que otras apps de anchor watch del ecosistema SignalK comparten el vocabulario canónico `navigation.anchor.*` y `notifications.navigation.anchor`, y que este plugin vivía en su propio namespace. Ese reporte fue el que dio pie al trabajo de interop de la 2.8.0: los paths canónicos de fondeo se publican en paralelo, las notificaciones se espejan automáticamente a los paths estándar SK, y toda alarma crítica lleva `method:["push"]` para el push nativo iOS/iPadOS de WilhelmSK. Gracias.
 - **[@andmayfi92](https://github.com/andmayfi92)** — reportó que al ejecutarse fuera de nuestra área de cobertura de mareas estábamos sobreescribiendo silenciosamente el output de `/signalk/v2/api/resources/tides` de otros plugins (opentide etc.) con nuestra respuesta vacía. Eso dio pie al comportamiento "proveedor tímido" de la 2.9.0: ahora detectamos otros proveedores de mareas en el server y cedemos por defecto. Gracias.
+- **[@s991116](https://github.com/s991116)** — reportó que los mensajes de Telegram estaban hardcoded en castellano independientemente del idioma configurado, y aportó el [PR #26](https://github.com/Aitonos/signalk-mareas-ihm/pull/26) con el fix: `sendTelegram` / `formatTelegramMessage` extraídos a `src/telegram.ts` para que el POST quede agnóstico del idioma y el texto siga el `_currentLang` boat-global (ES/EN), más tests de caracterización. Integrado en 2.10.1. Gracias.
 
 ### Licencia
 

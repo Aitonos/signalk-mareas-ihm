@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.10.1] - 2026-07-24
+
+### English
+
+**Telegram push localized (thanks @s991116) + shorter NPM description (fixes broken card in SK App Store)**
+
+Patch release. Two small fixes, both user-facing.
+
+- **Telegram push messages now follow the language setting** (issue [#25](https://github.com/Aitonos/signalk-mareas-ihm/issues/25), fixed by [@s991116](https://github.com/s991116) in [PR #26](https://github.com/Aitonos/signalk-mareas-ihm/pull/26)). Until 2.10.0 all Telegram alerts (`startup`, `startup_autodetect`, `startup_connected`, `gps_lost`, `autolift`, `garreo`, `ais`, `test`) were hardcoded in Spanish regardless of `_currentLang`. The PR extracts `sendTelegram()` and `formatTelegramMessage(kind, params, lang)` into a new module `src/telegram.ts`, so the POST is language-agnostic and the copy follows the boat-global language setting (same source-of-truth as Pi voice). Default lang remains `"es"` for backward compat. Adds `tests/telegram.test.js` (characterization test with `node:test`, locks ES + EN copy for the drag kind).
+- **NPM description shortened** from ~730 characters to ~230 (fits the SK App Store card layout — the previous long paragraph rendered as a giant underlined link and broke the grid alignment of the webapps store). Full description still lives in `README.md`.
+
+---
+
+### Español
+
+**Push de Telegram localizados (gracias @s991116) + description NPM más corta (arregla la tarjeta rota en la SK App Store)**
+
+Release de patch. Dos fixes pequeños, ambos visibles al usuario.
+
+- **Los mensajes de push de Telegram ahora siguen el idioma configurado** (issue [#25](https://github.com/Aitonos/signalk-mareas-ihm/issues/25), arreglado por [@s991116](https://github.com/s991116) en el [PR #26](https://github.com/Aitonos/signalk-mareas-ihm/pull/26)). Hasta la 2.10.0 todas las alertas de Telegram (`startup`, `startup_autodetect`, `startup_connected`, `gps_lost`, `autolift`, `garreo`, `ais`, `test`) estaban hardcoded en castellano independientemente de `_currentLang`. El PR extrae `sendTelegram()` y `formatTelegramMessage(kind, params, lang)` a un módulo nuevo `src/telegram.ts`, así el POST queda agnóstico del idioma y el texto sigue el idioma boat-global (misma fuente de verdad que la voz del Pi). Idioma por defecto sigue siendo `"es"` por compatibilidad. Añade `tests/telegram.test.js` (test de caracterización con `node:test`, congela el copy ES + EN del kind garreo).
+- **Description de NPM acortada** de ~730 caracteres a ~230 (encaja en la tarjeta de la SK App Store — el párrafo largo anterior se renderizaba como un enlace subrayado enorme y rompía la alineación del grid de webapps). La description completa sigue viviendo en el `README.md`.
+
+---
+
 ## [2.10.0] - 2026-07-21
 
 ### English
