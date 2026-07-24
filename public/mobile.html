@@ -3231,7 +3231,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
      AIS    = solo iconos de targets en mapa (no afecta a alarmas ni ACKs).
      Tracks = tracks de otros AIS (NO afecta al track del barco propio).
      Alarma = alarmas AIS (delega en setAlarm legacy: cierra popups, ACKs, etc).
-     Click stopPropagation para no colapsar el panel. --><span class="ais-hdr-toggles" onclick="event.stopPropagation()"><label id="ais-hdr-icons-lbl" title="Mostrar/ocultar iconos AIS en el mapa"><input type="checkbox" id="ais-hdr-icons-chk" onchange="m_aisHdrToggleIcons(this.checked)"><span data-i18n="ais_hdr_icons">AIS</span></label><label id="ais-hdr-tracks-lbl" title="Mostrar/ocultar tracks de otros AIS (no afecta al propio)"><input type="checkbox" id="ais-hdr-tracks-chk" onchange="m_aisHdrToggleTracks(this.checked)"><span data-i18n="ais_hdr_tracks">Tracks</span></label><label id="ais-hdr-alarm-lbl" title="Activar/desactivar alarmas de proximidad AIS"><input type="checkbox" id="ais-hdr-alarm-chk" onchange="m_aisHdrToggleAlarm(this.checked)"><span data-i18n="ais_hdr_alarm">Alarma</span></label></span></h5><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_radio_lbl">Radio:</span><input type="range" id="ais-radius-slider" min="0.5" max="100" step="0.5" value="5" style="flex:1" oninput="_setAisRadius(this.value)"><span id="ais-radius-val" style="min-width:60px;text-align:right;font-weight:700;color:#fff">5 km</span></div><!-- Rev400: linea de ordenar+filtro mitad/mitad del ancho. --><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_sort_lbl" style="flex:0 0 auto">Ordenar:</span><select id="ais-sort-by" onchange="_setAisSort(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"><option value="dist" data-i18n="ais_sort_dist">Distancia</option><option value="name" data-i18n="ais_sort_name">Nombre</option><option value="fav" data-i18n="ais_sort_fav">Favoritos</option><option value="mmsi" data-i18n="ais_sort_mmsi">MMSI</option><option value="type" data-i18n="ais_sort_type">Tipo</option></select><input type="text" id="ais-filter-txt" placeholder="🔎" data-i18n-placeholder="ais_filter_ph" oninput="_setAisFilter(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"></div></div><div id="ais-alarm-list"></div></div>
+     Click stopPropagation para no colapsar el panel. --><span class="ais-hdr-toggles" onclick="event.stopPropagation()"><label id="ais-hdr-icons-lbl" title="Mostrar/ocultar iconos AIS en el mapa"><input type="checkbox" id="ais-hdr-icons-chk" onchange="m_aisHdrToggleIcons(this.checked)"><span data-i18n="ais_hdr_icons">AIS</span></label><label id="ais-hdr-anchors-lbl" title="Mostrar/ocultar círculos de fondeo estimado de otros vessels"><input type="checkbox" id="ais-hdr-anchors-chk" onchange="m_aisHdrToggleAnchorEst(this.checked)"><span data-i18n="ais_hdr_anchors">Fondeos</span></label><label id="ais-hdr-alarm-lbl" title="Activar/desactivar alarmas de proximidad AIS"><input type="checkbox" id="ais-hdr-alarm-chk" onchange="m_aisHdrToggleAlarm(this.checked)"><span data-i18n="ais_hdr_alarm">Alarma</span></label></span></h5><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_radio_lbl">Radio:</span><input type="range" id="ais-radius-slider" min="0.5" max="100" step="0.5" value="5" style="flex:1" oninput="_setAisRadius(this.value)"><span id="ais-radius-val" style="min-width:60px;text-align:right;font-weight:700;color:#fff">5 km</span></div><!-- Rev400: linea de ordenar+filtro mitad/mitad del ancho. --><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_sort_lbl" style="flex:0 0 auto">Ordenar:</span><select id="ais-sort-by" onchange="_setAisSort(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"><option value="dist" data-i18n="ais_sort_dist">Distancia</option><option value="name" data-i18n="ais_sort_name">Nombre</option><option value="fav" data-i18n="ais_sort_fav">Favoritos</option><option value="mmsi" data-i18n="ais_sort_mmsi">MMSI</option><option value="type" data-i18n="ais_sort_type">Tipo</option></select><input type="text" id="ais-filter-txt" placeholder="🔎" data-i18n-placeholder="ais_filter_ph" oninput="_setAisFilter(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"></div></div><div id="ais-alarm-list"></div></div>
 <div class="popup-overlay" id="levar-confirm-pop" onclick="closePopup('levar-confirm-pop')">
   <div class="popup-box" onclick="event.stopPropagation()" style="min-width:300px;text-align:center">
     <h4 style="font-size:18px"data-i18n="levar_titulo">⚓ Levar ancla</h4>
@@ -6000,7 +6000,10 @@ var _i18n={
      AIS = iconos, Tracks = tracks otros, Alarma = alarmas proximidad. */
   ais_hdr_icons:{es:'AIS',en:'AIS'},
   ais_hdr_tracks:{es:'Tracks',en:'Tracks'},
-  ais_hdr_alarm:{es:'Alarma',en:'Alarm'},
+  /* Rev768: nuevo toggle "Fondeos" (círculos naranja de ancla estimada
+     de otros vessels). Reemplaza al viejo "Tracks" en la cabecera del
+     panel AIS — los tracks ahora son automáticos por selección. */
+  ais_hdr_anchors:{es:'Fondeos',en:'Anchors'},
   ais_radio_lbl:{es:'Radio:',en:'Radius:'},
   ais_sort_lbl:{es:'Ordenar:',en:'Sort by:'},
   ais_sort_dist:{es:'Distancia',en:'Distance'},
@@ -6302,7 +6305,11 @@ var aisAlarmEnabled=localStorage.getItem('ihm-ais-alarm')==='1';
    - aisTracksEnabled: tracks de otros AIS (aisTrackGroup). NO toca al barco propio.
    - aisAlarmEnabled : alarmas de proximidad (ya existia, delega en setAlarm legacy). */
 var aisIconsEnabled =localStorage.getItem('ihm-ais-icons')!=='0';   /* default ON */
-var aisTracksEnabled=localStorage.getItem('ihm-ais-tracks')!=='0';  /* default ON */
+var aisTracksEnabled=localStorage.getItem('ihm-ais-tracks')!=='0';  /* default ON — kill-switch de emergencia; tracks son automáticos por selección desde Rev768 */
+/* Rev768: nuevo toggle "Fondeos" — muestra círculos naranja de ancla
+   estimada de otros vessels. Reemplaza el guard viejo de d<250m que
+   escondía casi todos. Default ON. */
+var aisAnchorEstShow=localStorage.getItem('ihm-ais-anchor-est')!=='0';
 /* Rev497 (feedback Vicente): pendingChange para que el SSE no pise mi OFF
    inmediato durante los ~5s que tarda el backend en propagar. Sin esto, el
    usuario apaga la alarma, el siguiente state SSE llega con true y vuelve a
@@ -6364,6 +6371,26 @@ function m_aisHdrToggleTracks(on){
   aisTracksEnabled=!!on;
   localStorage.setItem('ihm-ais-tracks',on?'1':'0');
   try{ if(typeof drawAisTracks==='function') drawAisTracks(); }catch(_){}
+  try{ m_aisHdrSyncUI(); }catch(_){}
+}
+/* Rev768: toggle "Fondeos" — muestra círculos naranja de ancla estimada
+   de otros vessels. Igual patrón que Tracks: si AIS (maestro) está OFF,
+   Fondeos tampoco puede activarse. Al desactivar, limpiar el layer. */
+function m_aisHdrToggleAnchorEst(on){
+  if (!aisIconsEnabled) {
+    aisAnchorEstShow = false;
+    try{ localStorage.setItem('ihm-ais-anchor-est','0'); }catch(_){}
+    try{ if(_aisBorneoRings && _aisBorneoRings.clearLayers) _aisBorneoRings.clearLayers(); }catch(_){}
+    try{ m_aisHdrSyncUI(); }catch(_){}
+    return;
+  }
+  aisAnchorEstShow=!!on;
+  localStorage.setItem('ihm-ais-anchor-est',on?'1':'0');
+  /* Si acabamos de apagar, limpiar los rings inmediatamente (el próximo
+     tick de checkAisBorneoAlarm los repintaría igual si sigue on). */
+  if (!aisAnchorEstShow){
+    try{ if(_aisBorneoRings && _aisBorneoRings.clearLayers) _aisBorneoRings.clearLayers(); }catch(_){}
+  }
   try{ m_aisHdrSyncUI(); }catch(_){}
 }
 function m_aisHdrToggleAlarm(on){
@@ -6440,11 +6467,18 @@ function m_aisHdrSyncUI(){
     var ci=document.getElementById('ais-hdr-icons-chk');
     var ct=document.getElementById('ais-hdr-tracks-chk');
     var ca=document.getElementById('ais-hdr-alarm-chk');
+    /* Rev768: nuevo checkbox "Fondeos" (reemplaza al viejo Tracks en la
+       cabecera). El id ais-hdr-tracks-chk ya no existe en el DOM tras
+       Rev768 pero el getElementById devuelve null y no rompe. */
+    var canc=document.getElementById('ais-hdr-anchors-chk');
     var li=document.getElementById('ais-hdr-icons-lbl');
     var lt=document.getElementById('ais-hdr-tracks-lbl');
+    var lanc=document.getElementById('ais-hdr-anchors-lbl');
     var la=document.getElementById('ais-hdr-alarm-lbl');
     if(ci){ci.checked=!!aisIconsEnabled;}
     if(ct){ct.checked=!!aisTracksEnabled;}
+    if(canc){canc.checked=!!aisAnchorEstShow; canc.disabled=!aisIconsEnabled;}
+    if(lanc){lanc.classList.toggle('off',!aisAnchorEstShow);}
     if(ca){ca.checked=!!aisAlarmEnabled;}
     /* Rev612 fix (feedback Carlos: "no sincroniza con tracks AIS en zona"):
        reflejar el estado también en el checkbox del panel Cartas. */
@@ -11625,7 +11659,24 @@ var mk=L.marker([t.lat,t.lng],{icon:mkAisBoatIcon(lenPx,hdgDeg,t.isStatic,t.aisC
       aisLyrGroup.addLayer(mk);
       var mmsi=t.mmsi||'?';
       if(!aisTrackHist[mmsi])aisTrackHist[mmsi]=[];
-      aisTrackHist[mmsi].push({lat:t.lat,lng:t.lng,t:Date.now()});
+      /* Rev769 (feedback Carlos "el barco avanza en un sentido y sale
+         como que va y viene"): dedupe en push. loadAIS() se ejecuta cada
+         POLL=3s y hasta ahora empujaba un punto SIEMPRE, aunque el target
+         no se hubiese movido nada (GPS jitter de un vessel fondeado
+         genera 200 puntos oscilando en 3-5 m). Ahora: si el último punto
+         guardado está a menos de 15 m del nuevo (haversine), NO
+         añadimos — mantiene el track limpio y elimina el "va y viene"
+         visual causado por el jitter. */
+      var _tp=aisTrackHist[mmsi];
+      var _pushOK=true;
+      if(_tp.length){
+        var _lp=_tp[_tp.length-1];
+        try{
+          var _d=hav({lat:_lp.lat,lng:_lp.lng},{lat:t.lat,lng:t.lng});
+          if(_d<15) _pushOK=false;
+        }catch(_){}
+      }
+      if(_pushOK) _tp.push({lat:t.lat,lng:t.lng,t:Date.now()});
       /* TTL prune: if oldest point is > 30 min, drop stale tail */
       var _trkTtlCut=Date.now()-30*60000;
       if(aisTrackHist[mmsi].length>0&&aisTrackHist[mmsi][0].t<_trkTtlCut){
@@ -11667,52 +11718,41 @@ var mk=L.marker([t.lat,t.lng],{icon:mkAisBoatIcon(lenPx,hdgDeg,t.isStatic,t.aisC
 function drawAisTracks(){
   aisTrackGroup.clearLayers();
   if(!bPos)return;
-  /* Rev493 (feedback Vicente): toggle "Tracks" del panel AIS. Si esta OFF,
-     limpiamos el layer y no pintamos nada. El track propio del barco vive en
-     otro layer (anchorWatch.trackPoints / variable track) y NO se ve afectado. */
+  /* Rev768 (feedback Carlos "Auto: track visible solo si el target está
+     seleccionado"): abandonamos el toggle masivo (aisTracksEnabled sigue
+     como kill-switch de emergencia para debug, pero el default es SOLO
+     mostrar el track del target seleccionado). Elimina la saturación
+     visual cuando hay 10-20 vessels cerca — antes se dibujaban todos
+     sus tracks a <500 m. */
   if(aisTracksEnabled===false)return;
-  /* Skip "ghost tracks": targets that haven't transmitted in the last 5 min.
-     This is the fix for the "tracks aparecen al reiniciar SK antes que los
-     targets" issue — without fresh data, the track shouldn't render. */
-  /* Rev498 (feedback Vicente): tiempo de track AIS de otros targets subido de
-     5 a 10 minutos. Si el target sigue sin transmitir tras 10 min, su track
-     se considera fantasma y no se pinta. */
+  if(!_selectedAisMmsi) return;  // sin selección → 0 tracks
   var staleCut=Date.now()-10*60000;
   for(var mmsi in aisTrackHist){
     var pts=aisTrackHist[mmsi];
     if(pts.length<2)continue;
     var last=pts[pts.length-1];
     if(last.t<staleCut)continue; /* stale -> ghost track */
-    /* Rev401: el target SELECCIONADO siempre tiene track aunque este lejos.
-       Los demas se filtran a <500m del barco para no saturar el mapa. */
     var _cleanMmsiForSel=mmsi.replace(/^urn:mrn:imo:mmsi:/,'').replace(/^urn:mrn:signalk:uuid:/,'');
-    var _isSelected=(_selectedAisMmsi && _cleanMmsiForSel===_selectedAisMmsi);
-    if(!_isSelected){
-      var dist=hav(bPos,{lat:last.lat,lng:last.lng});
-      if(dist>500)continue;
-    }
-    /* Rev401: segmentado robusto que GARANTIZA incluir el ultimo punto (antes
-       el redondeo de step podia dejar el ultimo punto fuera del ultimo
-       segmento). Usamos rangos calculados con ceil para cubrir todo el array. */
-    var n=pts.length,segs=Math.min(20,Math.max(2,Math.floor(n/2)));
-    for(var i=0;i<segs;i++){
-      var s=Math.floor(i*n/segs);
-      var e=Math.floor((i+1)*n/segs);
-      /* solapamos con el siguiente segmento por 1 punto para que las lineas
-         no tengan gaps; en el ultimo segmento aseguramos llegar a n. */
-      if(i<segs-1) e=Math.min(e+1,n);
-      else e=n;
-      var lls=[];for(var j=s;j<e;j++)lls.push([pts[j].lat,pts[j].lng]);
-      if(lls.length<2)continue;
-      var frac=i/(segs-1||1);
-      var cr=Math.round(220*(1-frac)+255*frac);
-      var cg=Math.round(80*(1-frac)+235*frac);
-      var cb=Math.round(80*(1-frac)+59*frac);
-      /* Rev401: target seleccionado con stroke MAS grueso y opacidad alta. */
-      var col='rgba('+cr+','+cg+','+cb+','+(_isSelected?'.95':((.3+.5*frac).toFixed(2)))+')';
-      var ln=L.polyline(lls,{color:col,weight:_isSelected?3.5:2,opacity:1,dashArray:_isSelected?'':'4,4'});
-      aisTrackGroup.addLayer(ln);
-    }
+    var _isSelected=(_cleanMmsiForSel===_selectedAisMmsi);
+    if(!_isSelected) continue;   // Rev768: solo el seleccionado
+    /* Rev769 (feedback Carlos "va y viene sin sentido"): reemplazado el
+       segmentado en 20 tramos con overlap-de-1-punto (Rev401) por UNA
+       sola polyline con TODOS los puntos. El overlap causaba que si dos
+       segmentos consecutivos iban en direcciones opuestas (típico con
+       jitter GPS), visualmente parecía que el track volvía atrás. Con
+       una sola polyline el trazo es limpio y fiel al recorrido real.
+       Combinado con la dedupe-en-push (>=15 m) queda el track sin ruido. */
+    var lls=[];
+    for(var j=0;j<pts.length;j++) lls.push([pts[j].lat,pts[j].lng]);
+    if(lls.length<2) continue;
+    var ln=L.polyline(lls,{color:'#ff9800',weight:3.5,opacity:.9});
+    aisTrackGroup.addLayer(ln);
+    /* Marker discreto en el punto MÁS antiguo (origen del track) para
+       que el usuario vea de dónde viene sin ambigüedad. */
+    var _first=pts[0];
+    aisTrackGroup.addLayer(L.circleMarker([_first.lat,_first.lng],{
+      radius:4,color:'#ff9800',fillColor:'#ff9800',fillOpacity:.9,weight:0,
+    }));
   }
 }
 /* Flag emoji from MMSI MID (first 3 digits = country) */
@@ -11787,6 +11827,9 @@ function _deselectAis(){
   _selectedAisMmsi=null;
   _selectedAisDisappearedAt=null;
   _clearAisHighlight();
+  /* Rev768: al deseleccionar, borrar cualquier track visible ya
+     (drawAisTracks con _selectedAisMmsi=null limpia el layer). */
+  try{ if(typeof drawAisTracks==='function') drawAisTracks(); }catch(_){}
   try{
     var pop=document.getElementById('ais-pop');
     if(pop && pop.classList.contains('open')){
@@ -11817,8 +11860,19 @@ function _addAisHighlight(lat,lng,isBorneo,isAcked,sogKn,isStatic){
               : (isAcked ? '#ff9800' : '#f44336');
   window._aisHighlightWasAcked = !!isAcked;
   window._aisHighlightWasBorneo = !!isBorneo;
-  var c1=L.circle([lat,lng],{radius:25,color:hlColor,fillColor:hlColor,fillOpacity:0.08,weight:3,dashArray:'8,4'}).addTo(map);
-  var c2=L.circle([lat,lng],{radius:10,color:hlColor,fillColor:hlColor,fillOpacity:0.15,weight:2}).addTo(map);
+  /* Rev770 (feedback Carlos "sigo con dos aros"): si el toggle Fondeos
+     está ON, el aro naranja/rojo de estimateAnchor ya marca visualmente
+     el target — no necesitamos ADEMÁS los círculos c1 (25m dashed) +
+     c2 (10m sólido) del highlight aquí. Los omitimos para eliminar la
+     redundancia visual reportada. Mantenemos c3 (puntito) + c4 (X
+     clickable) + c5 (label distancia), que siguen siendo útiles. Si
+     Fondeos está OFF, comportamiento previo (aros + puntito). */
+  var _hideAros = (typeof aisAnchorEstShow !== 'undefined' && aisAnchorEstShow === true);
+  var c1=null, c2=null;
+  if(!_hideAros){
+    c1=L.circle([lat,lng],{radius:25,color:hlColor,fillColor:hlColor,fillOpacity:0.08,weight:3,dashArray:'8,4'}).addTo(map);
+    c2=L.circle([lat,lng],{radius:10,color:hlColor,fillColor:hlColor,fillOpacity:0.15,weight:2}).addTo(map);
+  }
   var c3=L.circleMarker([lat,lng],{radius:4,color:hlColor,fillColor:hlColor,fillOpacity:1,weight:0}).addTo(map);
   /* Rev396: X clickable sobre el aro para deseleccionar el target. */
   var xIco=L.divIcon({
@@ -11846,7 +11900,8 @@ function _addAisHighlight(lat,lng,isBorneo,isAcked,sogKn,isStatic){
   });
   var c5=L.marker([lat,lng],{icon:distIco,zIndexOffset:1999,interactive:false});
   c5.addTo(map);
-  window._aisHighlight=[c1,c2,c3,c4,c5];
+  /* Rev770: filtrar los null (c1/c2 pueden estar omitidos por _hideAros). */
+  window._aisHighlight=[c1,c2,c3,c4,c5].filter(function(x){return x!=null;});
 }
 function _showAisDisappearedBanner(ts){
   var pop=document.getElementById('ais-pop');
@@ -11873,8 +11928,14 @@ function _clearAisDisappearedBanner(){
 }
 function showAisPopup(t,isBorneo){
   var cleanMmsi=(t.mmsi||'').replace(/^urn:mrn:imo:mmsi:/,'').replace(/^urn:mrn:signalk:uuid:/,'');
+  var _wasSelected=_selectedAisMmsi;
   _selectedAisMmsi=cleanMmsi;
   _selectedAisDisappearedAt=null;
+  /* Rev768: al seleccionar (o cambiar de target), redibujar tracks para
+     que el nuevo track aparezca inmediato sin esperar loadAIS. */
+  if(_wasSelected !== cleanMmsi){
+    try{ if(typeof drawAisTracks==='function') drawAisTracks(); }catch(_){}
+  }
   /* Rev450 BUG AIS-2: guardar refs para poder re-renderizar el popup
      cuando cambia el sistema de unidades (m_applyUnitsToUI). */
   window._selectedAisPopupTarget = t;
@@ -12415,20 +12476,37 @@ function checkAisBorneoAlarm(targets){
         borneoAll++;
         if(acked)ackedCount++;
         else borneoUnacked.push({target:t,dist:d,cleanMmsi:cleanMmsi});
-        if(_aisBorneoRings){
-          var ringCol=acked?'rgba(255,152,0,.6)':'#ff1744';
-          _aisBorneoRings.addLayer(L.circle([t.lat,t.lng],{radius:25,color:ringCol,fillColor:ringCol,fillOpacity:0.06,weight:acked?2:3,dashArray:'8,4'}));
-        }
       }
-      /* Rev626 (feedback Carlos: "solo AIS en nuestra área de 250m alrededor
-         nuestra"): guard espacial. La estimación de ancla ajena solo se
-         calcula/pinta si el target está a menos de 250 m del barco propio.
-         Evita ruido visual y trabajo CPU en zonas con muchos AIS lejanos. */
-      if(d < 250){
+      /* Rev769 (feedback Carlos "el aro que salga siempre debe ser el
+         estimado de radio, un solo color un solo tipo de aro"): UN solo
+         aro por target — el fondeo estimado real (estimateAnchor), con
+         COLOR según estado, en vez de dos aros superpuestos. Antes
+         convivían un aro rojo fijo de 25 m en t.lat/t.lng (marker de
+         "en borneo") y un aro grande naranja de est.radius en la
+         posición estimada del ancla. Ahora solo este último, pintado
+         si aisAnchorEstShow=true (para TODOS los vessels en el radio
+         AIS, no solo los que están en zona borneo), con color:
+           - rojo (#ff1744) si el vessel está en zona borneo unacked.
+           - naranja tenue (rgba(255,152,0,.75)) si borneo ACKed.
+           - naranja normal (#ff9800) si fuera de zona (info pura). */
+      if(aisAnchorEstShow){
         var est=estimateAnchor(t);
         if(est){
-          _aisBorneoRings.addLayer(L.circle([est.lat,est.lng],{radius:est.radius,color:'#ff9800',fillColor:'#ff9800',fillOpacity:0.04,weight:2,dashArray:'6,6'}));
-          _aisBorneoRings.addLayer(L.circleMarker([est.lat,est.lng],{radius:4,color:'#ff9800',fillColor:'#ff9800',fillOpacity:0.9,weight:0}));
+          var _ringCol, _ringWeight, _dash;
+          if(inB && !acked){
+            _ringCol='#ff1744'; _ringWeight=3; _dash='6,6';
+          } else if(inB && acked){
+            _ringCol='rgba(255,152,0,.75)'; _ringWeight=2.5; _dash='6,6';
+          } else {
+            _ringCol='#ff9800'; _ringWeight=2; _dash='6,6';
+          }
+          _aisBorneoRings.addLayer(L.circle([est.lat,est.lng],{
+            radius:est.radius,color:_ringCol,fillColor:_ringCol,
+            fillOpacity:0.05,weight:_ringWeight,dashArray:_dash,
+          }));
+          _aisBorneoRings.addLayer(L.circleMarker([est.lat,est.lng],{
+            radius:4,color:_ringCol,fillColor:_ringCol,fillOpacity:0.9,weight:0,
+          }));
         }
       }
     }
