@@ -6386,8 +6386,11 @@ function m_aisHdrToggleAnchorEst(on){
   }
   aisAnchorEstShow=!!on;
   localStorage.setItem('ihm-ais-anchor-est',on?'1':'0');
-  /* Si acabamos de apagar, limpiar los rings inmediatamente (el próximo
-     tick de checkAisBorneoAlarm los repintaría igual si sigue on). */
+  /* Rev772: el aro del seleccionado (_showAisSelectedAnchor) es
+     independiente del toggle desde Rev772 (solo depende de isStatic).
+     Aquí solo tocamos el layer masivo: al apagar limpiar rings del
+     resto de vessels; el próximo tick de loadAIS/checkAisBorneoAlarm
+     los recrea si volvemos a ON. */
   if (!aisAnchorEstShow){
     try{ if(_aisBorneoRings && _aisBorneoRings.clearLayers) _aisBorneoRings.clearLayers(); }catch(_){}
   }
@@ -7236,17 +7239,13 @@ function cyclePanelMode(){
 }
 function closePopup(id){
   document.getElementById(id).classList.remove('open');
-  /* Rev630: al cerrar el popup individual de AIS, limpiar la capa del
-     fondeo estimado del target seleccionado.
-     Rev631 (feedback Carlos: "al cerrar el popup queda el rojo de estar
-     seleccionado"): limpiamos también el highlight (aro rojo/naranja) —
-     el usuario cerró el popup, no debe quedar aro persistente. */
-  if(id==='ais-pop'){
-    try{ _clearAisSelectedAnchor(); }catch(_){}
-    try{ if(typeof _clearAisHighlight==='function') _clearAisHighlight(); }catch(_){}
-    _selectedAisMmsi=null;
-    _selectedAisDisappearedAt=null;
-  }
+  /* Rev773 (feedback Carlos "cerrar popup no debiera deseleccionar el
+     target en la carta"): eliminado el cleanup de Rev631 que aquí
+     limpiaba _selectedAisMmsi + highlight + aro fondeo al cerrar
+     ais-pop. Contradecía Rev400 (que ya decía "no limpiar al cerrar
+     popup"). Ahora: cerrar popup solo cierra popup. La selección, el
+     aro y el track persisten. Deseleccionar es EXPLÍCITO con la X
+     clickable que aparece sobre el target. */
   /* Rev647: si cerrábamos Windy desde el header inyectado (Atrás naranja),
      reabrir el chooser si el usuario había llegado por esa ruta. */
   if(id==='windy-pop' && window._windyFromChooser){
@@ -11659,24 +11658,16 @@ var mk=L.marker([t.lat,t.lng],{icon:mkAisBoatIcon(lenPx,hdgDeg,t.isStatic,t.aisC
       aisLyrGroup.addLayer(mk);
       var mmsi=t.mmsi||'?';
       if(!aisTrackHist[mmsi])aisTrackHist[mmsi]=[];
-      /* Rev769 (feedback Carlos "el barco avanza en un sentido y sale
-         como que va y viene"): dedupe en push. loadAIS() se ejecuta cada
-         POLL=3s y hasta ahora empujaba un punto SIEMPRE, aunque el target
-         no se hubiese movido nada (GPS jitter de un vessel fondeado
-         genera 200 puntos oscilando en 3-5 m). Ahora: si el último punto
-         guardado está a menos de 15 m del nuevo (haversine), NO
-         añadimos — mantiene el track limpio y elimina el "va y viene"
-         visual causado por el jitter. */
-      var _tp=aisTrackHist[mmsi];
-      var _pushOK=true;
-      if(_tp.length){
-        var _lp=_tp[_tp.length-1];
-        try{
-          var _d=hav({lat:_lp.lat,lng:_lp.lng},{lat:t.lat,lng:t.lng});
-          if(_d<15) _pushOK=false;
-        }catch(_){}
-      }
-      if(_pushOK) _tp.push({lat:t.lat,lng:t.lng,t:Date.now()});
+      /* Rev774: eliminado el dedupe de 15 m que introduje en Rev769. Era
+         demasiado agresivo — un vessel fondeado con jitter GPS típico
+         (5-10 m) nunca acumulaba puntos → aisTrackHist se quedaba en
+         1 punto → drawAisTracks no dibujaba (needs ≥2) Y estimateAnchor
+         devolvía null (needs ≥4) → sin track ni aro. El "va y viene"
+         real que reportó Carlos se arregló al simplificar la polyline
+         a una sola sin segmentación con overlap (también en Rev769);
+         el dedupe era añadido innecesario. Push sin filtro como en el
+         comportamiento original. */
+      aisTrackHist[mmsi].push({lat:t.lat,lng:t.lng,t:Date.now()});
       /* TTL prune: if oldest point is > 30 min, drop stale tail */
       var _trkTtlCut=Date.now()-30*60000;
       if(aisTrackHist[mmsi].length>0&&aisTrackHist[mmsi][0].t<_trkTtlCut){
@@ -11860,20 +11851,17 @@ function _addAisHighlight(lat,lng,isBorneo,isAcked,sogKn,isStatic){
               : (isAcked ? '#ff9800' : '#f44336');
   window._aisHighlightWasAcked = !!isAcked;
   window._aisHighlightWasBorneo = !!isBorneo;
-  /* Rev770 (feedback Carlos "sigo con dos aros"): si el toggle Fondeos
-     está ON, el aro naranja/rojo de estimateAnchor ya marca visualmente
-     el target — no necesitamos ADEMÁS los círculos c1 (25m dashed) +
-     c2 (10m sólido) del highlight aquí. Los omitimos para eliminar la
-     redundancia visual reportada. Mantenemos c3 (puntito) + c4 (X
-     clickable) + c5 (label distancia), que siguen siendo útiles. Si
-     Fondeos está OFF, comportamiento previo (aros + puntito). */
-  var _hideAros = (typeof aisAnchorEstShow !== 'undefined' && aisAnchorEstShow === true);
+  /* Rev772 (feedback Carlos "cargaste la lógica, sigo viendo doble"):
+     eliminamos SIEMPRE los círculos c1 (25 m dashed) + c2 (10 m sólido)
+     que venían del legacy Rev616. Duplicaban visualmente con el aro de
+     fondeo estimado individual (_showAisSelectedAnchor) o el global de
+     checkAisBorneoAlarm. La marca de "seleccionado" ahora es
+     minimalista: puntito rojo (c3) + X clickable (c4) + label distancia
+     (c5). Si el target está fondeado, además su aro naranja (pintado
+     por _showAisSelectedAnchor). Si en movimiento, solo puntito + X +
+     label + track. */
   var c1=null, c2=null;
-  if(!_hideAros){
-    c1=L.circle([lat,lng],{radius:25,color:hlColor,fillColor:hlColor,fillOpacity:0.08,weight:3,dashArray:'8,4'}).addTo(map);
-    c2=L.circle([lat,lng],{radius:10,color:hlColor,fillColor:hlColor,fillOpacity:0.15,weight:2}).addTo(map);
-  }
-  var c3=L.circleMarker([lat,lng],{radius:4,color:hlColor,fillColor:hlColor,fillOpacity:1,weight:0}).addTo(map);
+  var c3=L.circleMarker([lat,lng],{radius:6,color:hlColor,fillColor:hlColor,fillOpacity:1,weight:2}).addTo(map);
   /* Rev396: X clickable sobre el aro para deseleccionar el target. */
   var xIco=L.divIcon({
     html:'<div style="position:relative;width:0;height:0"><div style="position:absolute;left:24px;top:-44px;width:32px;height:32px;border-radius:50%;background:rgba(20,40,60,.92);border:2px solid '+hlColor+';color:'+hlColor+';font-weight:900;font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.7);line-height:1;user-select:none" title="Deseleccionar">✕</div></div>',
@@ -12218,6 +12206,22 @@ function _clearAisSelectedAnchor(){
 function _showAisSelectedAnchor(t){
   _clearAisSelectedAnchor();
   if(!t || typeof map==='undefined' || !map) return;
+  /* Rev772 (feedback Carlos "si el target está fondeado track + aro con
+     su radio de borneo; si está en movimiento solo su track"): pintar
+     aro SOLO si el target está fondeado (isStatic o SOG<0.5 kn). En
+     movimiento no tiene sentido un radio de borneo → sin aro.
+     Independiente del toggle Fondeos: si aisAnchorEstShow=true el aro
+     global de checkAisBorneoAlarm se solaparía con éste, por eso el
+     bucle masivo excluye al seleccionado (ver Rev772 en el guard de
+     checkAisBorneoAlarm). Así siempre hay 1 solo aro por vessel. */
+  /* Rev773 fix: t.sog llega del backend YA en knots (ver src/index.ts
+     endpoint /api/anchor-watch/ais, línea sog: sog*1.94384). Antes
+     multiplicábamos otra vez → target con SOG 0.3 kn real pasaba a
+     0.58 → considerado "en movimiento" → NO aro. Bug del 100% de los
+     casos "fondeado pero sale sin aro" que Carlos reportó. */
+  var _sogKnT = (typeof t.sog === 'number') ? t.sog : 0;
+  var _isStaticT = !!(t.isStatic || _sogKnT < 0.5);
+  if(!_isStaticT) return; // en movimiento → sin aro (solo track)
   var est=estimateAnchor(t);
   if(!est) return;
   var grp=L.layerGroup();
@@ -12477,36 +12481,35 @@ function checkAisBorneoAlarm(targets){
         if(acked)ackedCount++;
         else borneoUnacked.push({target:t,dist:d,cleanMmsi:cleanMmsi});
       }
-      /* Rev769 (feedback Carlos "el aro que salga siempre debe ser el
-         estimado de radio, un solo color un solo tipo de aro"): UN solo
-         aro por target — el fondeo estimado real (estimateAnchor), con
-         COLOR según estado, en vez de dos aros superpuestos. Antes
-         convivían un aro rojo fijo de 25 m en t.lat/t.lng (marker de
-         "en borneo") y un aro grande naranja de est.radius en la
-         posición estimada del ancla. Ahora solo este último, pintado
-         si aisAnchorEstShow=true (para TODOS los vessels en el radio
-         AIS, no solo los que están en zona borneo), con color:
-           - rojo (#ff1744) si el vessel está en zona borneo unacked.
-           - naranja tenue (rgba(255,152,0,.75)) si borneo ACKed.
-           - naranja normal (#ff9800) si fuera de zona (info pura). */
+      /* Rev772 (redesign completo tras feedback Carlos):
+         Layer global de fondeos estimados = solo vessels FONDEADOS
+         (isStatic o SOG<0.5 kn) y que NO sean el seleccionado (para no
+         duplicar con _showAisSelectedAnchor que pinta el suyo). Los
+         vessels en movimiento no tienen "radio de borneo" sensato →
+         nunca aro para ellos aquí. Color según estado en borneo. */
       if(aisAnchorEstShow){
-        var est=estimateAnchor(t);
-        if(est){
-          var _ringCol, _ringWeight, _dash;
-          if(inB && !acked){
-            _ringCol='#ff1744'; _ringWeight=3; _dash='6,6';
-          } else if(inB && acked){
-            _ringCol='rgba(255,152,0,.75)'; _ringWeight=2.5; _dash='6,6';
-          } else {
-            _ringCol='#ff9800'; _ringWeight=2; _dash='6,6';
+        var _isSelectedT = (_selectedAisMmsi && cleanMmsi === _selectedAisMmsi);
+        var _sogKnT = (typeof t.sog === 'number') ? t.sog : 0;
+        var _isStaticT = !!(t.isStatic || _sogKnT < 0.5);
+        if(_isStaticT && !_isSelectedT){
+          var est=estimateAnchor(t);
+          if(est){
+            var _ringCol, _ringWeight, _dash;
+            if(inB && !acked){
+              _ringCol='#ff1744'; _ringWeight=3; _dash='6,6';
+            } else if(inB && acked){
+              _ringCol='rgba(255,152,0,.75)'; _ringWeight=2.5; _dash='6,6';
+            } else {
+              _ringCol='#ff9800'; _ringWeight=2; _dash='6,6';
+            }
+            _aisBorneoRings.addLayer(L.circle([est.lat,est.lng],{
+              radius:est.radius,color:_ringCol,fillColor:_ringCol,
+              fillOpacity:0.05,weight:_ringWeight,dashArray:_dash,
+            }));
+            _aisBorneoRings.addLayer(L.circleMarker([est.lat,est.lng],{
+              radius:4,color:_ringCol,fillColor:_ringCol,fillOpacity:0.9,weight:0,
+            }));
           }
-          _aisBorneoRings.addLayer(L.circle([est.lat,est.lng],{
-            radius:est.radius,color:_ringCol,fillColor:_ringCol,
-            fillOpacity:0.05,weight:_ringWeight,dashArray:_dash,
-          }));
-          _aisBorneoRings.addLayer(L.circleMarker([est.lat,est.lng],{
-            radius:4,color:_ringCol,fillColor:_ringCol,fillOpacity:0.9,weight:0,
-          }));
         }
       }
     }

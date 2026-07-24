@@ -1,6 +1,6 @@
 {
   "name": "signalk-mareas-ihm",
-  "version": "2.10.1",
+  "version": "2.10.2",
   "description": "Anchor watch + AIS anti-collision (triple online: aisstream/aishub/aisfriends) + shelter forecast + worldwide tides + on-board IMU waves for Signal K. Setup wizard, multi-user PIN, multi-layer charts. Runs on OpenPlotter / Raspberry Pi.",
   "type": "module",
   "main": "./dist/index.js",

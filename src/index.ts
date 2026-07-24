@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev771";
+const PLUGIN_REVISION = "Rev775";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -6222,6 +6222,18 @@ function bearingRad(lat1: number, lon1: number, lat2: number, lon2: number): num
   return (θ + 2 * Math.PI) % (2 * Math.PI);
 }
 
+// Rev775 (feedback Pablo: "publicáis navigation.anchor.position=null
+// cada 6 s → autostate interpreta cada delta null como 'acaban de
+// levar el ancla' y mi barco pasa de 'amarrado' a 'navegando' cada
+// 6 s"). Semántica canónica SK correcta: emitir position al fondear,
+// null UNA vez al levar, después silencio. Este flag rastrea el
+// último estado publicado para evitar re-emitir null cíclicamente
+// desde el tick de evaluateAnchorWatch.
+//   null → aún no hemos emitido nada tras arranque
+//   "on"  → última publicación fue anchored (con position)
+//   "off" → última publicación fue lift (position=null, state=off)
+let _canonicalAnchorStateEmitted: "on" | "off" | null = null;
+
 // Rev721: valores canónicos para publicar al LEVAR el ancla — apaga
 // state y limpia los datos que otras apps del ecosistema muestran.
 // Coherente con lo que hacen Hoekens, Y2K, Whilm et al. al lift.
@@ -7517,6 +7529,7 @@ async function _autoLiftAnchorIntentional(sogKt: number) {
     const d: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: clearValues as any }] };
     app.handleMessage(plugin.id, d);
+    _canonicalAnchorStateEmitted = "off"; // Rev775: no re-emitir null cíclico
     // Notificacion explicita del auto-lift.
     const msg = `Auto-lift: SOG ${sogKt.toFixed(1)} kn sostenido (salida motorizada asumida)`;
     const notifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
@@ -7630,16 +7643,24 @@ function evaluateAnchorWatch() {
   // === STAGE 2: Anchor watch logic (only when anchored & enabled) ===
   if (!anchorWatch.anchored || !anchorWatch.anchorPosition || !anchorWatch.enabled) {
     if (anchorDragAlarmActive) { clearDragAlarm(); }
-    // Publish watchEnabled=false and clear command paths when not anchored
+    // Publish watchEnabled=false and clear command paths when not anchored.
+    // Rev775 (feedback Pablo — autostate roto por null cíclico): los canónicos
+    // navigation.anchor.* SOLO se emiten en la TRANSICIÓN anchored→lift,
+    // no en cada tick. Los internos environment.anchor.mareasIhm.* sí
+    // van cada tick porque son nuestros (nadie fuera los consume).
     try {
-      const clearValues = [
+      const clearValues: Array<{ path: Path; value: any }> = [
         { path: "environment.anchor.mareasIhm.watchEnabled" as Path, value: false },
         { path: "environment.anchor.mareasIhm.anchorCommand" as Path, value: false },
         { path: "environment.anchor.mareasIhm.garreoAlarmCommand" as Path, value: false },
         { path: "environment.anchor.mareasIhm.aisAlarmCommand" as Path, value: false },
-        // Rev721: canónicos SK off cuando no estamos vigilando (interop).
-        ...canonicalAnchorClearValues(),
       ];
+      if (_canonicalAnchorStateEmitted !== "off") {
+        for (const v of canonicalAnchorClearValues()) {
+          clearValues.push({ path: v.path as Path, value: v.value });
+        }
+        _canonicalAnchorStateEmitted = "off";
+      }
       const d: Delta = { context: ("vessels." + app.selfId) as Context,
         updates: [{ timestamp: new Date().toISOString() as Timestamp, values: clearValues as any }] };
       app.handleMessage(plugin.id, d);
@@ -7987,6 +8008,10 @@ function evaluateAnchorWatch() {
           watchValues.push({ path: "navigation.anchor.apparentBearing" as Path, value: appB as any });
         }
       }
+      // Rev775: marcar estado emitido "on" para que la próxima transición
+      // a not-anchored dispare canonicalAnchorClearValues() (position=null
+      // + state=off) UNA sola vez, no cíclicamente.
+      _canonicalAnchorStateEmitted = "on";
     } catch (e: any) { app.debug(`[IHM] canonical anchor publish failed: ${e?.message ?? e}`); }
 
     // Rev733: resolución de cadena desplegada con prioridad
@@ -13627,6 +13652,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", requireControlAcces
     const d: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: clearValues as any }] };
     app.handleMessage(plugin.id, d);
+    _canonicalAnchorStateEmitted = "off"; // Rev775: no re-emitir null cíclico
     // Clear notifications
     const notifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [
@@ -13886,6 +13912,7 @@ try {
               ...canonicalAnchorClearValues(),
             ] as any}] };
           app.handleMessage(plugin.id, clearDelta);
+          _canonicalAnchorStateEmitted = "off"; // Rev775
           const notifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
             updates: [{ timestamp: ts, values: [
               { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: "Anchor lifted" } },

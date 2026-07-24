@@ -1,5 +1,41 @@
 # Changelog
 
+## [2.10.2] - 2026-07-24
+
+### English
+
+**Fix: `navigation.anchor.position=null` was emitted every 6 s (broke autostate) + AIS UI redesign (single ring per vessel, auto-track on selection)**
+
+Patch release. Two independent user-facing fixes.
+
+- **Canonical anchor paths only emitted on state transitions** (bug reported by Pablo). Until 2.10.1, `evaluateAnchorWatch` re-emitted `navigation.anchor.position=null` + `navigation.anchor.state="off"` on every tick (~ every 6 s) whenever the boat was not anchored. `@meri-imperiumi/signalk-autostate` (and any other subscriber) interpreted each `null` delta as an "anchor just lifted" event, causing the boat state to flip from "moored" to "underway" every 6 s. Now the canonical paths are published exactly once per state transition: at drop with position + state="on", at lift with position=null + state="off", then silence. Internal `environment.anchor.mareasIhm.*` paths keep their cyclic emission (no external consumer, no problem).
+- **AIS selection UI redesigned** (feedback from Carlos: "el aro que salga siempre debe ser el estimado de radio, un solo color un solo tipo de aro"). Complete rework:
+  - **Tracks are automatic on selection**. No more global toggle for the mass. Select a vessel (click marker, click list row, Locate) → its track appears as one clean orange polyline (no more segmentation-with-overlap artefacts that looked like the boat was going back and forth). Deselect with the X marker on the target → track disappears. Only 1 track at a time, never 15.
+  - **Single ring per vessel**. Anchored vessels show one dashed orange ring (their estimated swing radius from track P90 + LOA), coloured red if inside your alarm radius, dim orange if ACKed, orange otherwise. Vessels underway show no ring (they don't have a swing circle) — only their track when selected. No more overlapping red-highlight + orange-anchor rings.
+  - **New "Fondeos" toggle** in the AIS panel header replaces the old "Tracks" toggle. When ON: shows anchor rings for ALL anchored vessels in the AIS radius. When OFF: only shows the ring of the selected vessel.
+  - **Closing the popup no longer deselects the target**. The vessel stays highlighted in the chart (X + label + track + ring) so you can keep it in view without keeping the popup open. Deselecting is explicit via the X marker on the target.
+
+Related refs: closes reports from Pablo (autostate breakage) and Carlos QA over Rev768-Rev775.
+
+---
+
+### Español
+
+**Fix: `navigation.anchor.position=null` se emitía cada 6 s (rompía autostate) + rediseño UI de AIS (un solo aro por vessel, track automático al seleccionar)**
+
+Release de patch. Dos fixes independientes visibles al usuario.
+
+- **Paths canónicos del ancla solo se emiten en transiciones de estado** (bug reportado por Pablo). Hasta la 2.10.1, `evaluateAnchorWatch` re-emitía `navigation.anchor.position=null` + `navigation.anchor.state="off"` en cada tick (~cada 6 s) mientras el barco no estuviera fondeado. `@meri-imperiumi/signalk-autostate` (y cualquier otro suscriptor) interpretaba cada delta `null` como un evento "acaban de levar" y el estado del barco pasaba de "amarrado" a "navegando" cada 6 s. Ahora los canónicos se publican exactamente UNA vez por transición: al fondear con posición + state="on", al levar con position=null + state="off", después silencio. Los internos `environment.anchor.mareasIhm.*` mantienen su emisión cíclica (nadie de fuera los consume, sin problema).
+- **UI de selección AIS rediseñada** (feedback Carlos: "el aro que salga siempre debe ser el estimado de radio, un solo color un solo tipo de aro"). Rework completo:
+  - **Los tracks son automáticos al seleccionar**. Se retira el toggle global para el conjunto. Seleccionas un vessel (click en marker, click en fila del listado, Localizar) → aparece SU track como una única polyline naranja limpia (se acabaron los artefactos de segmentación-con-solape que parecían que el barco iba y venía). Deseleccionar con la X sobre el target → el track desaparece. Solo 1 track a la vez, nunca 15.
+  - **Un solo aro por vessel**. Los vessels fondeados muestran un único aro naranja discontinuo (su radio de borneo estimado a partir del P90 del track + eslora), rojo si están dentro de tu radio de alarma, naranja tenue si están ACKed, naranja normal si no. Los vessels en movimiento no muestran aro (no tienen círculo de borneo) — solo su track al seleccionar. Se acaban los aros superpuestos rojo-highlight + naranja-fondeo.
+  - **Nuevo toggle "Fondeos"** en la cabecera del panel AIS reemplaza al viejo "Tracks". Con ON: muestra aros de fondeo de TODOS los vessels fondeados dentro del radio AIS. Con OFF: solo muestra el aro del vessel seleccionado.
+  - **Cerrar el popup ya no deselecciona el target**. El vessel se queda marcado en la carta (X + label + track + aro) para que puedas seguir viéndolo sin necesidad de mantener el popup abierto. Deseleccionar es explícito con la X sobre el target.
+
+Referencias: cierra el reporte de Pablo (autostate roto) y el QA de Carlos a lo largo de Rev768-Rev775.
+
+---
+
 ## [2.10.1] - 2026-07-24
 
 ### English
