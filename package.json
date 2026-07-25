@@ -127,7 +127,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@signalk/server-api": "^2.0.0",
-    "better-sqlite3": "^11.0.0",
+    "better-sqlite3": "^13.0.1",
     "leaflet": "^1.9.4",
     "moment-timezone": "^0.6.2",
     "neaps": "^0.7.0",
