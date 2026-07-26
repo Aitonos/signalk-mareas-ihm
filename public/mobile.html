@@ -9865,6 +9865,25 @@ setInterval(_refreshEnvSensors,10000);
    ola de la rosa (+ futuras integraciones en visor y wx-bar). Sin altura — eso
    llegará en Fase 2 con la integración doble de navigation.acceleration.z. */
 var _boatWave=null;
+/* Rev777 (fix issue #27 + feedback Carlos "que ambos usen el mismo
+   recurso"): helper único para calcular la dirección efectiva del
+   oleaje. Fuentes en orden de prioridad:
+     1) IMU medido del barco (_boatWave.dirFromDeg) — solo si el motor
+        VALIDÓ (dirFromDeg es un número, no null). Cuando el motor
+        rechaza por noMotion/periodOutOfRange, el endpoint devuelve
+        dirFromDeg:null y NO debemos pisar Open-Meteo con null.
+     2) Open-Meteo del forecast (h.waveDirDeg) — solo si hay altura
+        significativa (waveHeightM>0) o si no la publican.
+     3) null → no dibujamos flecha.
+   Lo usan el popup Shelter Y el visor del mapa → siempre coherentes. */
+function _effectiveWaveDirDeg(h, boatWave){
+  if(boatWave && typeof boatWave.dirFromDeg === 'number') return boatWave.dirFromDeg;
+  if(h && typeof h.waveDirDeg === 'number'){
+    if(typeof h.waveHeightM === 'number' && h.waveHeightM <= 0) return null;
+    return h.waveDirDeg;
+  }
+  return null;
+}
 function _refreshBoatWave(){
   fetch(A+'/wave/boat',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
     var prev=_boatWave;
@@ -10449,20 +10468,24 @@ function _shelterRenderPopup(){
   var waveDirDeg=null;
   var waveHeightM=null;
   var _waveFromBoat=false;
+  var hSelW=null;
   if(asm&&asm.hours&&asm.hours.length>0){
-    var hSelW=_shelterSelectedHourIdx!==null?asm.hours[_shelterSelectedHourIdx]:asm.hours[0];
-    if(hSelW){
-      if(typeof hSelW.waveDirDeg==='number')waveDirDeg=hSelW.waveDirDeg;
-      if(typeof hSelW.waveHeightM==='number')waveHeightM=hSelW.waveHeightM;
-    }
+    hSelW=_shelterSelectedHourIdx!==null?asm.hours[_shelterSelectedHourIdx]:asm.hours[0];
+    if(hSelW && typeof hSelW.waveHeightM==='number')waveHeightM=hSelW.waveHeightM;
   }
-  if(_boatWave&&_isViewingNow()&&typeof _boatWave.dirFromDeg==='number'){
-    waveDirDeg=_boatWave.dirFromDeg;
-    _waveFromBoat=true;
-    /* Si Open-Meteo no devuelve altura (raro pero posible), forzar dibujo
-       de la flecha con valor mínimo simbólico para que se vea la dirección
-       medida del barco aunque la altura no esté disponible. */
-    if(waveHeightM===null||waveHeightM<=0)waveHeightM=0.1;
+  /* Rev777: usar el helper unificado. Solo aceptamos boat IMU si estamos
+     viendo AHORA (no una hora futura del strip). */
+  if(_isViewingNow()){
+    waveDirDeg=_effectiveWaveDirDeg(hSelW, _boatWave);
+    if(_boatWave && typeof _boatWave.dirFromDeg === 'number'){
+      _waveFromBoat=true;
+      /* Si Open-Meteo no devuelve altura, forzar dibujo con valor
+         simbólico para que se vea la dirección IMU aunque no haya altura. */
+      if(waveHeightM===null||waveHeightM<=0)waveHeightM=0.1;
+    }
+  } else if(hSelW && typeof hSelW.waveDirDeg==='number'){
+    /* Viendo hora futura → forecast Open-Meteo directamente. */
+    waveDirDeg=hSelW.waveDirDeg;
   }
   /* Rev100: flechas cartoon — viento FINO + LARGO, olas GRUESO + CORTO.
      Con esto, cuando coinciden en dirección, ambas son visibles:
@@ -11318,10 +11341,20 @@ function _wxMapMarkerUpdate(){
     else{_wxMapMarkers.wind=L.marker(wEdge,{icon:icon,interactive:false,keyboard:false,zIndexOffset:300}).addTo(map);}
   }
   /* WAVE — solo si altura significativa. zIndexOffset 200 (debajo del viento).
-     Rev116: si boat-imu activo, sobreescribimos dirección + label con
-     intensidad+período (Fase 1 no tiene altura). */
-  if(_vDeg!==null||_boatWave){
-    var _vDirEff=_boatWave?_boatWave.dirFromDeg:h.waveDirDeg;
+     Rev777 (fix issue #27 reportado por @ABS0lute-1 "wave direction on
+     overview page is always North" + feedback Carlos "no es mejor
+     simplificar y que ambos usen el mismo recurso"): usamos el helper
+     unificado _effectiveWaveDirDeg() en vez de la lógica ternaria
+     que teníamos aquí. Antes:
+       _vDirEff = _boatWave ? _boatWave.dirFromDeg : h.waveDirDeg
+     pisaba con null cuando el motor IMU rechaza (barco quieto en
+     puerto → rejectionReason:noMotion → dirFromDeg:null) y Leaflet
+     dibujaba el null como 0° = Norte. Ahora el helper solo devuelve
+     IMU si es un número real; si no, cae a Open-Meteo. Mismo helper
+     lo usa el popup Shelter (línea 10455 aprox) → Shelter y visor
+     siempre coherentes. */
+  var _vDirEff=_effectiveWaveDirDeg(h, _boatWave);
+  if(_vDirEff!==null){
     var oEdge=geoEdge(pos.lat,pos.lng,alarmR,_vDirEff);
     var oDirTxt=_wxC16?_wxC16(_vDirEff):'';
     var oLabel;

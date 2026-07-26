@@ -1,5 +1,53 @@
 # Changelog
 
+## [2.10.4] - 2026-07-26
+
+### English
+
+**Fix: wave direction on the overview page always pointed North (thanks @ABS0lute-1)**
+
+Small but nasty visual bug reported in [issue #27](https://github.com/Aitonos/signalk-mareas-ihm/issues/27) by [@ABS0lute-1](https://github.com/ABS0lute-1). On the anchor watch overview page (the main chart view), the wave arrow always drew from the North, even though the Shelter forecast popup showed the correct direction. Ctrl+F5 rendered it correctly for about half a second and then it snapped back to North on all three browsers he tested.
+
+Root cause: the map overlay function `_wxMapMarkerUpdate` (called every ~5 s from the boat-wave polling) was using the ternary:
+
+```js
+_vDirEff = _boatWave ? _boatWave.dirFromDeg : h.waveDirDeg
+```
+
+When the on-board wave engine rejects due to `noMotion` (very common on a moored boat) the endpoint returns `dirFromDeg: null`. That `null` was silently overwriting the good Open-Meteo forecast, and Leaflet treated it as `0°` = North. The Shelter popup used a different code path with a proper `typeof === 'number'` check and was fine — hence the discrepancy.
+
+Fix: extracted a single helper `_effectiveWaveDirDeg(h, boatWave)` used by both the overview map overlay and the Shelter popup. Priority:
+1. IMU boat measurement (`_boatWave.dirFromDeg`) if it is a real number.
+2. Open-Meteo forecast (`h.waveDirDeg`) as fallback, with a small height sanity check.
+3. `null` → no arrow drawn.
+
+Any future consumer of the wave direction should call this helper, so we don't get bit again by the same divergence.
+
+---
+
+### Español
+
+**Fix: la dirección del oleaje en la página overview apuntaba siempre al Norte (gracias @ABS0lute-1)**
+
+Bug visual pequeño pero molesto reportado en el [issue #27](https://github.com/Aitonos/signalk-mareas-ihm/issues/27) por [@ABS0lute-1](https://github.com/ABS0lute-1). En el visor de fondeo (la carta principal) la flecha del oleaje se dibujaba siempre viniendo del Norte, aunque el popup de Previsión de Abrigo mostraba la dirección correcta. Al hacer Ctrl+F5 la pintaba bien durante medio segundo y luego saltaba al Norte, en los tres navegadores que probó.
+
+Causa raíz: la función que pinta la flecha en el mapa (`_wxMapMarkerUpdate`, invocada cada ~5 s por el polling de boat-wave) usaba el ternario:
+
+```js
+_vDirEff = _boatWave ? _boatWave.dirFromDeg : h.waveDirDeg
+```
+
+Cuando el motor de olas a bordo rechaza por `noMotion` (muy típico con el barco fondeado en puerto), el endpoint devuelve `dirFromDeg: null`. Ese `null` pisaba silenciosamente el forecast bueno de Open-Meteo, y Leaflet lo interpretaba como `0°` = Norte. El popup Shelter usaba otra ruta de código con un `typeof === 'number'` correcto y no fallaba — de ahí la discrepancia entre las dos vistas.
+
+Fix: extraído un único helper `_effectiveWaveDirDeg(h, boatWave)` que usan tanto el overlay del mapa como el popup Shelter. Prioridad:
+1. Medida IMU del barco (`_boatWave.dirFromDeg`) si es un número real.
+2. Forecast Open-Meteo (`h.waveDirDeg`) como fallback, con sanity check de altura.
+3. `null` → no dibujamos flecha.
+
+Cualquier consumidor futuro de la dirección de olas debe llamar a este helper, así no volvemos a caer en la misma divergencia.
+
+---
+
 ## [2.10.3] - 2026-07-26
 
 ### English
