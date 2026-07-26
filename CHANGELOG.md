@@ -1,5 +1,47 @@
 # Changelog
 
+## [2.10.3] - 2026-07-26
+
+### English
+
+**Two more Pablo-driven fixes: no canonical `null` at startup, canonical enum + localized split for tide paths**
+
+Second patch on the same day as 2.10.2, both fixes reported by [Pablo](https://github.com/Aitonos/signalk-mareas-ihm/blob/main/README.md#acknowledgements).
+
+- **Canonical anchor paths no longer emit `null` at plugin startup**. In 2.10.2 we fixed the cyclic re-emission (was every 6 s), but the first tick after a fresh boot still emitted `navigation.anchor.position=null` + `state=off` because our internal state flag was `null` and any state other than `"off"` was treated as "needs clearing". `@meri-imperiumi/signalk-autostate` (and any subscriber) counted that one null delta as an "anchor just lifted" and flipped the boat state to "underway" for the ~10 min it takes autostate to settle back to "moored" by movement detection. Now we only emit the clear on the real `on → off` transition; startup with no active anchoring stays silent on the canonical bus.
+
+- **Canonical enum values for tide paths (breaking for value consumers, path names unchanged)**. Pablo reported that his dashboard suddenly showed `"Rising"` / `"Tendency"` instead of his usual `"Subiendo"`. Root cause: since 2.2.1 the following paths published the value **translated to the UI language selected in the webapp** — so any change to the user's UI language flipped the string under any external consumer subscribed to those paths (KIP, autostate, WilhelmSK, Grafana dashboards, Home Assistant, etc.). SK canonical convention says path values must be stable enums, not localized strings. Fixed:
+  - `environment.tide.tendency` now emits `"rising" | "falling" | "slack"` (lowercase enum, stable).
+  - `environment.tide.flow.strength` now emits `"gentle" | "moderate" | "strong"`.
+  - `environment.tide.flow.direction` now emits `"flood" | "ebb" | "slack"`.
+  - New sibling paths carry the localized human string for direct-render dashboards:
+    - `environment.tide.tendencyLocalized` → e.g. `"Subiendo"` or `"Rising"` depending on webapp UI lang.
+    - `environment.tide.flow.strengthLocalized` → `"Intensa"` / `"Strong"`.
+    - `environment.tide.flow.directionLocalized` → `"Entrante"` / `"Flood"`.
+  - **Migration**: dashboards that were consuming the localized string on the canonical path (e.g. Pablo's) should switch to the `Localized` variant. Consumers that want a stable enum stay on the canonical path (recommended for logic / triggers / logging).
+
+---
+
+### Español
+
+**Dos fixes más impulsados por Pablo: sin `null` canónico al arrancar, split enum canónico + localized para paths de marea**
+
+Segundo patch del mismo día que la 2.10.2, ambos fixes reportados por [Pablo](https://github.com/Aitonos/signalk-mareas-ihm/blob/main/README.md#reconocimientos).
+
+- **Los paths canónicos del ancla ya no emiten `null` al arrancar el plugin**. En 2.10.2 arreglamos la re-emisión cíclica (era cada 6 s), pero el primer tick tras un reinicio limpio seguía emitiendo `navigation.anchor.position=null` + `state=off` porque nuestro flag interno de estado valía `null` y cualquier valor distinto de `"off"` se trataba como "necesita limpieza". `@meri-imperiumi/signalk-autostate` (y cualquier suscriptor) contaba ese único delta null como "acaban de levar" y giraba el estado del barco a "navegando" durante los ~10 min que autostate tarda en volver a "amarrado" por detección de movimiento. Ahora solo emitimos el clear en la transición real `on → off`; el arranque sin fondeo activo se queda en silencio en el bus canónico.
+
+- **Valores enum canónicos para paths de marea (breaking para consumidores de value, los nombres de path no cambian)**. Pablo reportó que su dashboard mostraba de repente `"Rising"` / `"Tendency"` en vez de su habitual `"Subiendo"`. Causa raíz: desde la 2.2.1 los siguientes paths publicaban el valor **traducido al idioma UI seleccionado en la webapp** — de modo que cualquier cambio del idioma UI del usuario cambiaba el string debajo de cualquier consumidor externo suscrito a esos paths (KIP, autostate, WilhelmSK, dashboards Grafana, Home Assistant, etc.). La convención canónica SK dice que los valores de path deben ser enums estables, no strings localizados. Arreglado:
+  - `environment.tide.tendency` emite ahora `"rising" | "falling" | "slack"` (enum en minúsculas, estable).
+  - `environment.tide.flow.strength` emite ahora `"gentle" | "moderate" | "strong"`.
+  - `environment.tide.flow.direction` emite ahora `"flood" | "ebb" | "slack"`.
+  - Nuevos paths hermanos llevan el string humano localizado para dashboards que renderizan directo:
+    - `environment.tide.tendencyLocalized` → p.ej. `"Subiendo"` o `"Rising"` según el idioma UI.
+    - `environment.tide.flow.strengthLocalized` → `"Intensa"` / `"Strong"`.
+    - `environment.tide.flow.directionLocalized` → `"Entrante"` / `"Flood"`.
+  - **Migración**: los dashboards que consumían el string localizado sobre el path canónico (el caso de Pablo) deben pasar a la variante `Localized`. Los consumidores que quieran un enum estable se quedan en el path canónico (recomendado para lógica / triggers / logging).
+
+---
+
 ## [2.10.2] - 2026-07-24
 
 ### English

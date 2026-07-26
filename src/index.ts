@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev775";
+const PLUGIN_REVISION = "Rev776";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -472,16 +472,19 @@ const PATH_DESCRIPTIONS_ES: Record<string, string> = {
   "environment.tide.stationName": "Nombre de la estación activa",
   "environment.tide.tacticRbaixas": "Factor táctico (solo Rías Baixas)",
   "environment.tide.tacticadviceRbaixas": "Consejo táctico (solo Rías Baixas)",
-  "environment.tide.tendency": "Sentido de la marea: Subiendo/Bajando",
-  "environment.tide.tendencypercentage": "Sentido + porcentaje (texto)",
+  "environment.tide.tendency": "Sentido de la marea (enum canónico): rising | falling | slack",
+  "environment.tide.tendencyLocalized": "Sentido de la marea traducido al idioma UI (Subiendo/Bajando/Parada)",
+  "environment.tide.tendencypercentage": "Sentido + porcentaje (texto — DEPRECATED)",
   "environment.tide.timeLastHigh": "Hora de la última pleamar (ISO local)",
   "environment.tide.timeLastLow": "Hora de la última bajamar (ISO local)",
   "environment.tide.timeNextHigh": "Hora de la próxima pleamar (ISO local)",
   "environment.tide.timeNextLow": "Hora de la próxima bajamar (ISO local)",
   "environment.time.season": "Horario oficial: Verano/Invierno (cambio horario vigente en España)",
   "environment.time.utcOffsetHours": "Desfase horario respecto a UTC (+2, +1, 0, etc.)",
-  "environment.tide.flow.strength": "Intensidad de la corriente: Suave/Media/Intensa",
-  "environment.tide.flow.direction": "Dirección de la corriente: Entrante/Saliente/Parada",
+  "environment.tide.flow.strength": "Intensidad de corriente (enum canónico): gentle | moderate | strong",
+  "environment.tide.flow.strengthLocalized": "Intensidad de corriente traducida al idioma UI (Suave/Media/Intensa)",
+  "environment.tide.flow.direction": "Dirección de corriente (enum canónico): flood | ebb | slack",
+  "environment.tide.flow.directionLocalized": "Dirección de corriente traducida al idioma UI (Entrante/Saliente/Parada)",
   "environment.tide.flow.intensity": "Intensidad normalizada 0..1 (derivada)",
   "environment.tide.flow.ratio": "Índice 25..125 (derivado)",
   "environment.tide.flow.strengthModifier": "Modificador: +, = o - (derivado)",
@@ -577,16 +580,19 @@ const PATH_DESCRIPTIONS_EN: Record<string, string> = {
   "environment.tide.stationName": "Active station name",
   "environment.tide.tacticRbaixas": "Tactical factor (Rías Baixas only)",
   "environment.tide.tacticadviceRbaixas": "Tactical advice (Rías Baixas only)",
-  "environment.tide.tendency": "Tide trend (rising/falling)",
-  "environment.tide.tendencypercentage": "Trend + percentage (text)",
+  "environment.tide.tendency": "Tide trend (canonical enum): rising | falling | slack",
+  "environment.tide.tendencyLocalized": "Tide trend localized to UI language (Rising/Falling/Slack or Subiendo/Bajando/Parada)",
+  "environment.tide.tendencypercentage": "Trend + percentage (text — DEPRECATED)",
   "environment.tide.timeLastHigh": "Timestamp of last high tide (local time)",
   "environment.tide.timeLastLow": "Timestamp of last low tide (local time)",
   "environment.tide.timeNextHigh": "Timestamp of next high tide (local time)",
   "environment.tide.timeNextLow": "Timestamp of next low tide (local time)",
   "environment.time.season": "DST season in Spain (Summer/Winter)",
   "environment.time.utcOffsetHours": "UTC offset hours used by the plugin",
-  "environment.tide.flow.strength": "Current strength: Soft/Medium/Strong",
-  "environment.tide.flow.direction": "Current direction: Flood/Ebb/Slack",
+  "environment.tide.flow.strength": "Current strength (canonical enum): gentle | moderate | strong",
+  "environment.tide.flow.strengthLocalized": "Current strength localized to UI language (Gentle/Moderate/Strong or Suave/Media/Intensa)",
+  "environment.tide.flow.direction": "Current direction (canonical enum): flood | ebb | slack",
+  "environment.tide.flow.directionLocalized": "Current direction localized to UI language (Flood/Ebb/Slack or Entrante/Saliente/Parada)",
   "environment.tide.flow.intensity": "Normalised intensity 0..1 (derived)",
   "environment.tide.flow.ratio": "Index 25..125 (derived)",
   "environment.tide.flow.strengthModifier": "Modifier: +, = or - (derived)",
@@ -705,9 +711,14 @@ const SK_PATH_CATALOG: Record<string, SkPathSpec> = {
   // ── mareas extras (optional)
   "environment.tide.percentage":        { tier: "optional", group: "tides" },
   "environment.tide.pluginVersion":     { tier: "optional", group: "tides" },
+  // Rev776: version localizada (idioma UI) del enum canónico de tendency.
+  "environment.tide.tendencyLocalized":  { tier: "optional", group: "tides" },
   // ── corriente derivada
   "environment.tide.flow.strength":         { tier: "optional", group: "flow" },
   "environment.tide.flow.direction":        { tier: "optional", group: "flow" },
+  // Rev776: versiones localizadas (idioma UI) de los enums canónicos.
+  "environment.tide.flow.strengthLocalized":  { tier: "optional", group: "flow" },
+  "environment.tide.flow.directionLocalized": { tier: "optional", group: "flow" },
   "environment.tide.flow.intensity":        { tier: "optional", group: "flow" },
   "environment.tide.flow.ratio":            { tier: "optional", group: "flow" },
   "environment.tide.flow.strengthModifier": { tier: "optional", group: "flow" },
@@ -7655,11 +7666,21 @@ function evaluateAnchorWatch() {
         { path: "environment.anchor.mareasIhm.garreoAlarmCommand" as Path, value: false },
         { path: "environment.anchor.mareasIhm.aisAlarmCommand" as Path, value: false },
       ];
-      if (_canonicalAnchorStateEmitted !== "off") {
+      /* Rev776 (feedback Pablo tras 2.10.2): al arrancar el plugin sin
+         fondeo, _canonicalAnchorStateEmitted era `null` → el primer
+         tick "not anchored" emitía position=null igualmente y autostate
+         lo contaba como leva. Ahora: solo emitir en la transición REAL
+         "on"→"off" (venimos de fondear). Al arranque en null pasamos
+         directo a "off" sin publicar nada. Semántica canónica limpia:
+         publicamos position al fondear, null 1 vez al levar de verdad,
+         silencio en cualquier otro caso. */
+      if (_canonicalAnchorStateEmitted === "on") {
         for (const v of canonicalAnchorClearValues()) {
           clearValues.push({ path: v.path as Path, value: v.value });
         }
         _canonicalAnchorStateEmitted = "off";
+      } else if (_canonicalAnchorStateEmitted === null) {
+        _canonicalAnchorStateEmitted = "off"; // marca implícita, no emite
       }
       const d: Delta = { context: ("vessels." + app.selfId) as Context,
         updates: [{ timestamp: new Date().toISOString() as Timestamp, values: clearValues as any }] };
@@ -16003,9 +16024,20 @@ const values: any[] = [
         values.push({ path: "environment.tide.heightNow" as Path, value: Math.round(heightNow * 100) / 100 });
       }
       if (tendency) {
-        // WARNING: this value is human-facing; it may be consumed by dashboards.
-        // As requested, we localize it based on UI selection.
-        values.push({ path: "environment.tide.tendency" as Path, value: trUi(tendency, tendEn(tendency) as any) });
+        /* Rev776 (feedback Pablo "has cambiado los nombres de los paths?
+           Tendency"): environment.tide.tendency ahora emite el ENUM
+           CANÓNICO estable ("rising"/"falling"/"slack") en minúsculas,
+           independiente del idioma de UI. Los consumidores externos
+           (KIP, autostate, WilhelmSK, dashboards) obtienen un valor
+           inmutable. El string humano localizado va en el path nuevo
+           environment.tide.tendencyLocalized (que sí sigue la UI).
+           Breaking para quien consumía el string localizado en el path
+           principal — documentado en CHANGELOG 2.10.3. */
+        const tendencyCode = tendency === "Subiendo" ? "rising"
+                          : tendency === "Bajando"  ? "falling"
+                          : tendency === "Parada"   ? "slack" : "unknown";
+        values.push({ path: "environment.tide.tendency" as Path, value: tendencyCode });
+        values.push({ path: "environment.tide.tendencyLocalized" as Path, value: trUi(tendency, tendEn(tendency) as any) });
       }
 
 // NUEVAS SENTENCIAS
@@ -16065,11 +16097,22 @@ const sineFlowIntensity = (percentage > 0 && percentage < 100)
 const flowStrength = (sineFlowIntensity > 0)
   ? (sineFlowIntensity > 0.6 ? "Intensa" : sineFlowIntensity > 0.25 ? "Media" : "Suave")
   : (delta10min > 0.04 ? "Intensa" : delta10min > 0.02 ? "Media" : "Suave");
-values.push({ path: "environment.tide.flow.strength" as Path, value: trUi(flowStrength, strengthEn(flowStrength) as any) });
+/* Rev776: enum canónico + localized (mismo patrón que tendency).
+   flow.strength: "gentle" | "moderate" | "strong"
+   flow.direction: "flood" | "ebb" | "slack" */
+const flowStrengthCode = flowStrength === "Intensa" ? "strong"
+                       : flowStrength === "Media"   ? "moderate"
+                       : flowStrength === "Suave"   ? "gentle" : "unknown";
+values.push({ path: "environment.tide.flow.strength" as Path, value: flowStrengthCode });
+values.push({ path: "environment.tide.flow.strengthLocalized" as Path, value: trUi(flowStrength, strengthEn(flowStrength) as any) });
 
 // environment.tide.flow.direction
 const flowDirection = tendency === "Subiendo" ? "Entrante" : tendency === "Bajando" ? "Saliente" : "Parada";
-values.push({ path: "environment.tide.flow.direction" as Path, value: trUi(flowDirection, dirEn(flowDirection) as any) });
+const flowDirectionCode = flowDirection === "Entrante" ? "flood"
+                        : flowDirection === "Saliente" ? "ebb"
+                        : flowDirection === "Parada"   ? "slack" : "unknown";
+values.push({ path: "environment.tide.flow.direction" as Path, value: flowDirectionCode });
+values.push({ path: "environment.tide.flow.directionLocalized" as Path, value: trUi(flowDirection, dirEn(flowDirection) as any) });
 
 // Intensidad aproximada de corriente por marea (derivada |dh/dt| del modelo cosenoidal)
 // - intensity: 0..1 normalizada (P95 anual de máximos de tramo)
