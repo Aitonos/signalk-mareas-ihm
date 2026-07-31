@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev777";
+const PLUGIN_REVISION = "Rev822";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -4676,6 +4676,35 @@ try {
       device: string;
     }
     const _pinSessions = new Map<string, PinSession>();
+    // Rev790: persistir sesiones PIN en disco para que sobrevivan restarts
+    // del server (bug Carlos 2026-07-28: cada deploy -Restart borraba las
+    // sesiones activas, y los visores seguían con la cookie muerta →
+    // backend los veía como sin sesión y aplicaba permisos de compat).
+    async function _persistPinSessions(): Promise<void> {
+      try {
+        const dump: Record<string, PinSession> = {};
+        for (const [tok, sess] of _pinSessions.entries()) dump[tok] = sess;
+        await ihmCache.set("pinSessions", dump);
+      } catch { /* non-fatal */ }
+    }
+    (async () => {
+      try {
+        const cached = await ihmCache.get("pinSessions");
+        if (cached && typeof cached === "object") {
+          const now = Date.now();
+          let loaded = 0, skipped = 0;
+          for (const [tok, sess] of Object.entries(cached as Record<string, PinSession>)) {
+            if (!sess || typeof sess !== "object") { skipped++; continue; }
+            if (typeof sess.expiresMs !== "number" || sess.expiresMs < now) { skipped++; continue; }
+            _pinSessions.set(tok, sess);
+            loaded++;
+          }
+          if (loaded > 0) app.debug(`[IHM-PIN] Rev790: restored ${loaded} PIN session(s) from disk (skipped ${skipped})`);
+        }
+      } catch (e: any) {
+        app.debug(`[IHM-PIN] sessions load failed: ${e?.message ?? e}`);
+      }
+    })();
     function _shortDevice(ua: string): string {
       const s = String(ua || "").slice(0, 400);
       if (!s) return "?";
@@ -4734,6 +4763,8 @@ try {
         expiresMs: Date.now() + ttl,
         ip, device,
       });
+      // Rev790: persistir a disco tras cada sesion nueva. Fire-and-forget.
+      void _persistPinSessions();
       return tok;
     }
     function getPinSessionFromReq(req: any): { valid: boolean; alias?: string; isMaster?: boolean; level?: SecurityPin["level"] } {
@@ -4743,7 +4774,7 @@ try {
       if (!m) return { valid: false };
       const s = _pinSessions.get(m[1]);
       if (!s) return { valid: false };
-      if (s.expiresMs < Date.now()) { _pinSessions.delete(m[1]); return { valid: false }; }
+      if (s.expiresMs < Date.now()) { _pinSessions.delete(m[1]); void _persistPinSessions(); return { valid: false }; }
       return { valid: true, alias: s.alias, isMaster: s.isMaster, level: s.level };
     }
     // Exportar para que el middleware pueda usarlo desde access.ts.
@@ -4995,11 +5026,14 @@ try {
         // alias en el mismo IP+device antes de crear la nueva.
         const myIp = _resolveClientIp(req);
         const myDev = _shortDevice(String(req.headers?.["user-agent"] || ""));
+        let cleaned = 0;
         for (const [oldTok, oldSession] of Array.from(_pinSessions.entries())) {
           if (oldSession.alias === match.alias && oldSession.ip === myIp && oldSession.device === myDev) {
             _pinSessions.delete(oldTok);
+            cleaned++;
           }
         }
+        if (cleaned > 0) void _persistPinSessions();
         // Rev621: registrar último acceso.
         match.lastAccessMs = Date.now();
         try { await savePins(pins); } catch {}
@@ -5071,6 +5105,7 @@ try {
           removed++;
         }
       }
+      if (removed > 0) void _persistPinSessions();
       res.json({ ok: true, removed });
     });
     // POST /api/access/pin-lock
@@ -5080,7 +5115,7 @@ try {
       const cookieHeader = req.headers.cookie as string | undefined;
       if (cookieHeader) {
         const m = /(?:^|; )ihm_pin_session=([a-f0-9]+)/.exec(cookieHeader);
-        if (m) _pinSessions.delete(m[1]);
+        if (m && _pinSessions.delete(m[1])) void _persistPinSessions();
       }
       res.setHeader("Set-Cookie", `ihm_pin_session=; Path=/signalk-mareas-ihm; HttpOnly; Max-Age=0; SameSite=Lax`);
       res.json({ ok: true });
@@ -6566,7 +6601,34 @@ interface _AisstreamMergePayload {
   imo?: string | null; length?: number | null; beam?: number | null;
   tsMs: number;
 }
+/* Rev811 (feedback Carlos 2026-07-31): multi-badge para targets AIS.
+   Antes el badge (VHF/AS/AH/AF) mostraba solo `source` del target actual,
+   que quedaba fijo por el dedupe (aisstream cede a VHF, aishub cede a
+   aisstream, etc.). Consecuencia UX: los targets cercanos siempre salían
+   como VHF y los lejanos como AF; nunca se veían AS ni AH aunque
+   estuvieran adoptando activamente.
+   Nueva regla: si VHF fresh (<60s) → solo badge VHF (fuente confiable
+   cercana). Si no hay VHF → badges de todos los canales online que hayan
+   visto el MMSI en los últimos 120s. Registramos aquí SIEMPRE que un
+   canal ve el MMSI, aunque el dedupe le impida escribir en _aisKnownDB. */
+type _AisOnlineSource = "aisstream" | "aishub" | "aisfriends";
+const _AIS_ONLINE_FRESH_MS = 120_000;
+const _aisOnlineSeen: Map<string, Map<_AisOnlineSource, number>> = new Map();
+function _aisMarkOnlineSeen(mmsi: string, source: _AisOnlineSource): void {
+  let m = _aisOnlineSeen.get(mmsi);
+  if (!m) { m = new Map(); _aisOnlineSeen.set(mmsi, m); }
+  m.set(source, Date.now());
+}
+function _aisOnlineSourcesFor(mmsi: string): _AisOnlineSource[] {
+  const m = _aisOnlineSeen.get(mmsi);
+  if (!m) return [];
+  const cutoff = Date.now() - _AIS_ONLINE_FRESH_MS;
+  const out: _AisOnlineSource[] = [];
+  for (const [s, ts] of m.entries()) if (ts >= cutoff) out.push(s);
+  return out.sort(); // stable order across calls
+}
 function _aisstreamMergeUpdate(u: _AisstreamMergePayload): void {
+  _aisMarkOnlineSeen(u.mmsi, "aisstream");
   const cur = _aisKnownDB[u.mmsi];
   const nowMs = Date.now();
   const VHF_FRESH_MS = 60_000;
@@ -6667,6 +6729,7 @@ let _aishubDedupVhf = 0;
 let _aishubDedupAisstream = 0;
 let _aishubAdopted = 0;
 function _aishubMergeUpdate(u: _AisstreamMergePayload): void {
+  _aisMarkOnlineSeen(u.mmsi, "aishub");
   const cur = _aisKnownDB[u.mmsi];
   const nowMs = Date.now();
   const VHF_FRESH_MS = 60_000;
@@ -6726,6 +6789,7 @@ let _aisfriendsDedupAisstream = 0;
 let _aisfriendsDedupAishub = 0;
 let _aisfriendsAdopted = 0;
 function _aisfriendsMergeUpdate(u: _AisstreamMergePayload): void {
+  _aisMarkOnlineSeen(u.mmsi, "aisfriends");
   const cur = _aisKnownDB[u.mmsi];
   const nowMs = Date.now();
   const VHF_FRESH_MS = 60_000;
@@ -8614,7 +8678,13 @@ async function _autoDetectShelterIfPossible(lat: number, lng: number): Promise<v
 // Si Overpass falla, _autoDetectShelterIfPossible loggea silencioso y reintenta
 // en el próximo tick. La función _maybeRefreshShelter se llama desde
 // evaluateAnchorWatch (cada 2-5s) pero solo actúa cada SHELTER_REFRESH_INTERVAL_MS.
-const SHELTER_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
+/* Rev809 (feedback Carlos 2026-07-31 "la brújula cambia orientación en el
+   mismo sitio entre horas distintas"): 24h → 7 días. En zonas de coastline
+   compleja (cabos, islas), re-descargar OSM cada 24h hacía flipear sectores
+   fronterizos entre visitas. Con 7 días la probabilidad de ver cambios
+   entre sesiones del mismo fondeadero baja drásticamente, sin renunciar
+   al refresco automático para barcos que llevan >1 semana sin moverse. */
+const SHELTER_REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7d
 // Rev357: sentinel separado para evitar disparar repetidamente mientras hay
 // uno en vuelo, pero permitir reintento rápido (1h) si Overpass falla.
 let _shelterRefreshInFlight = false;
@@ -12049,6 +12119,19 @@ expressApp.get("/signalk-mareas-ihm/api/shelter", (_req: any, res: any) => {
        are MANUAL overrides (those that differ between user's current mask
        and the last auto-detected one). */
     autoMask: _lastAutoShelter?.mask ?? null,
+    /* Rev821 (feedback GPT/Gemini + Carlos): observabilidad del último
+       auto-detect. Sin estos datos el usuario no puede saber qué coord
+       exacta y cuándo se calculó, y las discusiones se convierten en
+       adivinanza. Incluye:
+       - autoDetectPos: coord GPS usada en el último cálculo real.
+       - autoDetectMs: timestamp epoch ms del último éxito.
+       - autoDetectSource: "overpass" (fetch nuevo), "cache" (hit) o "stale-cache" (fallback tras fallo). */
+    autoDetectPos: (_lastAutoShelter && (_lastAutoShelter as any).origin) ? {
+      lat: (_lastAutoShelter as any).origin.lat,
+      lng: (_lastAutoShelter as any).origin.lng,
+    } : null,
+    autoDetectMs: _lastAutoDetectMs || null,
+    autoDetectSource: (_lastAutoShelter as any)?.source ?? null,
     sectorCount: SHELTER_SECTOR_COUNT,
     sectorLabels: ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"],
   });
@@ -13240,7 +13323,52 @@ expressApp.post("/signalk-mareas-ihm/api/audio/test", requireControlAccess, asyn
 expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any) => {
   // Rev387: targets ahora pueden traer `fromCache: string[]` listando
   // que propiedades estaticas fueron rellenadas desde aisKnownDB (TTL 72h).
-  const targets: Array<{ mmsi: string; name: string; lat: number; lng: number; sog: number | null; heading: number | null; cog: number | null; isStatic: boolean; length: number | null; beam: number | null; aisClass: "A" | "B" | null; shipType: number | null; callsign?: string | null; imo?: string | null; firstSeenMs?: number | null; lastSeenMs?: number | null; fromCache?: string[]; source?: "vhf" | "aisstream" | "aishub" | "aisfriends" | null }> = [];
+  const targets: Array<{ mmsi: string; name: string; lat: number; lng: number; sog: number | null; heading: number | null; cog: number | null; isStatic: boolean; length: number | null; beam: number | null; aisClass: "A" | "B" | null; shipType: number | null; callsign?: string | null; imo?: string | null; firstSeenMs?: number | null; lastSeenMs?: number | null; fromCache?: string[]; source?: "vhf" | "aisstream" | "aishub" | "aisfriends" | null; sources?: string[] }> = [];
+  /* Rev811/812/813: helper para lista de badges por target. Regla Carlos:
+     Siempre listar TODOS los canales que han visto el MMSI en <120s. Si
+     VHF y AISHUB lo ven simultáneamente → sale "VHF AH". Si solo online
+     lo ven → sale "AS AF" (sin VHF). El orden es siempre estable.
+     Rev813 (feedback Carlos "veo targets con vhf a 99 km, imposible con
+     antena 3 m y montaña por medio"): filtro por distancia. Antena 3 m
+     → horizonte ~7 km; con altura de vessel objetivo el alcance conjunto
+     realista es 15-30 km, máximo 40 km en condiciones excepcionales.
+     Umbral 60 km como corte defensivo — por encima NO puede ser VHF
+     real, sino delta SK inyectado por otro plugin online (ais-forwarder,
+     aisstream de otro plugin, etc.). En esos casos quitamos VHF y solo
+     dejamos los canales online que realmente lo han visto. */
+  const VHF_MAX_DIST_KM = 60;
+  /* Posición del barco para el cálculo de distancia. Se reutiliza dentro
+     de _sourcesFor para descartar VHF a distancias imposibles.
+     Rev814: idéntica lógica que garreo-diag (que sí funciona). */
+  let _myLat: number | null = null, _myLng: number | null = null;
+  try {
+    const pos: any = app.getSelfPath("navigation.position");
+    if (pos && typeof pos === "object") {
+      _myLat = (pos as any).value?.latitude ?? (pos as any).latitude ?? null;
+      _myLng = (pos as any).value?.longitude ?? (pos as any).longitude ?? null;
+    }
+  } catch {}
+  try { console.log(`[IHM-AIS] endpoint self pos: lat=${_myLat} lng=${_myLng}`); } catch {}
+  const _distKm = (tLat: number, tLng: number): number | undefined => {
+    if (_myLat == null || _myLng == null) return undefined;
+    return haversineM(_myLat, _myLng, tLat, tLng) / 1000;
+  };
+  const _sourcesFor = (mmsi: string, primary: string | null | undefined, distKm?: number): string[] => {
+    const cleanMmsi = mmsi.replace(/^urn:mrn:imo:mmsi:/, "").replace(/^urn:mrn:signalk:uuid:/, "");
+    const online = _aisOnlineSourcesFor(cleanMmsi);
+    const set: string[] = [];
+    const vhfPlausible = primary === "vhf" && (typeof distKm !== "number" || distKm <= VHF_MAX_DIST_KM);
+    if (vhfPlausible) set.push("vhf");
+    for (const s of online) if (!set.includes(s)) set.push(s);
+    /* Rev815 (fix bug Carlos "VHF a 99 km todavía"): NO fallback a primary
+       si primary=vhf ha sido descartado por distancia. Antes esta línea:
+         if (set.length === 0 && primary) set.push(primary);
+       traía VHF de vuelta cuando ningún online lo veía tampoco → target
+       lejano quedaba con badge VHF fantasma. Ahora si primary=vhf y no
+       es plausible, dejamos array vacío (target sin badge fiable). */
+    if (set.length === 0 && primary && primary !== "vhf") set.push(primary);
+    return set;
+  };
   try {
     const vessels = (app as any).getPath?.("vessels") ?? {};
     const selfId = app.selfId;
@@ -13411,6 +13539,7 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
         firstSeenMs: cached?.firstSeenMs ?? null,
         lastSeenMs: cached?.lastSeenMs ?? null,
         source: liveSource,
+        sources: _sourcesFor(id, liveSource, _distKm(pos.latitude, pos.longitude)),
         ...(fromCache.length > 0 ? { fromCache } : {}),
       });
     }
@@ -13453,6 +13582,7 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
          siempre "fantasmas" — o VHF perdió el feed, o son de motor
          online (aisstream/aishub/aisfriends). */
       source: e.source ?? "vhf",
+      sources: _sourcesFor(e.mmsi, e.source ?? "vhf", (e.lastLat != null && e.lastLng != null) ? _distKm(e.lastLat, e.lastLng) : undefined),
       /* Rev758: si el target viene de motor online (source != vhf),
          NO marcar position como fromCache — es dato fresco del motor,
          no cache VHF. Si es VHF fantasma sí es cache. */
@@ -14459,26 +14589,23 @@ expressApp.delete("/signalk-mareas-ihm/api/activity-log", requireControlAccess, 
 expressApp.get("/signalk-mareas-ihm/api/anchor-watch/favorites", (req: any, res: any) => {
   const activeAlias  = (global as any)._ihmActiveUserAlias?.(req)  ?? null;
   const activeMaster = (global as any)._ihmActiveUserIsMaster?.(req) ?? false;
-  const requested = typeof req.query?.user === "string" && req.query.user.length > 0 ? String(req.query.user) : null;
-  let out: FavoriteAnchor[];
-  if (!activeAlias) {
-    // Sin sesión (capa OFF) → devolver todo para no romper compat.
-    out = _favoritesCache;
-  } else if (activeMaster) {
-    // Master: si pasa ?user=X → filtrar por X; si no → sus propios.
-    const target = requested ?? activeAlias;
-    out = _favoritesCache.filter(f => (f.userAlias ?? "") === target);
-  } else {
-    // Guest: siempre los suyos (ignora ?user=).
-    out = _favoritesCache.filter(f => (f.userAlias ?? "") === activeAlias);
-  }
-  res.json({ favorites: out, scopeUser: activeAlias, isMaster: activeMaster });
+  // Rev784: favoritos compartidos entre todos los usuarios del barco.
+  // El bote es del bote — cualquiera con o sin sesion ve el pool
+  // completo. La atribucion userAlias se conserva en cada entrada para
+  // el log de actividad y para saber quien creo cada fondeo, pero no
+  // filtra visibilidad ni edicion (bug Carlos 2026-07-28: al entrar con
+  // PIN Lucia/master no veia los favoritos con userAlias:null creados
+  // sin sesion).
+  res.json({ favorites: _favoritesCache, scopeUser: activeAlias, isMaster: activeMaster });
 });
 
-/* Rev735: helper — chequea que el user tenga permiso para
-   crear/borrar favoritos. Master siempre puede; guest necesita el flag
-   permissions.editAnchorages=true. Devuelve el alias resuelto o null si
-   no tiene permiso. */
+/* Rev735/Rev788: helper — chequea que el user tenga permiso para
+   crear/borrar favoritos. Master siempre puede. Guest level "full" tiene
+   editAnchorages implícito salvo revocación explícita (permissions.editAnchorages:false).
+   Guest level "read" solo puede si el master lo ha activado explícitamente.
+   Rev788 fix (feedback Carlos 2026-07-28): antes se exigía flag explícito
+   siempre, y los PINs de tripulación creados por el wizard no lo tenían
+   → guests recibían 403 en TODOS los editar/borrar. */
 async function _canEditAnchorages(req: any): Promise<{ ok: boolean; alias: string | null; reason?: string }> {
   const activeAlias  = (global as any)._ihmActiveUserAlias?.(req)  ?? null;
   const activeMaster = (global as any)._ihmActiveUserIsMaster?.(req) ?? false;
@@ -14490,9 +14617,14 @@ async function _canEditAnchorages(req: any): Promise<{ ok: boolean; alias: strin
   if (activeMaster) return { ok: true, alias: activeAlias };
   const pins = await ((global as any)._ihmGetPins?.() ?? []);
   const me = Array.isArray(pins) ? pins.find((p: any) => p.alias === activeAlias) : null;
-  if (me && me.permissions && me.permissions.editAnchorages === true) {
-    return { ok: true, alias: activeAlias };
-  }
+  if (!me) return { ok: false, alias: activeAlias, reason: "unknown_user" };
+  const explicit = me.permissions && typeof me.permissions.editAnchorages === "boolean"
+    ? me.permissions.editAnchorages as boolean
+    : null;
+  if (explicit === true)  return { ok: true,  alias: activeAlias };
+  if (explicit === false) return { ok: false, alias: activeAlias, reason: "no_edit_permission" };
+  // Sin flag explícito → default por level. "full" edita, "read" no.
+  if (me.level === "full") return { ok: true, alias: activeAlias };
   return { ok: false, alias: activeAlias, reason: "no_edit_permission" };
 }
 
@@ -14505,19 +14637,35 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite", requireControlA
   const perm = await _canEditAnchorages(req);
   if (!perm.ok) return res.status(403).json({ error: "permission_denied", message: "This user has no permission to edit anchorages. Ask the master to grant it in the user card." });
   const name = (rawName || "Favorito").slice(0, 60);
-  // Upsert: si existe uno a <=10 m del MISMO USER, actualizar nombre + timestamp.
-  // (Si dos users tienen favoritos en la misma zona son entradas separadas.)
+  // Rev789: fusion por 10 m con reglas de propiedad. Master y sesion-off
+  // fusionan con cualquiera (mantienen userAlias original). Guest solo
+  // fusiona con propios o compartidos (userAlias:null). Si a esa coord hay
+  // un favorito de otro guest, el POST se rechaza — no podemos silenciar
+  // que Lucia "renombre" un fav de Carlos preservando @Carlos como dueno
+  // (bug reportado Carlos 2026-07-28).
+  const activeMasterUp = (global as any)._ihmActiveUserIsMaster?.(req) ?? false;
+  const noSecurityLayerUp = perm.alias === null;
   let updated: FavoriteAnchor | null = null;
+  let blockedByOwner = false;
   for (const f of _favoritesCache) {
-    if ((f.userAlias ?? null) === (perm.alias ?? null)
-        && _favDistM({ lat, lng }, { lat: f.lat, lng: f.lng }) <= 10) {
-      f.name = name;
-      f.ts = Date.now();
-      updated = f;
-      break;
-    }
+    if (_favDistM({ lat, lng }, { lat: f.lat, lng: f.lng }) > 10) continue;
+    const owner = f.userAlias ?? null;
+    const canEditThis = activeMasterUp || noSecurityLayerUp
+      || owner === null
+      || owner === perm.alias;
+    if (!canEditThis) { blockedByOwner = true; continue; }
+    f.name = name;
+    f.ts = Date.now();
+    updated = f;
+    break;
   }
   if (!updated) {
+    if (blockedByOwner) {
+      return res.status(403).json({
+        error: "not_owner",
+        message: "Este fondeadero ya está guardado por otro usuario. Pide al master que lo borre o cámbialo de sitio."
+      });
+    }
     updated = { lat, lng, name, ts: Date.now(), userAlias: perm.alias };
     _favoritesCache.unshift(updated);
   }
@@ -14534,13 +14682,19 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/favorite-delete", requireC
   const perm = await _canEditAnchorages(req);
   if (!perm.ok) return res.status(403).json({ error: "permission_denied" });
   const activeMaster = (global as any)._ihmActiveUserIsMaster?.(req) ?? false;
+  const noSecurityLayer = perm.alias === null;
+  // Rev785: master (o sin capa) borra cualquiera; guest solo borra los
+  // suyos y los compartidos (userAlias:null). Los favoritos ajenos con
+  // dueño identificado son intocables para un guest, aunque los ve.
   const before = _favoritesCache.length;
   _favoritesCache = _favoritesCache.filter(f => {
     const closeEnough = _favDistM({ lat, lng }, { lat: f.lat, lng: f.lng }) <= 10;
     if (!closeEnough) return true;
-    // Rev735: guest solo puede borrar los suyos; master borra cualquiera.
-    if (activeMaster) return false;
-    return (f.userAlias ?? null) !== (perm.alias ?? null);
+    if (activeMaster || noSecurityLayer) return false; // borra
+    const owner = f.userAlias ?? null;
+    if (owner === null) return false; // compartido → borra
+    if (owner === perm.alias) return false; // propio → borra
+    return true; // ajeno → keep
   });
   const removed = before - _favoritesCache.length;
   if (removed > 0) {
@@ -14568,6 +14722,436 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/history-delete", requireCo
     try { await ihmCache.set("anchorWatch", anchorWatch); } catch { /* non-fatal */ }
   }
   res.json({ ok: true, removed, total: anchorWatch.anchorHistory.length });
+});
+
+/* =========================================================================
+   Rev793: Chart proxy — user-configurable custom chart layers (WMS + XYZ).
+   Motivation: we cannot legally distribute URLs/API keys for restricted
+   services (IH Portugal ENC, SHOM RASTER MARINE, IGN SCAN Littoral, etc.),
+   but we CAN provide a generic proxy so the user (or someone with legit
+   access) plugs in their own URL and API key. Bypasses browser CORS/CORB
+   the same way Navegal's proxyTiles.php does.
+
+   Config JSON lives at ihmCache "chartLayers" (edit by hand for now; UI
+   coming in a later Rev). Structure:
+   [
+     { "id":"my-noaa", "name":"NOAA Charts", "type":"xyz",
+       "urlTemplate":"https://tileservice.charts.noaa.gov/tiles/50000_1/{z}/{x}/{y}.png",
+       "attribution":"NOAA", "minZoom":3, "maxZoom":16, "cacheTtlMs":604800000 },
+     { "id":"my-wms", "name":"Custom WMS", "type":"wms",
+       "urlBase":"https://example.com/wms",
+       "wmsParams":{"layers":"foo","format":"image/png","version":"1.3.0","crs":"EPSG:3857","width":"256","height":"256","transparent":"true"},
+       "attribution":"...", "minZoom":5, "maxZoom":18, "cacheTtlMs":604800000,
+       "auth":{"type":"queryKey","paramName":"apikey","value":"XXX"} }
+   ]
+
+   Endpoint /api/chart-proxy/:id/:z/:x/:y  →  serves PNG tile with CORS
+   headers. Endpoint /api/chart-layers → returns the list for the frontend
+   (or curl). No POST yet — edit the file on disk. UI comes in Rev795.
+   ========================================================================= */
+interface ChartLayerAuth {
+  type: "queryKey" | "header" | "basic";
+  paramName?: string;   // queryKey
+  headerName?: string;  // header
+  value?: string;       // queryKey/header
+  user?: string;        // basic
+  pass?: string;        // basic
+}
+interface ChartLayerConfig {
+  id: string;
+  name: string;
+  type: "wms" | "xyz";
+  urlTemplate?: string;                    // xyz
+  urlBase?: string;                        // wms
+  wmsParams?: Record<string, string>;      // wms
+  attribution?: string;
+  minZoom?: number;
+  maxZoom?: number;
+  cacheTtlMs?: number;
+  auth?: ChartLayerAuth;
+}
+let _chartLayers: ChartLayerConfig[] = [];
+(async () => {
+  try {
+    const cached = await ihmCache.get("chartLayers");
+    if (Array.isArray(cached)) {
+      _chartLayers = cached.filter((c: any) =>
+        c && typeof c.id === "string" && typeof c.type === "string"
+      ) as ChartLayerConfig[];
+      app.debug(`[IHM-CHART] loaded ${_chartLayers.length} custom chart layer(s)`);
+    }
+  } catch (e: any) {
+    app.debug(`[IHM-CHART] load failed: ${e?.message ?? e}`);
+  }
+})();
+
+// Web Mercator half-extent (EPSG:3857, meters).
+const _WM_HALF = 20037508.342789244;
+function _tileToBbox3857(z: number, x: number, y: number): [number, number, number, number] {
+  const res = (2 * _WM_HALF) / Math.pow(2, z);
+  const minX = -_WM_HALF + x * res;
+  const maxX = -_WM_HALF + (x + 1) * res;
+  const maxY = _WM_HALF - y * res;
+  const minY = _WM_HALF - (y + 1) * res;
+  return [minX, minY, maxX, maxY];
+}
+
+function _composeTileUrl(layer: ChartLayerConfig, z: number, x: number, y: number): string {
+  if (layer.type === "xyz") {
+    const tpl = layer.urlTemplate ?? "";
+    let url = tpl.replace(/\{z\}/g, String(z)).replace(/\{x\}/g, String(x)).replace(/\{y\}/g, String(y));
+    if (layer.auth && layer.auth.type === "queryKey" && layer.auth.paramName && layer.auth.value) {
+      const sep = url.includes("?") ? "&" : "?";
+      url += `${sep}${encodeURIComponent(layer.auth.paramName)}=${encodeURIComponent(layer.auth.value)}`;
+    }
+    return url;
+  }
+  // WMS
+  const [minX, minY, maxX, maxY] = _tileToBbox3857(z, x, y);
+  const base = layer.urlBase ?? "";
+  const params = new URLSearchParams();
+  params.set("service", "WMS");
+  params.set("request", "GetMap");
+  const wp = layer.wmsParams ?? {};
+  // Merge user params (respects their overrides for layers/styles/CSBOOL/etc.)
+  for (const [k, v] of Object.entries(wp)) params.set(k, v);
+  if (!params.has("version")) params.set("version", "1.3.0");
+  if (!params.has("format")) params.set("format", "image/png");
+  if (!params.has("width")) params.set("width", "256");
+  if (!params.has("height")) params.set("height", "256");
+  // Rev796: WMS 1.1.x usa srs=, WMS 1.3.x usa crs=. Autodetectar por
+  // version del layer para no romper GeoServers 1.1.1 legacy (OpenSeaMap
+  // GEBCO, Navegal WMS_BATI, etc.).
+  const version = params.get("version") || "1.3.0";
+  const isV11 = version.startsWith("1.1");
+  const projKey = isV11 ? "srs" : "crs";
+  if (!params.has(projKey)) params.set(projKey, "EPSG:3857");
+  params.set("bbox", `${minX},${minY},${maxX},${maxY}`);
+  if (layer.auth && layer.auth.type === "queryKey" && layer.auth.paramName && layer.auth.value) {
+    params.set(layer.auth.paramName, layer.auth.value);
+  }
+  return base + (base.includes("?") ? "&" : "?") + params.toString();
+}
+
+function _chartCachePath(layerId: string, z: number, x: number, y: number): string {
+  return path.join(app.getDataDirPath(), "ihm", "chart-cache", layerId, String(z), String(x), `${y}.png`);
+}
+
+async function _fetchTile(layer: ChartLayerConfig, z: number, x: number, y: number): Promise<Buffer> {
+  const url = _composeTileUrl(layer, z, x, y);
+  const headers: Record<string, string> = {
+    "User-Agent": `signalk-mareas-ihm/${PLUGIN_VERSION} (${PLUGIN_REVISION})`,
+    "Accept": "image/png,image/*;q=0.8",
+  };
+  if (layer.auth?.type === "header" && layer.auth.headerName && layer.auth.value) {
+    headers[layer.auth.headerName] = layer.auth.value;
+  } else if (layer.auth?.type === "basic" && layer.auth.user != null) {
+    const b64 = Buffer.from(`${layer.auth.user}:${layer.auth.pass ?? ""}`).toString("base64");
+    headers["Authorization"] = `Basic ${b64}`;
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const resp = await fetch(url, { headers, signal: ctrl.signal });
+    if (!resp.ok) throw new Error(`upstream ${resp.status}`);
+    const ab = await resp.arrayBuffer();
+    return Buffer.from(ab);
+  } finally { clearTimeout(timer); }
+}
+
+/* Rev795/796: placeholders pre-cargados para servicios "grises" o libres.
+   NO distribuimos URLs de servicios con acceso restringido — solo nombre y
+   params. Los libres SÍ llevan urlTemplate/urlBase precargados. */
+const _CHART_PLACEHOLDERS: ChartLayerConfig[] = [
+  /* Rev798: restaurado IH Portugal ENC como placeholder (esqueleto sin
+     URL, se configura via modal — la confusión anterior fue "IHM España"
+     no "IH Portugal"). SHOM raster requiere clave INSPIRE. NOAA ENC no
+     se precarga: ya existe la capa hardcoded 'noaa'. */
+  {
+    id: "ih-pt-enc",
+    name: "Portugal — IH ENC",
+    type: "wms",
+    wmsParams: {
+      layers: "ENC,IENC", styles: "",
+      format: "image/png", transparent: "true",
+      version: "1.3.0", crs: "EPSG:3857",
+      width: "256", height: "256",
+      CSBOOL: "2183",
+    },
+    attribution: "Instituto Hidrográfico Portugal",
+    minZoom: 5, maxZoom: 17, cacheTtlMs: 7 * 24 * 3600 * 1000,
+  },
+  {
+    id: "shom-raster-marine",
+    name: "Francia — SHOM RASTER MARINE",
+    type: "wms",
+    wmsParams: {
+      layers: "RASTER_MARINE", styles: "",
+      format: "image/png", transparent: "true",
+      version: "1.3.0", crs: "EPSG:3857",
+      width: "256", height: "256",
+    },
+    attribution: "SHOM — Requires subscription/INSPIRE key",
+    minZoom: 5, maxZoom: 18, cacheTtlMs: 7 * 24 * 3600 * 1000,
+  },
+  /* Rev796: IGN Francia cartas costeras — WMTS público sin key. Como el
+     WMTS con tilematrixset=PM usa el mismo tiling que XYZ (Web Mercator),
+     lo servimos como XYZ template con {z}/{x}/{y} sustituidos por
+     TileMatrix/TileCol/TileRow. Es la vía LIBRE para cartas costeras FR;
+     Navegal la reproxya como WMTS_FR. Rev803: eliminado el placeholder
+     duplicado "ign-scan-littoral" (era el que exigía clave y no funciona
+     libre). Este 'ign-fr-coastal' es el único endpoint FR libre real. */
+  {
+    id: "ign-fr-coastal",
+    name: "Francia — IGN Cartas costeras",
+    type: "xyz",
+    urlTemplate: "https://data.geopf.fr/wmts?layer=GEOGRAPHICALGRIDSYSTEMS.COASTALMAPS&style=normal&tilematrixset=PM&Service=WMTS&Request=GetTile&Version=1.0.0&Format=image/png&TileMatrix={z}&TileCol={x}&TileRow={y}",
+    attribution: "IGN Géoportail (Etalab 2.0)",
+    minZoom: 5, maxZoom: 18, cacheTtlMs: 7 * 24 * 3600 * 1000,
+  },
+  /* Rev812 (feedback Carlos): mover IHM España al grupo de cartas por
+     países. Antes hardcoded en HTML como layer 'ihm'. */
+  {
+    id: "ihm-es-enc",
+    name: "España — IHM ENC",
+    type: "wms",
+    urlBase: "https://ideihm.covam.es/encwms",
+    wmsParams: {
+      layers: "ENC", styles: "",
+      format: "image/png", transparent: "true",
+      version: "1.3.0", crs: "EPSG:3857",
+      width: "256", height: "256",
+    },
+    attribution: "© IHM",
+    minZoom: 5, maxZoom: 16, cacheTtlMs: 7 * 24 * 3600 * 1000,
+  },
+  /* Rev812 (feedback Carlos): NOAA ENC US movido al grupo. Antes hardcoded
+     como layer 'noaa' en HTML apuntando a gis.charttools.noaa.gov. */
+  {
+    id: "noaa-us-enc",
+    name: "EEUU — NOAA ENC",
+    type: "wms",
+    urlBase: "https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/WMSServer",
+    wmsParams: {
+      layers: "1,2,3,4,5,6", styles: "",
+      format: "image/png", transparent: "true",
+      version: "1.3.0", crs: "EPSG:3857",
+      width: "256", height: "256",
+    },
+    attribution: "© NOAA — Office of Coast Survey (public domain)",
+    minZoom: 4, maxZoom: 18, cacheTtlMs: 7 * 24 * 3600 * 1000,
+  },
+  /* Rev803-807: Traficom Finlandia — WMTS público sin key, CC-BY 4.0.
+     Rev807 fix: serie "A public" (vista general Finlandia entera). "C" solo
+     cubre suroeste y devolvía 400 en Helsinki. Merikarttasarja A public
+     tiene cobertura de todo el país aunque con menos detalle que las
+     series B/C/D/E regionales. */
+  {
+    id: "traficom-fi",
+    name: "Finlandia — Traficom cartas nauticas",
+    type: "xyz",
+    urlTemplate: "https://julkinen.traficom.fi/rasteripalvelu/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=Traficom:Merikarttasarja A public&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WGS84_Pseudo-Mercator&TILEMATRIX=WGS84_Pseudo-Mercator:{z}&TILEROW={y}&TILECOL={x}",
+    attribution: "© Traficom (CC-BY 4.0)",
+    minZoom: 4, maxZoom: 15, cacheTtlMs: 7 * 24 * 3600 * 1000,
+  },
+  /* Rev809: OpenSeaMap GEBCO batimetría eliminado (Carlos: "muy básica"). */
+  /* Rev800/803: Kartverket Noruega — WMS público sin key, NLOD.
+     Rev803 fix: layer real es 'hoved' (main charts), no 'sjokartraster'.
+     Otras opciones válidas: 'kyst' (coastal), 'overview', 'all'. */
+  {
+    id: "kartverket-no",
+    name: "Noruega — Kartverket cartas nauticas",
+    type: "wms",
+    urlBase: "https://wms.geonorge.no/skwms1/wms.sjokartraster2",
+    wmsParams: {
+      layers: "hoved", styles: "",
+      format: "image/png", transparent: "true",
+      version: "1.3.0", crs: "EPSG:3857",
+      width: "256", height: "256",
+    },
+    attribution: "© Kartverket (NLOD)",
+    minZoom: 5, maxZoom: 18, cacheTtlMs: 7 * 24 * 3600 * 1000,
+  },
+  /* Rev800/803/804: CHS Canadá NONNA — batimetría. WMS público sin key.
+     Rev803 quitó namespace; Rev804 lo restaura (Carlos: "antes sí funcionaba"). */
+  {
+    id: "chs-ca-nonna",
+    name: "Canadá — CHS batimetría NONNA",
+    type: "wms",
+    urlBase: "https://nonna-geoserver.data.chs-shc.ca/geoserver/wms",
+    wmsParams: {
+      /* Rev806 fix: layer real es "nonna:NONNA 10" con ESPACIO (no
+         subrayado). Confirmado via GetCapabilities directo del server. */
+      layers: "nonna:NONNA 10", styles: "",
+      format: "image/png", transparent: "true",
+      version: "1.3.0", crs: "EPSG:3857",
+      width: "256", height: "256",
+    },
+    attribution: "© Canadian Hydrographic Service (Open Government)",
+    minZoom: 5, maxZoom: 16, cacheTtlMs: 7 * 24 * 3600 * 1000,
+  },
+  /* Rev809: EMODnet Batimetría eliminado (Carlos: "no sirve para nada"). */
+];
+
+function _isLayerConfigured(l: ChartLayerConfig): boolean {
+  if (l.type === "xyz") return typeof l.urlTemplate === "string" && l.urlTemplate.length > 0;
+  return typeof l.urlBase === "string" && l.urlBase.length > 0;
+}
+
+function _mergedLayers(): ChartLayerConfig[] {
+  // Placeholder base + user override (por id). User-only ids también incluidos.
+  const byId = new Map<string, ChartLayerConfig>();
+  for (const p of _CHART_PLACEHOLDERS) byId.set(p.id, { ...p });
+  for (const u of _chartLayers) {
+    const base = byId.get(u.id);
+    byId.set(u.id, base ? { ...base, ...u, wmsParams: { ...(base.wmsParams ?? {}), ...(u.wmsParams ?? {}) } } : { ...u });
+  }
+  return Array.from(byId.values());
+}
+
+expressApp.get("/signalk-mareas-ihm/api/chart-layers", (_req: any, res: any) => {
+  // Rev795/797: devuelve merged (placeholders + user). urlBase/urlTemplate
+  // sí se exponen para que la UI muestre qué está usando (transparencia
+  // pedida por Carlos 2026-07-31). auth.value/pass NUNCA — se sustituye
+  // por hasAuth flag.
+  const merged = _mergedLayers();
+  const safe = merged.map(l => ({
+    id: l.id,
+    name: l.name,
+    type: l.type,
+    urlBase: l.urlBase,
+    urlTemplate: l.urlTemplate,
+    minZoom: l.minZoom,
+    maxZoom: l.maxZoom,
+    attribution: l.attribution,
+    configured: _isLayerConfigured(l),
+    isPlaceholder: _CHART_PLACEHOLDERS.some(p => p.id === l.id),
+    hasAuth: !!l.auth,
+    wmsParams: l.type === "wms" ? l.wmsParams : undefined,
+  }));
+  res.set("Cache-Control", "no-store");
+  res.json({ layers: safe, rev: PLUGIN_REVISION });
+});
+
+/* Rev795: POST layer (crear o actualizar). Solo master. Body:
+   { name?, type, urlBase?, urlTemplate?, wmsParams?, auth?, minZoom?, maxZoom?, cacheTtlMs?, attribution? }
+   Si :id coincide con un placeholder, se guarda como override (los campos
+   que no vengan en el body se heredan del placeholder al merge). Si es
+   nuevo id, se crea entrada custom. */
+async function _requireMaster(req: any, res: any): Promise<boolean> {
+  const isMaster = (global as any)._ihmActiveUserIsMaster?.(req) ?? false;
+  const activeAlias = (global as any)._ihmActiveUserAlias?.(req) ?? null;
+  // Sin capa de PIN → permitir (compat pre-Rev735). Con capa → solo master.
+  if (activeAlias === null) return true;
+  if (isMaster) return true;
+  res.status(403).json({ error: "master_required", message: "Solo el master puede editar cartas." });
+  return false;
+}
+
+expressApp.post("/signalk-mareas-ihm/api/chart-layers/:id", requireControlAccess, async (req: any, res: any) => {
+  if (!(await _requireMaster(req, res))) return;
+  const id = String(req.params.id || "").trim();
+  if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+    return res.status(400).json({ error: "bad_id", message: "id debe ser [a-zA-Z0-9_-]+" });
+  }
+  const body = req.body || {};
+  const placeholder = _CHART_PLACEHOLDERS.find(p => p.id === id) || null;
+  const existing = _chartLayers.find(l => l.id === id) || null;
+  const base: Partial<ChartLayerConfig> = existing ? { ...existing } : (placeholder ? { ...placeholder } : {});
+  const type = body.type ?? base.type;
+  if (type !== "wms" && type !== "xyz") return res.status(400).json({ error: "bad_type" });
+  const merged: ChartLayerConfig = {
+    id,
+    name: String(body.name ?? base.name ?? id),
+    type,
+    urlBase: body.urlBase != null ? String(body.urlBase).trim() : base.urlBase,
+    urlTemplate: body.urlTemplate != null ? String(body.urlTemplate).trim() : base.urlTemplate,
+    wmsParams: { ...(base.wmsParams ?? {}), ...(body.wmsParams ?? {}) },
+    attribution: body.attribution != null ? String(body.attribution) : base.attribution,
+    minZoom: typeof body.minZoom === "number" ? body.minZoom : base.minZoom,
+    maxZoom: typeof body.maxZoom === "number" ? body.maxZoom : base.maxZoom,
+    cacheTtlMs: typeof body.cacheTtlMs === "number" ? body.cacheTtlMs : base.cacheTtlMs,
+    auth: body.auth ?? base.auth,
+  };
+  // Validación mínima según tipo.
+  if (merged.type === "xyz" && !merged.urlTemplate) {
+    return res.status(400).json({ error: "missing_url_template", message: "urlTemplate requerido para XYZ" });
+  }
+  if (merged.type === "wms" && !merged.urlBase) {
+    return res.status(400).json({ error: "missing_url_base", message: "urlBase requerido para WMS" });
+  }
+  const idx = _chartLayers.findIndex(l => l.id === id);
+  if (idx >= 0) _chartLayers[idx] = merged; else _chartLayers.push(merged);
+  try { await ihmCache.set("chartLayers", _chartLayers); } catch { /* non-fatal */ }
+  broadcastSSE("chart-layers");
+  res.json({ ok: true, id, configured: _isLayerConfigured(merged) });
+});
+
+expressApp.delete("/signalk-mareas-ihm/api/chart-layers/:id", requireControlAccess, async (req: any, res: any) => {
+  if (!(await _requireMaster(req, res))) return;
+  const id = String(req.params.id || "").trim();
+  const before = _chartLayers.length;
+  _chartLayers = _chartLayers.filter(l => l.id !== id);
+  const removed = before - _chartLayers.length;
+  if (removed > 0) {
+    try { await ihmCache.set("chartLayers", _chartLayers); } catch { /* non-fatal */ }
+    broadcastSSE("chart-layers");
+  }
+  const stillHasPlaceholder = _CHART_PLACEHOLDERS.some(p => p.id === id);
+  res.json({ ok: true, removed, revertedToPlaceholder: stillHasPlaceholder });
+});
+
+expressApp.get("/signalk-mareas-ihm/api/chart-proxy/:id/:z/:x/:y", async (req: any, res: any) => {
+  const id = String(req.params.id);
+  const z = parseInt(req.params.z, 10);
+  const x = parseInt(req.params.x, 10);
+  const yRaw = String(req.params.y).replace(/\.png$/i, "");
+  const y = parseInt(yRaw, 10);
+  if (!isFinite(z) || !isFinite(x) || !isFinite(y)) {
+    res.status(400).send("bad tile coords"); return;
+  }
+  const layer = _mergedLayers().find(l => l.id === id);
+  if (!layer) { res.status(404).send("layer not found"); return; }
+  if (!_isLayerConfigured(layer)) { res.status(409).send("layer not configured"); return; }
+  const cachePath = _chartCachePath(id, z, x, y);
+  const ttl = typeof layer.cacheTtlMs === "number" ? layer.cacheTtlMs : 7 * 24 * 3600 * 1000;
+  try {
+    const st = await fs.promises.stat(cachePath);
+    if (Date.now() - st.mtimeMs < ttl) {
+      res.set("Content-Type", "image/png");
+      res.set("Access-Control-Allow-Origin", "*");
+      res.set("Cache-Control", "public, max-age=86400");
+      res.set("X-Chart-Cache", "hit");
+      fs.createReadStream(cachePath).pipe(res);
+      return;
+    }
+  } catch { /* cache miss */ }
+  try {
+    const buf = await _fetchTile(layer, z, x, y);
+    try {
+      await fs.promises.mkdir(path.dirname(cachePath), { recursive: true });
+      await fs.promises.writeFile(cachePath, buf);
+    } catch (e: any) { app.debug(`[IHM-CHART] write cache failed: ${e?.message ?? e}`); }
+    res.set("Content-Type", "image/png");
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Cache-Control", "public, max-age=86400");
+    res.set("X-Chart-Cache", "miss");
+    res.send(buf);
+  } catch (e: any) {
+    app.debug(`[IHM-CHART] fetch failed layer=${id} z=${z} x=${x} y=${y}: ${e?.message ?? e}`);
+    // Fallback: si tenemos versión antigua en cache, servirla aunque haya expirado.
+    try {
+      const st = await fs.promises.stat(cachePath);
+      if (st.isFile()) {
+        res.set("Content-Type", "image/png");
+        res.set("Access-Control-Allow-Origin", "*");
+        res.set("X-Chart-Cache", "stale");
+        fs.createReadStream(cachePath).pipe(res);
+        return;
+      }
+    } catch { /* nothing cached */ }
+    res.status(502).send(`upstream error: ${e?.message ?? e}`);
+  }
 });
 
 // Rev44: silence alarms for N minutes. Lets visor (or any REST client) ACK

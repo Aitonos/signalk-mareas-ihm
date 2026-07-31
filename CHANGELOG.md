@@ -1,5 +1,97 @@
 # Changelog
 
+## [2.11.0] - 2026-07-31
+
+### English
+
+**Custom chart layers by country (WMS / WMTS / XYZ) with UI configuration**
+
+New "Charts by country" section in the Layers panel. Comes pre-loaded with skeletons for national hydrographic services (Portugal — IH ENC, Spain — IHM ENC, France — IGN Coastal charts, USA — NOAA ENC, Norway — Kartverket, Finland — Traficom, Canada — CHS NONNA bathymetry, plus OpenSeaMap Seamarks and the SHOM raster placeholder). Freely accessible services already have their URL filled in; restricted ones (IH-PT ENC, SHOM RASTER MARINE) show as ⚠ "not configured" — click the ⚙ icon to paste your URL and, if the service needs one, an API key. Every activated layer routes through a backend proxy that handles CORS, disk cache (30 days) and WMS 1.1.x / 1.3.x quirks. Countries are listed alphabetically and each row shows the full URL under the name so you always know what's really being fetched.
+
+**Live rain radar overlay (RainViewer)**
+
+New 🌧 "Rain radar (RainViewer)" checkbox in the base layer block. Fetches the freshest frame every 2.5 minutes from `api.rainviewer.com`, renders it as a Leaflet tile layer over your chart. Opacity slider. Native support for Universal Blue colour scheme, snow smoothing, and gracefully handles the "tile beyond native zoom" edge case by clamping to `maxNativeZoom=7` (RainViewer's real limit) instead of showing tiles with the text "zoom level not supported" burned in.
+
+**World-wide port search from the sidebar**
+
+New 🔍 "Ports" button in the right sidebar. Opens a search modal that queries OpenStreetMap Nominatim, prioritises maritime features (harbour, port, marina, dock, pier, bay), and lists results with country flag + type badge. One click flies the map to the location, drops a temporary target marker, and disables the boat auto-follow so the camera stays where you sent it (until you press "centre boat" again). Handy to test the country charts above without scrolling half the ocean.
+
+**Multi-source badges for AIS targets**
+
+Each AIS target in the list now shows every channel that has actually seen it in the last 120 s: **AIS propio** (VHF green) + **AISStream** / **AISHub** / **AISFriends** (blue) as applicable. Previously only the "current owner" of the target was shown, so nearby targets always said VHF and far-away ones always said AISFriends — you never knew the online engines were adopting hundreds of targets. On top of that, added a physical-plausibility filter: with an antenna at 3 m above sea level VHF is capped at ~40 km, so any target beyond 60 km automatically drops the VHF badge (it's obviously another provider feeding the SignalK bus, not your radio). Prevents "VHF at 99 km" ghosts.
+
+**PIN sessions persist across server restarts**
+
+`_pinSessions` used to live only in memory, so every `-Restart` invalidated every logged-in user's cookie without warning. Now the session table is written to disk (`ihmCache "pinSessions"`) on every create / delete, and loaded (with TTL enforcement) on startup. Users stay logged in through a deploy or reboot instead of silently reverting to "no session" and losing their permissions.
+
+**Anchor favourites: multi-user model, inline rename, cross-device sync**
+
+- Master edits/deletes anyone's favourite. Guest edits/deletes their own and the shared ones. Every entry keeps the `@user` tag so you can see who added it.
+- ✏ inline rename button on each row, no separate modal needed.
+- The optimistic UI now reconciles with the backend after every save/delete — if the backend rejects (permission, ownership), the local cache re-hydrates automatically so you don't see a fantasy state.
+- Focus preserved after clicking 📍 to fly to a favourite / historical anchor (the boat auto-follow no longer snaps the map back to the vessel two seconds later).
+
+**Wave from IMU: correct fallback semantics (issue #31 with @ABS0lute-1)**
+
+Rev808 fixed the empty wave widget when the IMU rejected a reading, falling back to the Open-Meteo forecast. Rev822 refines: `noMotion` (boat literally still) is not an error, it's a real measurement — the shelter and map now display "Boat still (sea calm)" with the green IMU badge instead of showing forecasted waves the boat clearly isn't feeling. Other rejections (`periodOutOfRange`, sensor noise) still fall back to forecast with a small grey note explaining why.
+
+**Minor UX**
+
+- Shelter modal: observability strip on top showing coordinate + last-computed timestamp + source (cache / fresh Overpass fetch), so unusual masks can be diagnosed without guessing.
+- Chart config modal moved out of the panel container (its `backdrop-filter` was collapsing the modal into the panel bounds — the fullscreen overlay is now truly fullscreen).
+- Layer panel: 🌧 Radar and Wind/Wave marker moved above "My track (GPS)" for quicker reach.
+- AIS panel header: `ais_hdr_alarm` label restored (was falling back to the raw i18n key).
+- Traficom Finland: switched default layer to `Merikarttasarja A public` (nation-wide overview) — the previous `C public` only covered the south-west.
+- CHS Canada NONNA: layer name corrected to `nonna:NONNA 10` with the literal space that GeoServer expects.
+- Ports button: sidebar label i18n key resolved and matches other sidebar buttons.
+
+---
+
+### Español
+
+**Cartas por Países configurables (WMS / WMTS / XYZ) con UI**
+
+Nueva sección "Cartas por Países" en el panel de Capas. Trae precargados esqueletos de los servicios hidrográficos nacionales (Portugal — IH ENC, España — IHM ENC, Francia — IGN Cartas costeras, EEUU — NOAA ENC, Noruega — Kartverket, Finlandia — Traficom, Canadá — CHS batimetría NONNA, más OpenSeaMap Seamarks y el placeholder de SHOM raster). Los servicios de acceso libre ya llevan la URL rellena; los restringidos (IH-PT ENC, SHOM RASTER MARINE) aparecen como ⚠ "sin configurar" — pulsa el ⚙ para pegar la URL y, si el servicio la necesita, una clave API. Cada capa activada pasa por un proxy backend que resuelve CORS, cache en disco (30 días) y las diferencias entre WMS 1.1.x y 1.3.x. Ordenadas alfabéticamente por país; cada fila muestra la URL abreviada bajo el nombre para que sepas qué servicio se está usando.
+
+**Overlay de radar de lluvia en vivo (RainViewer)**
+
+Nuevo checkbox 🌧 "Radar de lluvia (RainViewer)" en el bloque de capas base. Recupera el frame más reciente cada 2,5 minutos de `api.rainviewer.com` y lo pinta como layer Leaflet sobre la carta. Slider de opacidad. Esquema Universal Blue, snow smoothing y tratamiento del caso "zoom fuera de rango nativo" con `maxNativeZoom=7` (el límite real de RainViewer) para no mostrar teselas con el texto "zoom level not supported" quemado.
+
+**Búsqueda mundial de puertos desde la sidebar**
+
+Nuevo botón 🔍 "Puertos" en la sidebar derecha. Abre un modal que consulta OpenStreetMap Nominatim, prioriza features marítimas (harbour, port, marina, dock, pier, bay) y lista los resultados con bandera del país + badge de tipo. Un clic vuela el mapa al sitio, pinta un marker temporal y desactiva el auto-follow del barco (para que la cámara no rebote al barco a los dos segundos). Muy útil para probar las cartas nacionales de arriba sin arrastrar medio océano.
+
+**Badges multi-fuente para los targets AIS**
+
+Cada target AIS del listado muestra ahora todos los canales que lo han visto en los últimos 120 s: **AIS propio** (VHF en verde) + **AISStream** / **AISHub** / **AISFriends** (azul) según corresponda. Antes solo se mostraba el "dueño actual" del target, así que los cercanos siempre salían como VHF y los lejanos como AISFriends — nunca se veía que los motores online estaban adoptando cientos de targets. Además, filtro de plausibilidad física: con antena a 3 m sobre el nivel del mar el VHF llega a ~40 km, así que cualquier target a más de 60 km pierde automáticamente el badge VHF (obviamente es otro plugin metiendo datos al bus SignalK, no tu radio). Se acabaron los "VHF a 99 km" fantasma.
+
+**Sesiones PIN persistentes entre reinicios del server**
+
+`_pinSessions` vivía solo en memoria, así que cada `-Restart` invalidaba la cookie de todos los usuarios logueados sin avisar. Ahora la tabla se escribe en disco (`ihmCache "pinSessions"`) tras cada create / delete y se carga (aplicando TTL) en el arranque. Los usuarios permanecen logueados a través de un deploy o reboot en vez de perder silenciosamente su sesión y sus permisos.
+
+**Favoritos de fondeo: modelo multi-usuario, renombrado inline, sync cross-device**
+
+- El master edita/borra el favorito de cualquiera. El invitado edita/borra los suyos y los compartidos. Cada entrada conserva el tag `@usuario` para saber quién lo creó.
+- Botón ✏ de renombrado inline en cada fila, sin modal aparte.
+- La UI optimista se reconcilia con el backend tras cada guardado/borrado — si el backend rechaza (permiso, propiedad), la cache local se re-hidrata automáticamente para no quedar en un estado fantasma.
+- Foco preservado tras pulsar 📍 en un favorito o fondeo histórico (el auto-follow del barco ya no salta la cámara de vuelta al barco dos segundos después).
+
+**Oleaje del IMU: semántica correcta del fallback (issue #31 con @ABS0lute-1)**
+
+Rev808 arregló el widget vacío cuando el IMU rechazaba una lectura, cayendo al forecast Open-Meteo. Rev822 lo afina: `noMotion` (barco literalmente quieto) no es un error, es una medida verdadera — el shelter y el mapa muestran ahora "Barco quieto (mar en calma)" con el badge IMU verde en vez de mostrar olas del forecast que el barco claramente no está sintiendo. El resto de rechazos (`periodOutOfRange`, ruido de sensor) siguen cayendo al forecast con una notita gris explicando por qué.
+
+**UX menor**
+
+- Modal Shelter: banda de observabilidad arriba mostrando coordenada + timestamp del último cálculo + fuente (caché / fetch nuevo de Overpass), para diagnosticar máscaras raras sin adivinar.
+- Modal de configuración de carta movido fuera del panel padre (su `backdrop-filter` estaba colapsando el modal dentro de los límites del panel — el overlay fullscreen ahora sí es fullscreen).
+- Panel de capas: 🌧 Radar y Marcador viento/ola movidos encima de "Mi track (GPS)" para acceso rápido.
+- Cabecera del panel AIS: label `ais_hdr_alarm` restaurado (antes salía la clave i18n cruda).
+- Traficom Finlandia: layer por defecto cambiado a `Merikarttasarja A public` (visión general nacional) — el anterior `C public` solo cubría el suroeste.
+- CHS Canadá NONNA: nombre de layer corregido a `nonna:NONNA 10` con el espacio literal que GeoServer espera.
+- Botón Puertos: clave i18n de la sidebar resuelta y coherente con los otros botones.
+
+---
+
 ## [2.10.4] - 2026-07-26
 
 ### English

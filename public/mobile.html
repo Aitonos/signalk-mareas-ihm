@@ -2158,6 +2158,25 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 </div>
 <div id="map"></div>
 
+<!-- Rev802/803: botón de búsqueda de puertos ahora integrado en la m-sidebar (ver L2401 aprox). Bloque flotante eliminado. -->
+
+<div class="popup-overlay" id="port-search-pop" onclick="if(event.target.id==='port-search-pop')closePopup('port-search-pop')">
+  <div class="popup-box" onclick="event.stopPropagation()" style="max-width:720px;max-height:88vh;display:flex;flex-direction:column">
+    <h4 style="display:flex;align-items:center;gap:14px;flex:0 0 auto"><span style="font-size:1.2em">🔍</span><span data-i18n="port_search_title">Buscar puerto en el mundo</span></h4>
+    <div style="font-size:19px;color:#cde;margin:6px 0 16px;line-height:1.35;flex:0 0 auto" data-i18n="port_search_hint">Escribe un nombre de puerto, marina o ciudad costera. Ej: "Bergen", "Vigo", "Halifax".</div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex:0 0 auto">
+      <input type="text" id="port-search-q" placeholder="Nombre de puerto..." onkeydown="if(event.key==='Enter')portSearchDo();" style="flex:1;padding:16px 18px;font-size:22px;border-radius:10px;border:2px solid rgba(255,255,255,.25);background:rgba(0,0,0,.35);color:#fff;box-sizing:border-box">
+      <button onclick="portSearchDo()" style="padding:16px 28px;background:var(--org);color:#0a1929;border:none;border-radius:10px;cursor:pointer;font-size:22px;font-weight:900" data-i18n="port_search_btn">Buscar</button>
+    </div>
+    <div id="port-search-results" style="flex:1;min-height:0;overflow-y:auto;padding-right:6px">
+      <div style="opacity:.6;font-size:18px;font-style:italic" data-i18n="port_search_empty">Introduce un término y pulsa Buscar.</div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex:0 0 auto">
+      <button onclick="closePopup('port-search-pop')" style="padding:14px 28px;background:var(--org);color:#0a1929;border:none;border-radius:10px;cursor:pointer;font-size:20px;font-weight:900" data-i18n="m_cerrar">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============================================================
      Rev168: Mobile chrome (sidebar, hamburguesa, bottom bar).
      Solo se renderiza cuando body.mobile-ui está activo (CSS).
@@ -2385,6 +2404,9 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
        del modal y el i18n shelter_title también cambian a 🏔️. -->
   <button class="m-sb-btn" id="m-sb-abrigo" onclick="openShelterConfig()" data-i18n-title="sb_abrigo_tip" title="Previsión abrigo"><span class="ico">🏔️</span><span data-i18n="sb_abrigo">Abrigo</span></button>
   <button class="m-sb-btn" id="m-sb-meteo"  onclick="toggleMeteo&&toggleMeteo()" data-i18n-title="menu_meteo" title="Previsión Meteo"><span class="ico">🌡️</span><span data-i18n="m_meteo_short">Meteo</span></button>
+  <!-- Rev803: buscador global de puertos en la sidebar. Reemplaza al botón
+       flotante Rev802. Icono 🔍 (lupa) pedido por Carlos. -->
+  <button class="m-sb-btn" id="m-sb-port"   onclick="portSearchOpen()" data-i18n-title="sb_puertos_tip" title="Buscar puertos del mundo"><span class="ico">🔍</span><span data-i18n="sb_puertos">Puertos</span></button>
   <!-- Rev450: container para botones extras dinamicos sidebar derecha
        (defaults KIP/FB + cualquiera anadido desde Configuracion). -->
   <div id="m-sb-extras-right" class="m-sb-extras"></div>
@@ -2969,6 +2991,9 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
          automática" usamos otra vía: pointer-events:none en el SVG
          decorativo + recuperación de pointer-events:auto en los sectores
          clickables. Así no hay overlap de eventos sin tocar layout. -->
+    <!-- Rev821: banda de observabilidad — coord + timestamp + origen del último auto-detect.
+         Permite al usuario ver qué punto y cuándo se calculó, sin adivinar. -->
+    <div id="shelter-obs" style="display:none;font-size:14px;color:#9ad;line-height:1.35;padding:6px 10px;margin:0 0 6px;background:rgba(20,40,60,.55);border:1px solid rgba(120,180,220,.25);border-radius:8px;text-align:center"></div>
     <div id="shelter-rose-wrap" class="shelter-rose-wrap" style="display:flex;justify-content:space-between;align-items:center;gap:0;margin:0;padding:0;flex:0 0 auto;position:relative;top:-20px">
       <svg id="shelter-rose" class="shelter-rose-svg" viewBox="-150 -150 300 300" width="497" height="497" style="overflow:visible;touch-action:none;user-select:none;flex:0 0 497px"></svg>
       <!-- Rev140: títulos "Escala Exposición" y "Protección" SOBRE cada
@@ -3156,6 +3181,9 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       <div class="ps-t" style="font-size:14px" data-i18n="capas">Capas</div>
       <!-- Rev610 (feedback Carlos Bloque C): bloque "Tracks" al principio de
            Cartas para exponer los toggles + slider límite horas + borrar. -->
+      <!-- Rev809 (feedback Carlos): radar de lluvia y marcador viento/ola movidos ANTES de "Mi track". -->
+      <div class="lyr-row"><input type="checkbox" id="chk-radar" onchange="tRadar(this.checked)"><label for="chk-radar">🌧 Radar de lluvia (RainViewer)</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-radar" style="--val-pct:66.67%">70</span><input type="range" class="lyr-opa" min="10" max="100" value="70" oninput="opaRadar(this.value);_updLyrVal('radar',this.value)"></div></div>
+      <div class="lyr-row"><input type="checkbox" id="chk-wx-mk" checked onchange="tL('wx-mk',this.checked)"><label for="chk-wx-mk"data-i18n="mostrar_viento_ola">Marcador viento/ola</label></div>
       <div style="font-size:13px;color:#ccc;font-weight:600;margin:4px 0 2px" data-i18n="tracks_title">Tracks</div>
       <div class="lyr-row">
         <input type="checkbox" id="chk-trk" checked onchange="m_trkSetOwnEnabled(this.checked)">
@@ -3189,7 +3217,8 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       <div class="lyr-row"><input type="checkbox" id="chk-sat" checked onchange="tL('sat',this.checked)"><label for="chk-sat" data-i18n="cap_satelite">Satélite (Esri)</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-sat" style="--val-pct:100%">100</span><input type="range" class="lyr-opa" min="10" max="100" value="100" oninput="opaL('sat',this.value);_updLyrVal('sat',this.value)"></div></div>
       <div style="font-size:13px;color:#ccc;font-weight:600;margin:6px 0 2px"data-i18n="info_fondo">Información de fondo</div>
       <div class="lyr-row"><input type="checkbox" id="chk-nav" checked onchange="tL('nav',this.checked)"><label for="chk-nav" data-i18n="cap_batimetria">Batimetría</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-nav" style="--val-pct:3.33%">13</span><input type="range" class="lyr-opa" min="10" max="100" value="13" oninput="opaL('nav',this.value);_updLyrVal('nav',this.value)"></div></div>
-      <div class="lyr-row"><input type="checkbox" id="chk-ihm" checked onchange="tL('ihm',this.checked)"><label for="chk-ihm" data-i18n="cap_ihm">IHM ENC — sustrato (S-52)</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-ihm" style="--val-pct:3.33%">13</span><input type="range" class="lyr-opa" min="10" max="100" value="13" oninput="opaL('ihm',this.value);_updLyrVal('ihm',this.value)"></div></div>
+      <!-- Rev812: chk-ihm eliminado; movido al grupo "Cartas por Paises" como placeholder ihm-es-enc. -->
+
       <div style="font-size:13px;color:#ccc;font-weight:600;margin:6px 0 2px"data-i18n="otras_capas">Otras capas base</div>
       <div class="lyr-row"><input type="checkbox" id="chk-bing" onchange="tL('bing',this.checked)"><label for="chk-bing">Bing Hybrid</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-bing" style="--val-pct:100%">100</span><input type="range" class="lyr-opa" min="10" max="100" value="100" oninput="opaL('bing',this.value);_updLyrVal('bing',this.value)"></div></div>
       <div class="lyr-row"><input type="checkbox" id="chk-esriclar" onchange="tL('esriclar',this.checked)"><label for="chk-esriclar">Esri Clarity</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-esriclar" style="--val-pct:100%">100</span><input type="range" class="lyr-opa" min="10" max="100" value="100" oninput="opaL('esriclar',this.value);_updLyrVal('esriclar',this.value)"></div></div>
@@ -3197,16 +3226,46 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       <!-- Rev329: NOAA ENC EE.UU. — único servicio público gratis sin API key.
            CHS Canadá DESHABILITADO en Rev329 — endpoint NONNA caído y no hay
            equivalente público sin login. Se reactivará cuando aparezca uno. -->
-      <div class="lyr-row"><input type="checkbox" id="chk-noaa" onchange="tL('noaa',this.checked)"><label for="chk-noaa" data-i18n="cap_noaa">NOAA ENC (EE.UU.)</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-noaa" style="--val-pct:55.56%">60</span><input type="range" class="lyr-opa" min="10" max="100" value="60" oninput="opaL('noaa',this.value);_updLyrVal('noaa',this.value)"></div></div>
+      <!-- Rev812: chk-noaa eliminado; movido al grupo "Cartas por Paises" como placeholder noaa-us-enc. -->
+
       <div class="lyr-row"><input type="checkbox" id="chk-osm" onchange="tL('osm',this.checked)"><label for="chk-osm">OpenStreetMap</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-osm" style="--val-pct:100%">100</span><input type="range" class="lyr-opa" min="10" max="100" value="100" oninput="opaL('osm',this.value);_updLyrVal('osm',this.value)"></div></div>
       <div class="lyr-row"><input type="checkbox" id="chk-sea" onchange="tL('sea',this.checked)"><label for="chk-sea">OpenSeaMap</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-sea" style="--val-pct:77.78%">80</span><input type="range" class="lyr-opa" min="10" max="100" value="80" oninput="opaL('sea',this.value);_updLyrVal('sea',this.value)"></div></div>
+      <!-- Rev801/809: radar movido arriba, antes de "Mi track". -->
+      <!-- Rev797/800: cartas personalizadas ARRIBA (mismo tipo que las hardcoded NOAA/OSM/OpenSeaMap). Heading Rev800 al mismo tamaño que el resto de secciones. -->
+      <div id="sec-cx-charts" style="display:none"><div style="font-size:18px;color:#ccc;font-weight:700;margin:10px 0 4px"data-i18n="cartas_custom">Cartas personalizadas</div><div id="cx-charts-list"></div></div>
       <div id="sec-charts" style="display:none"><div style="font-size:13px;color:#ccc;font-weight:600;margin:6px 0 2px"data-i18n="cartas_mbt">Cartas MBTiles</div><div id="charts-list"></div></div>
       <div id="sec-cp-charts" style="display:none"><div style="font-size:13px;color:#ccc;font-weight:600;margin:6px 0 2px"data-i18n="cartas_sk">Cartas registradas (Signal K)</div><div id="cp-charts-list"></div></div>
-      <!-- Rev610: chk-trk y chk-ais movidos al bloque "Tracks" del principio. -->
-      <div class="lyr-row"><input type="checkbox" id="chk-wx-mk" checked onchange="tL('wx-mk',this.checked)"><label for="chk-wx-mk"data-i18n="mostrar_viento_ola">Marcador viento/ola</label></div>
+      <!-- Rev816: modal cx-cfg-pop MOVIDO al body root (ver más abajo). El panel principal tiene backdrop-filter que rompía position fixed de descendientes y confinaba el modal dentro del panel. -->
+      <!-- Rev610/809: chk-trk, chk-ais y chk-wx-mk movidos al bloque de arriba. -->
+
     </div>
     <button class="btn-cfg" onclick="document.getElementById('cfg').classList.toggle('open')"data-i18n="cfg_mbt">⚙ Carpeta MBTiles</button>
     <div id="cfg"><input type="text" id="mbtiles-path" placeholder="/home/pi/charts"><button class="btn" style="background:rgba(255,255,255,.12);color:#ccc;font-size:14px;padding:6px" onclick="saveCfg()"data-i18n="guardar_reesc">Guardar y reescanear</button></div>
+  </div>
+</div>
+<!-- Rev816: modal cx-cfg-pop OUT del panel principal (backdrop-filter del panel rompía position fixed y confinaba el modal). -->
+<div class="popup-overlay" id="cx-cfg-pop" onclick="if(event.target.id==='cx-cfg-pop')closePopup('cx-cfg-pop')">
+  <div class="popup-box" onclick="event.stopPropagation()" style="max-width:720px">
+    <h4 style="display:flex;align-items:center;gap:14px"><span style="font-size:1.2em">🗺️</span><span id="cx-cfg-title">Configurar carta</span></h4>
+    <div style="font-size:20px;color:#cde;margin:6px 0 20px;line-height:1.35" id="cx-cfg-hint"></div>
+    <div style="margin:16px 0">
+      <label style="display:block;font-size:20px;color:#ccc;font-weight:700;margin-bottom:10px" id="cx-cfg-url-label">URL base del servicio</label>
+      <input type="text" id="cx-cfg-url" placeholder="https://..." style="width:100%;padding:16px 18px;font-size:22px;border-radius:10px;border:2px solid rgba(255,255,255,.25);background:rgba(0,0,0,.35);color:#fff;box-sizing:border-box">
+      <div style="font-size:18px;color:#9aa;margin-top:8px;line-height:1.3" id="cx-cfg-url-hint">Ejemplo: https://enc.hidrografico.pt/</div>
+    </div>
+    <div style="margin:16px 0">
+      <label style="display:block;font-size:20px;color:#ccc;font-weight:700;margin-bottom:10px">API key / token (opcional)</label>
+      <input type="text" id="cx-cfg-apikey" placeholder="Deja vacío si el servicio no lo pide" style="width:100%;padding:16px 18px;font-size:22px;border-radius:10px;border:2px solid rgba(255,255,255,.25);background:rgba(0,0,0,.35);color:#fff;box-sizing:border-box">
+      <div style="font-size:18px;color:#9aa;margin-top:8px;line-height:1.3">SHOM RASTER MARINE requiere clave INSPIRE. Otros servicios pueden usarla en query o header.</div>
+    </div>
+    <div style="margin:22px 0 10px;padding:16px 18px;background:rgba(255,180,80,.10);border:1px solid rgba(255,180,80,.35);border-radius:10px;font-size:19px;color:#ffd08a;line-height:1.35">
+      ⚠ <b>Responsabilidad legal</b>: usa solo servicios a los que tengas derecho de acceso. El plugin no verifica licencias externas.
+    </div>
+    <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:26px;flex-wrap:wrap">
+      <button id="cx-cfg-delete-btn" onclick="cxCfgDelete()" style="padding:16px 26px;background:rgba(231,76,60,.25);color:#ff8a8a;border:1px solid rgba(231,76,60,.55);border-radius:10px;cursor:pointer;font-size:20px;font-weight:800;display:none">🗑 Borrar</button>
+      <button onclick="closePopup('cx-cfg-pop')" style="padding:16px 26px;background:rgba(255,255,255,.10);color:#ccc;border:1px solid rgba(255,255,255,.25);border-radius:10px;cursor:pointer;font-size:20px;font-weight:700">Cancelar</button>
+      <button onclick="cxCfgSave()" style="padding:16px 32px;background:var(--org);color:#0a1929;border:none;border-radius:10px;cursor:pointer;font-size:22px;font-weight:900">Guardar</button>
+    </div>
   </div>
 </div>
 <!-- Bug 13 (Deploy 2): legacy #sbar kept HIDDEN — JS still updates its inner
@@ -5899,6 +5958,13 @@ var _i18n={
   otras_capas:{es:'Otras capas base',en:'Other base layers'},
   cartas_mbt:{es:'Cartas MBTiles',en:'MBTiles Charts'},
   cartas_sk:{es:'Cartas registradas (Signal K)',en:'Registered charts (Signal K)'},
+  cartas_custom:{es:'Cartas por Países',en:'Charts by country'},
+  sb_puertos:{es:'Puertos',en:'Ports'},
+  sb_puertos_tip:{es:'Buscar puertos del mundo',en:'Search world ports'},
+  port_search_title:{es:'Buscar puerto en el mundo',en:'Search port worldwide'},
+  port_search_hint:{es:'Escribe un nombre de puerto, marina o ciudad costera. Ej: "Bergen", "Vigo", "Halifax".',en:'Type a port, marina or coastal city. E.g. "Bergen", "Vigo", "Halifax".'},
+  port_search_btn:{es:'Buscar',en:'Search'},
+  port_search_empty:{es:'Introduce un término y pulsa Buscar.',en:'Type something and press Search.'},
   mostrar_derrotas:{es:'Mi track (GPS)',en:'My track (GPS)'},
   mostrar_ais:{es:'Tracks de otros barcos (AIS)',en:'Other boats\' tracks (AIS)'},
   /* Rev610 Bloque C: UI de tracks. */
@@ -6000,6 +6066,8 @@ var _i18n={
      AIS = iconos, Tracks = tracks otros, Alarma = alarmas proximidad. */
   ais_hdr_icons:{es:'AIS',en:'AIS'},
   ais_hdr_tracks:{es:'Tracks',en:'Tracks'},
+  /* Rev809 (feedback Carlos): key ais_hdr_alarm faltaba y el botón salía como 'ais_hdr_alarm' literal. */
+  ais_hdr_alarm:{es:'Alarma AIS',en:'AIS Alarm'},
   /* Rev768: nuevo toggle "Fondeos" (círculos naranja de ancla estimada
      de otros vessels). Reemplaza al viejo "Tracks" en la cabecera del
      panel AIS — los tracks ahora son automáticos por selección. */
@@ -6200,7 +6268,7 @@ function setLang(l){
   try { if (typeof m_updateTideBottom === 'function') m_updateTideBottom(); } catch(_){}
 }
 var map,boatMk,anchorMk,swingC,alarmC,chainLine,osmL,seaL,scaleCtrl,m_scaleTopCtrl;
-var cLyrs={},cpLyrs={},aisLyrGroup,aisTrackGroup;
+var cLyrs={},cpLyrs={},cxLyrs={},aisLyrGroup,aisTrackGroup;
 var anch=false,aPos=null,bPos=null,heading=null,cogVal=null;
 var _anchoredSinceMs=null; /* Rev331 item 13: timestamp drop activo */
 var swMax=30,aExtra=5,lDist=null,drag=false;
@@ -7018,6 +7086,7 @@ function init(){
     setTimeout(function(){
       loadCh();
       loadCpCharts();
+      loadCxCharts();
     },2000);
   });
   poll();
@@ -7057,6 +7126,11 @@ function init(){
       try{
         if(typeof _favHydrate==='function') _favHydrate();
       }catch(_){}
+    });
+    /* Rev795: repintar cartas personalizadas cuando el master edite o borre
+       una layer desde otro dispositivo. */
+    es.addEventListener('chart-layers',function(){
+      try{ if(typeof loadCxCharts==='function') loadCxCharts(); }catch(_){}
     });
     /* Rev206 (B-02): backend dispatches "silence" SSE event when a visor
        activates or cancels the AIS snooze. Same pattern as 'audio' — lands
@@ -9884,6 +9958,29 @@ function _effectiveWaveDirDeg(h, boatWave){
   }
   return null;
 }
+/* Rev808 (fix issue #31 @ABS0lute-1): el endpoint /api/wave/boat devuelve
+   available:true incluso cuando el motor RECHAZA por noMotion o
+   periodOutOfRange — en ese caso heightSigM/intensity/dirFromDeg son
+   null y rejectionReason indica por qué. Antes la UI trataba _boatWave
+   como "hay datos" siempre que available:true, con lo que shelter y map
+   marker mostraban widget vacío + badge IMU en vez de caer a forecast.
+   Este helper devuelve true solo si el IMU tiene datos utilizables. */
+function _boatWaveUsable(bw){
+  if(!bw) return false;
+  if(bw.rejectionReason) return false;
+  return (typeof bw.heightSigM === 'number' && bw.heightSigM >= 0.05)
+      || (typeof bw.intensity === 'string' && bw.intensity.length > 0)
+      || (typeof bw.dirFromDeg === 'number');
+}
+/* Rev822 (feedback @ABS0lute-1 tras Rev808): distinguir "barco quieto"
+   (información verdadera del IMU: sin movimiento) de "IMU rechazando por
+   ruido/error" (valor real desconocido → forecast). Solo si el motor
+   rechaza por noMotion consideramos que "el barco está literalmente
+   quieto"; el resto de razones (periodOutOfRange etc.) sí son fallback
+   legítimo al forecast. */
+function _boatWaveIsNoMotion(bw){
+  return !!(bw && bw.rejectionReason === 'noMotion');
+}
 function _refreshBoatWave(){
   fetch(A+'/wave/boat',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
     var prev=_boatWave;
@@ -10372,6 +10469,26 @@ function _shelterRenderPopup(){
   if(!svg)return;
   var mask=(_shelterCache&&_shelterCache.mask)?_shelterCache.mask:new Array(16).fill(false);
   var asm=_shelterCache&&_shelterCache.assessment;
+  /* Rev821: banda observabilidad — coord + timestamp + origen del último auto-detect. */
+  try{
+    var obs=document.getElementById('shelter-obs');
+    if(obs){
+      var pos=_shelterCache&&_shelterCache.autoDetectPos;
+      var ts=_shelterCache&&_shelterCache.autoDetectMs;
+      var src=_shelterCache&&_shelterCache.autoDetectSource;
+      if(pos||ts||src){
+        var srcTxt={overpass:'cálculo nuevo (OSM)',cache:'caché',"stale-cache":'caché caducada (fallback)'}[src]||src||'—';
+        var posTxt=pos?(pos.lat.toFixed(5)+'°, '+pos.lng.toFixed(5)+'°'):'—';
+        var tsTxt=ts?new Date(ts).toLocaleString(_lang==='en'?'en-GB':'es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+        obs.innerHTML='<b>'+(_lang==='en'?'Point analysed':'Punto analizado')+':</b> '+posTxt+' &middot; '+
+                     '<b>'+(_lang==='en'?'Calculated':'Calculado')+':</b> '+tsTxt+' &middot; '+
+                     '<b>'+(_lang==='en'?'Source':'Fuente')+':</b> '+srcTxt;
+        obs.style.display='';
+      } else {
+        obs.style.display='none';
+      }
+    }
+  }catch(_){}
   /* Build 16 pie-slice sectors. Each sector is 22.5° wide, centred on its
      cardinal point: 0=N (-11.25°..+11.25°), 1=NNE (11.25°..33.75°), ... */
   svg.innerHTML='';
@@ -10761,11 +10878,15 @@ function _shelterRenderPopup(){
       gustBadge='';
     }
     /* Rev116: si boat-imu activo + viendo AHORA, reemplazar altura forecast por
-       INTENSIDAD cualitativa medida + período medido del barco. Sin engaños:
-       Fase 1 no calcula altura, eso es Fase 2. La dirección también pasa a la
-       del boat-imu en _wxC16 directamente. */
+       INTENSIDAD cualitativa medida + período medido del barco.
+       Rev808/822: si IMU rechaza por noMotion, el barco está literalmente
+       quieto → mostrar "Mar en calma" con badge IMU (info verdadera). Si
+       rechaza por otra razón (periodOutOfRange, ruido) → fallback forecast. */
     var waveLine;
-    if(_boatWave&&_isViewingNow()){
+    if(_boatWaveIsNoMotion(_boatWave)&&_isViewingNow()){
+      waveLine='🌊 <b style="font-size:21px">'+(_lang==='en'?'Boat still (sea calm)':'Barco quieto (mar en calma)')+'</b>'+
+        ' <span style="color:#3aa856;font-size:22px;font-weight:800;margin-left:6px">IMU</span>';
+    } else if(_boatWaveUsable(_boatWave)&&_isViewingNow()){
       /* Rev128: en calma sin altura medible → "Mar en calma" sin dir/período
          (porque sin oscilación esos valores son ruido y confunden). */
       var _wbCalmI=(_boatWave.intensity==='calma')&&(typeof _boatWave.heightSigM!=='number'||_boatWave.heightSigM<0.05);
@@ -10786,10 +10907,20 @@ function _shelterRenderPopup(){
           ' <span style="color:#3aa856;font-size:22px;font-weight:800;margin-left:6px">IMU</span>';
       }
     }else{
+      /* Rev808: si el IMU está publicando pero rechazando, badge pequeño
+         explicando por qué (transparencia — el user sabe que el IMU vive
+         pero no valida ahora). */
+      var _imuRejBadge='';
+      if(_boatWave && _boatWave.rejectionReason && _isViewingNow()){
+        var _rrTxt=(_boatWave.rejectionReason==='noMotion')?(_lang==='en'?'IMU: no motion':'IMU: sin movimiento')
+                 :(_boatWave.rejectionReason==='periodOutOfRange')?(_lang==='en'?'IMU: period out':'IMU: período fuera de rango')
+                 :('IMU: '+_boatWave.rejectionReason);
+        _imuRejBadge=' <span style="color:#9aa;font-size:14px;font-weight:600;margin-left:6px;opacity:.85" title="IMU no valida la lectura ahora — se muestra el forecast Open-Meteo">'+_rrTxt+'</span>';
+      }
       waveLine=(typeof hSt.waveHeightM==='number'&&hSt.waveHeightM>0)
         ? '🌊 <b style="font-size:21px">'+hSt.waveHeightM.toFixed(1).replace('.',',')+' m</b> <span style="color:#9ad">'+wvDir+'</span>'+
-          (hSt.wavePeriodSec>0?' <span style="color:#aaa">·</span> <b>'+Math.round(hSt.wavePeriodSec)+' s</b>':'')
-        : '🌊 <span style="color:#666">—</span>';
+          (hSt.wavePeriodSec>0?' <span style="color:#aaa">·</span> <b>'+Math.round(hSt.wavePeriodSec)+' s</b>':'')+_imuRejBadge
+        : '🌊 <span style="color:#666">—</span>'+_imuRejBadge;
     }
     /* Rev88: Sparkline con eje X FIJO. Slots = 24 pasados + 12 futuros
        (siempre, independientemente de la hora seleccionada). "AHORA"
@@ -11360,7 +11491,12 @@ function _wxMapMarkerUpdate(){
     var oLabel;
     /* Rev315: labels "Olas" y "Mar en calma" i18n. */
     var _tw=function(k,fb){ return (typeof T==='function')?T(k,fb):fb; };
-    if(_boatWave){
+    /* Rev808/822: gate por _boatWaveUsable + caso noMotion. Si el IMU
+       rechaza por noMotion, el barco está literalmente quieto → label
+       "Mar en calma" (info verdadera). Si es otra rejection, forecast. */
+    if(_boatWaveIsNoMotion(_boatWave)){
+      oLabel=_tw('m_mar_calma','Mar en calma');
+    } else if(_boatWaveUsable(_boatWave)){
       var _vbCalm=(_boatWave.intensity==='calma')&&(typeof _boatWave.heightSigM!=='number'||_boatWave.heightSigM<0.05);
       if(_vbCalm){
         oLabel=_tw('m_mar_calma','Mar en calma');
@@ -11851,6 +11987,12 @@ function _deselectAis(){
   _selectedAisMmsi=null;
   _selectedAisDisappearedAt=null;
   _clearAisHighlight();
+  /* Rev778 (feedback Carlos "cuando cerramos con X selección en visor,
+     sigue el ancla en la carta"): también hay que limpiar el ancla
+     estimada individual (_aisSelectedAnchorLayer, pintado por
+     _showAisSelectedAnchor). Antes solo se limpiaba al hacer clic
+     fuera o cambiar de target, no al deseleccionar explícito con la X. */
+  try{ if(typeof _clearAisSelectedAnchor==='function') _clearAisSelectedAnchor(); }catch(_){}
   /* Rev768: al deseleccionar, borrar cualquier track visible ya
      (drawAisTracks con _selectedAisMmsi=null limpia el layer). */
   try{ if(typeof drawAisTracks==='function') drawAisTracks(); }catch(_){}
@@ -12247,16 +12389,25 @@ function _showAisSelectedAnchor(t){
      global de checkAisBorneoAlarm se solaparía con éste, por eso el
      bucle masivo excluye al seleccionado (ver Rev772 en el guard de
      checkAisBorneoAlarm). Así siempre hay 1 solo aro por vessel. */
-  /* Rev773 fix: t.sog llega del backend YA en knots (ver src/index.ts
-     endpoint /api/anchor-watch/ais, línea sog: sog*1.94384). Antes
-     multiplicábamos otra vez → target con SOG 0.3 kn real pasaba a
-     0.58 → considerado "en movimiento" → NO aro. Bug del 100% de los
-     casos "fondeado pero sale sin aro" que Carlos reportó. */
+  /* Rev773 fix: t.sog llega del backend YA en knots. Rev779 (feedback
+     Carlos "aros salen y desaparecen como intermitencia"): subimos el
+     umbral a 1.5 kn — un vessel realmente fondeado con jitter GPS y
+     oleaje puede oscilar 0.2-0.8 kn tick a tick. Con 0.5 kn algunos
+     ticks salían del rango → aro parpadeaba. 1.5 kn es tolerante a
+     deriva/oleaje sin confundir con navegación real (que va >2 kn). */
   var _sogKnT = (typeof t.sog === 'number') ? t.sog : 0;
-  var _isStaticT = !!(t.isStatic || _sogKnT < 0.5);
+  var _isStaticT = !!(t.isStatic || _sogKnT < 1.5);
   if(!_isStaticT) return; // en movimiento → sin aro (solo track)
+  /* Rev779: fallback si estimateAnchor devuelve null (pocos puntos en
+     el histórico). Antes → sin aro visible. Ahora → pintamos aro
+     con radio conservador (eslora + margen) centrado en la posición
+     actual del vessel. El aro puro por P90 aparecerá cuando el histórico
+     acumule 4+ puntos (~15 s tras seleccionar). */
   var est=estimateAnchor(t);
-  if(!est) return;
+  if(!est){
+    var _lenFallback = (typeof t.length === 'number' && t.length > 0) ? t.length : 12;
+    est = { lat: t.lat, lng: t.lng, radius: Math.max(20, _lenFallback * 2), _fallback: true };
+  }
   var grp=L.layerGroup();
   /* Círculo de borneo estimado (radio P90 + eslora + margen). */
   grp.addLayer(L.circle([est.lat,est.lng],{radius:est.radius,color:'#ff9800',fillColor:'#ff9800',fillOpacity:0.06,weight:2,dashArray:'8,4'}));
@@ -12523,9 +12674,18 @@ function checkAisBorneoAlarm(targets){
       if(aisAnchorEstShow){
         var _isSelectedT = (_selectedAisMmsi && cleanMmsi === _selectedAisMmsi);
         var _sogKnT = (typeof t.sog === 'number') ? t.sog : 0;
-        var _isStaticT = !!(t.isStatic || _sogKnT < 0.5);
+        /* Rev779: mismo umbral tolerante (1.5 kn) que _showAisSelectedAnchor
+           para no tener aros parpadeando por jitter GPS de vessels
+           fondeados. */
+        var _isStaticT = !!(t.isStatic || _sogKnT < 1.5);
         if(_isStaticT && !_isSelectedT){
           var est=estimateAnchor(t);
+          /* Rev779: fallback si histórico corto — aro conservador
+             centrado en el vessel para que no desaparezca. */
+          if(!est){
+            var _lenFallback = (typeof t.length === 'number' && t.length > 0) ? t.length : 12;
+            est = { lat: t.lat, lng: t.lng, radius: Math.max(20, _lenFallback * 2), _fallback: true };
+          }
           if(est){
             var _ringCol, _ringWeight, _dash;
             if(inB && !acked){
@@ -12627,14 +12787,20 @@ function checkAisBorneoAlarm(targets){
          aisstream, aishub o aisfriends. Ayuda a diagnosticar si tu
          receptor propio est\u00E1 trabajando bien o si dependemos mucho
          de las fuentes online. */
-      var _srcLbl='', _srcCol='';
-      switch(a.target&&a.target.source){
-        case 'vhf':        _srcLbl='VHF'; _srcCol='#3aa856'; break; // verde: propio
-        case 'aisstream':  _srcLbl='AS';  _srcCol='#9ad';    break;
-        case 'aishub':     _srcLbl='AH';  _srcCol='#9ad';    break;
-        case 'aisfriends': _srcLbl='AF';  _srcCol='#9ad';    break;
-      }
-      var srcBadge=_srcLbl?' <small style="color:'+_srcCol+';font-weight:700;opacity:.75;font-size:10px;letter-spacing:.5px" title="Fuente: '+_srcLbl+'">'+_srcLbl+'</small>':'';
+      /* Rev811/814: multi-badge con nombres completos (feedback Carlos:
+         "VHF debe decir AIS propio; los demás sin abreviar"). */
+      var _srcMap={
+        vhf:        {l:'AIS propio',  c:'#3aa856'},
+        aisstream:  {l:'AISStream',   c:'#9ad'},
+        aishub:     {l:'AISHub',      c:'#9ad'},
+        aisfriends: {l:'AISFriends',  c:'#9ad'}
+      };
+      var _srcArr=(a.target&&Array.isArray(a.target.sources))?a.target.sources:((a.target&&a.target.source)?[a.target.source]:[]);
+      var srcBadge='';
+      _srcArr.forEach(function(s){
+        var d=_srcMap[s]; if(!d) return;
+        srcBadge+=' <small style="color:'+d.c+';font-weight:700;opacity:.75;font-size:11px;letter-spacing:.3px" title="Fuente: '+d.l+'">'+d.l+'</small>';
+      });
       /* Rev399\u2192Rev400: estrella favorito + boton vesselfinder por fila.
          Tama\u00F1os touch friendly (\u2605 26px, \uD83D\uDD0D 18px). Mas separacion del nombre. */
       var isFav=_isAisFavorite(a.cleanMmsi);
@@ -13531,7 +13697,9 @@ function _favLoadFromLocalStorage(){
    ya tiene algo, no se hace nada. */
 var _favMigrationDone = false;
 function _favHydrate(){
-  fetch(A+'/anchor-watch/favorites').then(function(r){return r.ok?r.json():null}).then(function(d){
+  /* Rev787: credentials:include para asegurar que la cookie ihm_pin_session
+     viaja aunque el visor se cargue desde un contexto no-principal. */
+  fetch(A+'/anchor-watch/favorites',{credentials:'include',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(d){
     if(d && Array.isArray(d.favorites)){
       if(d.favorites.length === 0 && !_favMigrationDone){
         _favMigrationDone = true;
@@ -13539,12 +13707,12 @@ function _favHydrate(){
           var raw = localStorage.getItem('ihm-favorites');
           var local = raw ? JSON.parse(raw) : [];
           if(Array.isArray(local) && local.length > 0){
-            try{ console.log('[IHM-FAV] auto-migrating', local.length, 'favorites localStorage → backend'); }catch(_){}
+            try{ console.warn('[IHM-FAV] auto-migrating', local.length, 'favorites localStorage → backend. Entries:', JSON.stringify(local)); }catch(_){}
             var posted = 0;
             local.forEach(function(f){
               if(typeof f.lat === 'number' && typeof f.lng === 'number'){
                 fetch(A+'/anchor-watch/favorite', {
-                  method:'POST', headers:{'Content-Type':'application/json'},
+                  method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
                   body: JSON.stringify({lat:f.lat, lng:f.lng, name:f.name||'Favorito'})
                 }).catch(function(){});
                 posted++;
@@ -13561,6 +13729,14 @@ function _favHydrate(){
       try{ console.log('[IHM-FAV] hydrated', _favCache.length, 'favorites from backend'); }catch(_){}
       /* Refrescar UI si la ventana de favoritos está abierta */
       try{ if(document.getElementById('fav-pop') && document.getElementById('fav-pop').classList.contains('open') && typeof showFav==='function') showFav(); }catch(_){}
+      /* Rev792: repintar tambien el modal MODERNO m-fav-save-pop si esta
+         abierto. Sin esto, tras un rechazo del backend (403 o removed:0)
+         el _favCache se restauraba pero la UI seguia con el estado
+         optimista fantasma hasta el proximo refresh manual del navegador. */
+      try{ if(document.getElementById('m-fav-save-pop') && document.getElementById('m-fav-save-pop').classList.contains('open')){
+        if(typeof m_renderFavSaveFavorites==='function') m_renderFavSaveFavorites();
+        if(typeof m_renderFavSaveHistory==='function') m_renderFavSaveHistory();
+      }}catch(_){}
     }
   }).catch(function(){ _favLoadFromLocalStorage(); });
 }
@@ -13607,8 +13783,35 @@ function favAdd(lat,lng,name){
     _favCache.unshift(found);
   }
   try{ localStorage.setItem('ihm-favorites',JSON.stringify(_favCache)); }catch(_){}
-  /* POST al backend (async, sin bloquear) */
-  fetch(A+'/anchor-watch/favorite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:lat,lng:lng,name:cleanName})}).catch(function(){});
+  /* POST al backend (async, sin bloquear). Rev787: credentials:include +
+     log de status para diagnosticar rechazos silenciosos. */
+  fetch(A+'/anchor-watch/favorite',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:lat,lng:lng,name:cleanName})})
+    .then(function(r){
+      if(!r.ok){
+        try{ console.warn('[IHM-FAV] POST favorite rejected', r.status, r.statusText); }catch(_){}
+        /* Rev791: el backend rechazo el cambio, pero el _favCache local ya
+           tiene el optimistic aplicado. Fuerza rehydrate para restaurar la
+           fuente de verdad y no dejar al usuario con un cambio fantasma
+           (bug Carlos 2026-07-29: "sigo pudiendo cambiar y borrar aunque
+           salga el alert"). Backend no emite SSE en 403 → sin este fetch el
+           optimistic no se corrige hasta el proximo refresh. */
+        try{ if(typeof _favHydrate==='function') _favHydrate(); }catch(_){}
+        if(r.status===403){
+          r.json().then(function(j){
+            var msg;
+            if(j && j.error==='not_owner'){
+              msg=(_lang==='en'?'This anchorage is already saved by another user. Ask the master to remove it or move yours.':(j.message||'Este fondeadero ya está guardado por otro usuario. Pide al master que lo borre o cámbialo de sitio.'));
+            } else {
+              msg=(_lang==='en'?'You do not have permission to edit favorites. Ask the master to grant it.':'No tienes permiso para editar favoritos. Pide al master que te lo dé.');
+            }
+            try{ alert(msg); }catch(_){}
+          }).catch(function(){ try{ alert(_lang==='en'?'Favorite rejected by server.':'Favorito rechazado por el servidor.'); }catch(_){} });
+        }
+      } else {
+        try{ console.log('[IHM-FAV] POST favorite ok', r.status); }catch(_){}
+      }
+    })
+    .catch(function(err){ try{ console.warn('[IHM-FAV] POST favorite fetch failed', err); }catch(_){} });
   return found;
 }
 function favRemove(lat,lng){
@@ -13619,7 +13822,27 @@ function favRemove(lat,lng){
   var removed = _favCache.length < before;
   if(removed){
     try{ localStorage.setItem('ihm-favorites',JSON.stringify(_favCache)); }catch(_){}
-    fetch(A+'/anchor-watch/favorite-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:lat,lng:lng})}).catch(function(){});
+    fetch(A+'/anchor-watch/favorite-delete',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:lat,lng:lng})})
+      .then(function(r){
+        if(!r.ok){ try{ console.warn('[IHM-FAV] DELETE favorite rejected', r.status, r.statusText); }catch(_){}
+          /* Rev791: revert optimistic si el backend rechazo. Ver comment
+             en favAdd por que hay que forzar rehydrate aqui. */
+          try{ if(typeof _favHydrate==='function') _favHydrate(); }catch(_){}
+          if(r.status===403){ try{ alert((_lang==='en'?'You do not have permission to delete favorites. Ask the master to grant it.':'No tienes permiso para borrar favoritos. Pide al master que te lo dé.')); }catch(_){}}
+        } else {
+          /* Rev791: 200 OK con removed:0 significa que el backend acepto
+             pero no borro nada (favorito ajeno protegido). Forzar rehydrate
+             para reponer el favorito en la UI que el optimistic quito. */
+          r.json().then(function(j){
+            if(j && j.removed===0){
+              try{ console.log('[IHM-FAV] DELETE no-op (favorito ajeno, backend intacto)'); }catch(_){}
+              try{ if(typeof _favHydrate==='function') _favHydrate(); }catch(_){}
+              try{ alert(_lang==='en'?'You do not own this anchorage. Ask the master to delete it.':'Este fondeadero no es tuyo. Pide al master que lo borre.'); }catch(_){}
+            }
+          }).catch(function(){});
+        }
+      })
+      .catch(function(err){ try{ console.warn('[IHM-FAV] DELETE fetch failed', err); }catch(_){} });
   }
   return removed;
 }
@@ -13627,31 +13850,47 @@ function favClearMarker(){
   [_favTempMk,_favTempLblMk,_favTempCloseMk].forEach(function(m){if(m){try{map.removeLayer(m);}catch(e){}}});
   _favTempMk=null;_favTempLblMk=null;_favTempCloseMk=null;
 }
-function favFlyTo(lat,lng,name){
+function favFlyTo(lat,lng,name,opts){
   if(!map)return;
   closePopup('hist-pop');closePopup('fav-pop');
+  /* Rev782: al enfocar un fondeo (favorito o histórico) desactivamos el
+     auto-follow del barco. Sin esto, el siguiente delta de posición
+     rebota la cámara a la posición del barco y perdemos el foco (bug
+     reportado por Carlos 2026-07-28). El follow se reactiva cuando el
+     usuario pulsa el botón centrar (btn-anchor-center) o la X del
+     marker de la diana. */
+  _followBoat=false;
+  try{ var _bc=document.getElementById('btn-anchor-center'); if(_bc) _bc.style.borderColor='#aaa'; }catch(_){}
   map.flyTo([lat,lng],18,{animate:true,duration:1.0});
   favClearMarker();
-  /* Diana + corazón, sin caja, centrado en la posición */
+  /* Rev781: si el sitio no es favorito real (o el caller no lo ha
+     confirmado), pintar la diana en naranja neutro y SIN corazón para no
+     dar la falsa impresión de que se acaba de marcar como favorito. Sólo
+     los favoritos de verdad llevan ❤ dentro y label rosa. */
+  var isFav=(opts&&typeof opts.isFav!=='undefined')?!!opts.isFav:!!favMatch(lat,lng);
+  var col=isFav?'#ff5070':'#ff9f43';
   var dianaHtml=
     '<svg viewBox="-30 -30 60 60" width="60" height="60" style="overflow:visible;pointer-events:none">'+
-      '<circle cx="0" cy="0" r="22" fill="none" stroke="#ff5070" stroke-width="3"/>'+
-      '<circle cx="0" cy="0" r="12" fill="none" stroke="#ff5070" stroke-width="2"/>'+
-      '<line x1="-28" y1="0" x2="-14" y2="0" stroke="#ff5070" stroke-width="3" stroke-linecap="round"/>'+
-      '<line x1="14"  y1="0" x2="28"  y2="0" stroke="#ff5070" stroke-width="3" stroke-linecap="round"/>'+
-      '<line x1="0" y1="-28" x2="0" y2="-14" stroke="#ff5070" stroke-width="3" stroke-linecap="round"/>'+
-      '<line x1="0" y1="14"  x2="0" y2="28"  stroke="#ff5070" stroke-width="3" stroke-linecap="round"/>'+
-      '<text x="0" y="5" text-anchor="middle" font-size="18" font-weight="900" fill="#ff5070" style="filter:drop-shadow(0 0 3px #000)">❤</text>'+
+      '<circle cx="0" cy="0" r="22" fill="none" stroke="'+col+'" stroke-width="3"/>'+
+      '<circle cx="0" cy="0" r="12" fill="none" stroke="'+col+'" stroke-width="2"/>'+
+      '<line x1="-28" y1="0" x2="-14" y2="0" stroke="'+col+'" stroke-width="3" stroke-linecap="round"/>'+
+      '<line x1="14"  y1="0" x2="28"  y2="0" stroke="'+col+'" stroke-width="3" stroke-linecap="round"/>'+
+      '<line x1="0" y1="-28" x2="0" y2="-14" stroke="'+col+'" stroke-width="3" stroke-linecap="round"/>'+
+      '<line x1="0" y1="14"  x2="0" y2="28"  stroke="'+col+'" stroke-width="3" stroke-linecap="round"/>'+
+      (isFav?'<text x="0" y="5" text-anchor="middle" font-size="18" font-weight="900" fill="'+col+'" style="filter:drop-shadow(0 0 3px #000)">❤</text>':'')+
     '</svg>';
   _favTempMk=L.marker([lat,lng],{
     icon:L.divIcon({html:dianaHtml,iconSize:[60,60],iconAnchor:[30,30],className:'fav-diana'}),
     interactive:false,keyboard:false,zIndexOffset:1500
   }).addTo(map);
-  /* Label estilo rlbl (sin caja, con text-shadow) */
+  /* Label estilo rlbl (sin caja, con text-shadow) — solo si hay nombre.
+     Rev781: si no es favorito, label naranja sin corazón. */
   if(name){
+    var lblCol=isFav?'#ff80a0':'#ffd08a';
+    var lblIco=isFav?'❤ ':'';
     _favTempLblMk=L.marker([lat,lng],{
       icon:L.divIcon({
-        html:'<span class="rlbl" style="font-size:15px;color:#ff80a0">❤ '+(name||'').replace(/[<>&"]/g,'')+'</span>',
+        html:'<span class="rlbl" style="font-size:15px;color:'+lblCol+'">'+lblIco+(name||'').replace(/[<>&"]/g,'')+'</span>',
         className:'',iconAnchor:[0,-32]
       }),
       interactive:false,zIndexOffset:1500
@@ -14327,6 +14566,327 @@ function loadCpCharts(){
     try{ _bindLyrSliderHandlers(list); }catch(_){}
   }).catch(function(e){console.warn('[IHM-CP] Catalog load failed:',e);});
 }
+/* Rev802: buscador global de puertos vía Nominatim (OpenStreetMap). Sin
+   key, uso libre respetando el rate-limit de Nominatim (~1 req/s). Filtra
+   por keywords que suelen aparecer en features marítimas: harbour, port,
+   marina, dock. Al hacer click en un resultado vuela al mapa y desactiva
+   auto-follow para que la cámara no rebote al barco. */
+function portSearchOpen(){
+  try{ openPopup('port-search-pop'); }catch(_){}
+  setTimeout(function(){ var i=document.getElementById('port-search-q'); if(i){ i.focus(); i.select(); } },120);
+}
+function portSearchDo(){
+  var input=document.getElementById('port-search-q');
+  var list=document.getElementById('port-search-results');
+  if(!input||!list)return;
+  var q=(input.value||'').trim();
+  if(!q){ list.innerHTML='<div style="opacity:.6;font-size:18px;font-style:italic">'+(_lang==='en'?'Type a name first.':'Escribe un nombre primero.')+'</div>'; return; }
+  list.innerHTML='<div style="opacity:.7;font-size:18px;font-style:italic;padding:12px 0">'+(_lang==='en'?'Searching…':'Buscando…')+'</div>';
+  var url='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=15&addressdetails=1&q='+encodeURIComponent(q);
+  fetch(url,{headers:{'Accept':'application/json'}})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(arr){
+      if(!Array.isArray(arr)||!arr.length){
+        list.innerHTML='<div style="opacity:.75;font-size:18px;padding:12px 0">'+(_lang==='en'?'No results. Try adding country or "harbour"/"port".':'Sin resultados. Prueba a añadir país o "puerto"/"harbour".')+'</div>';
+        return;
+      }
+      /* Prioriza resultados con clase harbour/port/marina/waterway/bay. */
+      var portClasses={harbour:1,port:1,marina:1,dock:1,pier:1,bay:1,waterway:1};
+      arr.sort(function(a,b){
+        var ap=(portClasses[a.type]||portClasses[a.class])?0:1;
+        var bp=(portClasses[b.type]||portClasses[b.class])?0:1;
+        return ap-bp;
+      });
+      var html='';
+      arr.forEach(function(r,i){
+        var lat=parseFloat(r.lat), lng=parseFloat(r.lon);
+        if(!isFinite(lat)||!isFinite(lng)) return;
+        var addr=r.address||{};
+        var country=addr.country||'';
+        var flag='';
+        try{ if(addr.country_code) flag=String.fromCodePoint.apply(null,addr.country_code.toUpperCase().split('').map(function(c){return 127397+c.charCodeAt(0);}))+' '; }catch(_){}
+        var typ=r.type||r.class||'';
+        var typBadge=(portClasses[typ])?'<span style="background:rgba(77,208,255,.20);color:#4dd0ff;padding:2px 8px;border-radius:6px;font-size:14px;font-weight:700;margin-left:8px">'+typ+'</span>':'';
+        var name=(r.display_name||'').replace(/</g,'&lt;');
+        var namePrimary=(r.name||name.split(',')[0]||'').replace(/</g,'&lt;');
+        var nameRest=name.substring(namePrimary.length).replace(/^, ?/,'');
+        html+='<div onclick="portSearchGo('+lat+','+lng+',\''+namePrimary.replace(/'/g,"\\'").replace(/"/g,'\\"')+'\')" style="cursor:pointer;padding:14px 12px;border-bottom:1px dashed rgba(255,255,255,.12);border-radius:8px">'+
+                '<div style="font-size:20px;font-weight:800;color:#fff;line-height:1.2">'+flag+namePrimary+typBadge+'</div>'+
+                '<div style="font-size:15px;color:#9ad;margin-top:4px;line-height:1.3">'+nameRest+'</div>'+
+              '</div>';
+      });
+      list.innerHTML=html||'<div style="opacity:.75;font-size:18px;padding:12px 0">'+(_lang==='en'?'No matches.':'Sin coincidencias.')+'</div>';
+    })
+    .catch(function(e){
+      try{console.warn('[IHM-PORT] search failed',e);}catch(_){}
+      list.innerHTML='<div style="color:#ff8a8a;font-size:18px;padding:12px 0">'+(_lang==='en'?'Search error. Check your connection.':'Error de búsqueda. Comprueba tu conexión.')+'</div>';
+    });
+}
+function portSearchGo(lat,lng,name){
+  try{ closePopup('port-search-pop'); }catch(_){}
+  if(typeof favFlyTo==='function'){
+    /* Reutiliza favFlyTo: desactiva auto-follow y dibuja diana naranja
+       (no favorito) con el nombre encima. */
+    favFlyTo(lat,lng,name,{isFav:false});
+  } else if(typeof map!=='undefined' && map){
+    map.flyTo([lat,lng],14,{animate:true,duration:1.2});
+  }
+}
+
+/* Rev801: RainViewer radar de lluvia. API pública sin key. Descubre el
+   hash del frame más reciente vía /public/weather-maps.json y monta un
+   L.tileLayer contra tilecache.rainviewer.com. Refresh cada 2.5 min para
+   traer los frames nuevos (el hash cambia cada 10 min). CORS abierto,
+   fetch directo desde el navegador. */
+var _rvLayer=null, _rvHash=null, _rvHost=null, _rvTimer=null;
+function _rvUrlFor(host,hash){
+  /* Formato: /v2/radar/<hash>/256/{z}/{x}/{y}/<colorscheme>/<smooth>_<snow>.png
+     colorscheme 2 = "Universal Blue" (típico radar), smooth=1, snow=1. */
+  return host+'/v2/radar/'+hash+'/256/{z}/{x}/{y}/2/1_1.png';
+}
+function rainviewerFetch(){
+  fetch('https://api.rainviewer.com/public/weather-maps.json',{cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(d){
+      if(!d||!d.radar||!Array.isArray(d.radar.past)||!d.radar.past.length)return;
+      var last=d.radar.past[d.radar.past.length-1];
+      var m=/\/([a-f0-9]+)$/.exec(last.path||'');
+      if(!m)return;
+      var newHash=m[1];
+      var host=d.host||'https://tilecache.rainviewer.com';
+      if(newHash===_rvHash && host===_rvHost) return;
+      _rvHash=newHash; _rvHost=host;
+      /* Reconstruir la layer con el hash fresco. Preservar activación y opacidad. */
+      var wasActive=_rvLayer && map && map.hasLayer(_rvLayer);
+      var opa=_rvLayer?_rvLayer.options.opacity:0.7;
+      if(_rvLayer && map){ try{ map.removeLayer(_rvLayer); }catch(_){} }
+      _rvLayer=L.tileLayer(_rvUrlFor(host,newHash),{
+        /* Rev805: RainViewer devuelve HTTP 200 con PNG que CONTIENE texto
+           "zoom level not supported" a zoom altos (no un error HTTP). Por
+           eso errorTileUrl no lo intercepta. Único fix: no pedir zooms
+           altos → maxNativeZoom=7 (Navegal lo pide a z=7 en su log; z=10
+           empezaba a dar texto de error). Leaflet estira las tiles de z7
+           hasta z22 sin re-pedir al server. */
+        minZoom:0, maxZoom:22,
+        minNativeZoom:0, maxNativeZoom:7,
+        opacity:opa,
+        zIndex:400,
+        attribution:'© RainViewer',
+        crossOrigin:true,
+        errorTileUrl:'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='
+      });
+      try{ _rvLayer.on('tileerror',function(){}); }catch(_){}
+      if(wasActive && map) _rvLayer.addTo(map);
+      try{ console.log('[IHM-RV] radar frame refreshed, hash='+newHash); }catch(_){}
+    })
+    .catch(function(e){try{console.warn('[IHM-RV] fetch failed',e);}catch(_){}});
+}
+function tRadar(on){
+  if(on){
+    if(!_rvHash){
+      /* Primera activación: fetch inicial + reintentar activar cuando llegue el hash. */
+      rainviewerFetch();
+      var retry=0;
+      var tick=setInterval(function(){
+        retry++;
+        if(_rvLayer && map){ _rvLayer.addTo(map); clearInterval(tick); return; }
+        if(retry>10) clearInterval(tick); /* 10s timeout */
+      },1000);
+    } else if(_rvLayer && map){
+      _rvLayer.addTo(map);
+    }
+    if(!_rvTimer) _rvTimer=setInterval(rainviewerFetch,150000); /* 2.5 min */
+  } else {
+    if(_rvLayer && map) try{ map.removeLayer(_rvLayer); }catch(_){}
+    if(_rvTimer){ clearInterval(_rvTimer); _rvTimer=null; }
+  }
+}
+function opaRadar(v){ if(_rvLayer) _rvLayer.setOpacity(v/100); }
+
+/* Rev794/795: cartas personalizadas via chart-proxy backend. Cada layer del
+   backend se convierte en un L.tileLayer standard apuntando a
+   /api/chart-proxy/<id>/{z}/{x}/{y}. Placeholders no configurados aparecen
+   con ⚠ y al activar abren el modal cx-cfg-pop para que el usuario meta URL
+   + api key. */
+var _cxCache = [];               // ultima lista recibida del backend
+var _cxPendingActivate = null;   // id que el usuario intentó activar y aún falta configurar
+function tCx(id,on){
+  var meta=_cxCache.find(function(l){return l.id===id;});
+  if(on && meta && !meta.configured){
+    /* Layer sin URL → abrir modal antes de activar. */
+    _cxPendingActivate=id;
+    cxCfgOpen(id);
+    /* Uncheck visualmente hasta que el user guarde la config. */
+    var chk=document.getElementById('chk-cx-'+id.replace(/[^a-zA-Z0-9_-]/g,'_'));
+    if(chk) chk.checked=false;
+    return;
+  }
+  var l=cxLyrs[id];
+  if(!l)return;
+  on?l.addTo(map):map.removeLayer(l);
+}
+function opaCx(id,v){var l=cxLyrs[id];if(l)l.setOpacity(v/100);}
+function loadCxCharts(){
+  /* Rev796: devuelve Promise para que cxCfgSave pueda encadenar la
+     activación tras el rebuild (antes setTimeout 600ms → race si el fetch
+     tardaba más y el checkbox no se activaba). */
+  return fetch(A+'/chart-layers',{credentials:'include',cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(d){
+      var sec=document.getElementById('sec-cx-charts');
+      var list=document.getElementById('cx-charts-list');
+      if(!sec||!list)return;
+      /* Guardar qué layers estaban activadas para reactivarlas tras rebuild. */
+      var wasActive={};
+      Object.keys(cxLyrs).forEach(function(k){ if(cxLyrs[k]&&map.hasLayer(cxLyrs[k])) wasActive[k]=true; });
+      Object.values(cxLyrs).forEach(function(l){if(map.hasLayer(l))map.removeLayer(l);});cxLyrs={};
+      list.innerHTML='';
+      var layers=(d&&Array.isArray(d.layers))?d.layers:[];
+      /* Rev810 (feedback Carlos): ordenar por nombre (que empieza con
+         "País —") para que salgan agrupadas por país alfabéticamente. */
+      layers.sort(function(a,b){
+        var an=(a.name||a.id||'').toLowerCase();
+        var bn=(b.name||b.id||'').toLowerCase();
+        return an.localeCompare(bn);
+      });
+      _cxCache=layers.slice();
+      if(!layers.length){sec.style.display='none';return;}
+      sec.style.display='';
+      layers.forEach(function(c,i){
+        var id=c.id;
+        var minZ=(typeof c.minZoom==='number')?c.minZoom:1;
+        var maxZ=(typeof c.maxZoom==='number')?c.maxZoom:19;
+        if(c.configured){
+          var ly=L.tileLayer(A+'/chart-proxy/'+encodeURIComponent(id)+'/{z}/{x}/{y}',{
+            minZoom:Math.max(0,minZ-3), maxZoom:22,
+            minNativeZoom:minZ, maxNativeZoom:maxZ,
+            opacity:.9, zIndex:30+i,
+            attribution:c.attribution||'',
+            keepBuffer:4, updateWhenIdle:false, updateWhenZooming:true, tileSize:256
+          });
+          cxLyrs[id]=ly;
+        }
+        var displayName=c.name||id;
+        var safeId=id.replace(/[^a-zA-Z0-9_-]/g,'_');
+        var esc=id.replace(/'/g,"\\'");
+        var icon=c.configured?'🗺️':'⚠';
+        var color=c.configured?'#fff':'#ffb84a';
+        /* Rev800: tamaños al estándar del proyecto — antes 14px/10px/16px era enano. */
+        var cogBtn=' <button onclick="cxCfgOpen(\''+esc+'\')" title="Configurar" style="background:none;border:none;color:#9cd0ff;font-size:22px;cursor:pointer;padding:0 8px">⚙</button>';
+        var chkAccent=c.configured?'var(--org)':'#ffb84a';
+        /* Rev797/800: URL abreviada en tamaño legible bajo el nombre. */
+        var rawUrl=(c.type==='wms'?(c.urlBase||''):(c.urlTemplate||''));
+        var urlShort=rawUrl.length>60?rawUrl.slice(0,55)+'…':rawUrl;
+        var authTag=c.hasAuth?' <span title="con API key" style="color:#ffd08a">🔑</span>':'';
+        var urlLine=c.configured?('<div style="font-size:14px;color:#7aa;opacity:.85;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px" title="'+rawUrl.replace(/"/g,'&quot;')+'">'+urlShort.replace(/[<>&"]/g,function(m){return {"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[m];})+authTag+'</div>'):'<span style="font-size:16px;color:#ffb84a;font-style:italic">sin configurar</span>';
+        var dv=document.createElement('div');dv.className='lyr-row';
+        dv.innerHTML=
+          '<input type="checkbox" id="chk-cx-'+safeId+'" onchange="tCx(\''+esc+'\',this.checked)" style="width:22px;height:22px;accent-color:'+chkAccent+'">'+
+          '<label for="chk-cx-'+safeId+'" style="color:'+color+';font-size:18px;font-weight:700;cursor:pointer;flex:1;min-width:0;display:flex;flex-direction:column">'+
+            '<span>'+icon+' '+displayName+cogBtn+'</span>'+
+            urlLine+
+          '</label>'+
+          (c.configured?('<div class="lyr-slider-wrap"><span class="lyr-val" id="val-cx-'+safeId+'" style="--val-pct:88.89%">90</span><input type="range" class="lyr-opa" min="10" max="100" value="90" oninput="opaCx(\''+esc+'\',this.value);_updLyrVal(\'cx-'+safeId+'\',this.value)"></div>'):'');
+        list.appendChild(dv);
+        /* Reactivar si estaba activa antes del rebuild. */
+        if(wasActive[id] && cxLyrs[id]){
+          cxLyrs[id].addTo(map);
+          var chk=document.getElementById('chk-cx-'+safeId);
+          if(chk) chk.checked=true;
+        }
+      });
+      try{ _bindLyrSliderHandlers(list); }catch(_){}
+      try{ console.log('[IHM-CX] loaded',layers.length,'custom chart layer(s)'); }catch(_){}
+    })
+    .catch(function(e){try{console.warn('[IHM-CX] load failed',e);}catch(_){}});
+}
+
+/* Rev795: modal config carta. Abre el modal cargando los datos de la layer
+   :id. Al guardar POSTea al backend, recarga la lista, y si venía de un
+   activate pendiente, activa la layer. */
+var _cxCfgId=null;
+function cxCfgOpen(id){
+  var meta=_cxCache.find(function(l){return l.id===id;});
+  if(!meta) return;
+  _cxCfgId=id;
+  document.getElementById('cx-cfg-title').textContent='Configurar: '+(meta.name||id);
+  var isWms=meta.type==='wms';
+  document.getElementById('cx-cfg-url-label').textContent=isWms?'URL base del servicio WMS':'URL template XYZ';
+  document.getElementById('cx-cfg-url-hint').textContent=isWms?'Solo la raíz. Los parámetros WMS (LAYERS, format, etc.) ya están preconfigurados.':'Debe contener {z}/{x}/{y}. Ej: https://tiles.ejemplo.com/{z}/{x}/{y}.png';
+  document.getElementById('cx-cfg-hint').textContent=meta.isPlaceholder?'Servicio conocido. Solo necesitas pegar la URL raíz (y la clave API si te la piden).':'Carta personalizada.';
+  document.getElementById('cx-cfg-url').value=meta.urlBase||meta.urlTemplate||'';
+  document.getElementById('cx-cfg-apikey').value='';
+  document.getElementById('cx-cfg-delete-btn').style.display=meta.configured?'':'none';
+  openPopup('cx-cfg-pop');
+}
+function cxCfgSave(){
+  if(!_cxCfgId) return;
+  var meta=_cxCache.find(function(l){return l.id===_cxCfgId;});
+  if(!meta) return;
+  var url=(document.getElementById('cx-cfg-url').value||'').trim();
+  var apikey=(document.getElementById('cx-cfg-apikey').value||'').trim();
+  if(!url){ alert('La URL es obligatoria.'); return; }
+  var body={ name:meta.name, type:meta.type };
+  if(meta.type==='wms') body.urlBase=url; else body.urlTemplate=url;
+  if(apikey) body.auth={ type:'queryKey', paramName:'apikey', value:apikey };
+  fetch(A+'/chart-layers/'+encodeURIComponent(_cxCfgId),{
+    method:'POST',credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  })
+  .then(function(r){
+    if(!r.ok){
+      r.json().then(function(j){ alert('Error: '+(j&&j.message?j.message:r.status)); }).catch(function(){ alert('Error '+r.status); });
+      return null;
+    }
+    return r.json();
+  })
+  .then(function(j){
+    if(!j) return;
+    var savedId=_cxCfgId;
+    var pending=_cxPendingActivate; _cxPendingActivate=null;
+    _cxCfgId=null;
+    closePopup('cx-cfg-pop');
+    /* Rev796: encadenar activación al fin del rebuild (Promise chain,
+       sin race). loadCxCharts ahora devuelve la Promise del fetch. */
+    var p=loadCxCharts();
+    if(pending===savedId && p && typeof p.then==='function'){
+      p.then(function(){
+        var safeId=savedId.replace(/[^a-zA-Z0-9_-]/g,'_');
+        var chk=document.getElementById('chk-cx-'+safeId);
+        if(chk && cxLyrs[savedId]){
+          chk.checked=true;
+          cxLyrs[savedId].addTo(map);
+        }
+      });
+    }
+  })
+  .catch(function(e){ alert('Error red: '+e); });
+}
+function cxCfgDelete(){
+  if(!_cxCfgId) return;
+  var meta=_cxCache.find(function(l){return l.id===_cxCfgId;});
+  if(!meta) return;
+  var msg=meta.isPlaceholder
+    ? '¿Borrar la configuración de "'+(meta.name||_cxCfgId)+'"? Volverá a estar disponible como carta sin configurar.'
+    : '¿Borrar la carta "'+(meta.name||_cxCfgId)+'"?';
+  if(!confirm(msg)) return;
+  fetch(A+'/chart-layers/'+encodeURIComponent(_cxCfgId),{ method:'DELETE', credentials:'include' })
+  .then(function(r){
+    if(!r.ok){ alert('Error '+r.status); return; }
+    closePopup('cx-cfg-pop');
+    loadCxCharts();
+  })
+  .catch(function(e){ alert('Error red: '+e); });
+}
+/* SSE listener: repintar si otro visor edita una layer. */
+(function(){
+  try{
+    if(typeof _cxSseWired!=='undefined') return;
+    _cxSseWired=true;
+  }catch(_){}
+})();
+
 /* Rev308 v2: helper para los indicadores numéricos flotantes encima del
    thumb de los sliders de opacidad. Actualiza texto + posición horizontal
    (--val-pct CSS var). Llamado desde el oninput de cada slider. */
@@ -20136,23 +20696,16 @@ function m_favClick(){
     if (typeof openPopup === 'function') openPopup('m-fav-save-pop');
     /* Asegurar cache de favoritos fresco antes de pintar */
     try { if (typeof _favHydrate === 'function') _favHydrate(); } catch(_){}
-    /* Decide si mostrar bloque save:
-       - Ancla echada.
-       - NO es ya favorito.
-       - Posicion del ancla esta dentro de 10 m de algun fondeo del historial
-         (es decir, "fondeo conocido pero aun no marcado como favorito"). */
+    /* Decide si mostrar bloque save. Rev780: relajado — cualquier ancla
+       echada con posicion conocida que aun no sea favorito habilita el input
+       de nombre. Antes exigia que el fondeadero YA estuviera en el historial
+       a <10 m, lo que hacia imposible bautizar un fondeadero nuevo la
+       primera vez que anclabas ahi (Carlos 2026-07-28). */
     var saveBlock = document.getElementById('m-fav-save-block');
     var showSave = false;
     if (typeof anch !== 'undefined' && anch && typeof aPos !== 'undefined' && aPos && aPos.lat != null) {
       var existing = (typeof favMatch === 'function') ? favMatch(aPos.lat, aPos.lng) : null;
-      if (!existing){
-        var hist0 = (window.__lastFondeoState && window.__lastFondeoState.anchorHistory) || [];
-        for (var i = 0; i < hist0.length; i++){
-          var h0 = hist0[i];
-          if (typeof h0.lat !== 'number' || typeof h0.lng !== 'number') continue;
-          try { if (hav({lat:aPos.lat,lng:aPos.lng},{lat:h0.lat,lng:h0.lng}) < 10) { showSave = true; break; } } catch(_){}
-        }
-      }
+      if (!existing) showSave = true;
     }
     if (saveBlock) saveBlock.style.display = showSave ? '' : 'none';
     if (showSave){
@@ -20191,6 +20744,45 @@ function m_favRemoveFromModal(lat, lng){
     m_renderFavSaveFavorites();
     m_renderFavSaveHistory();
   } catch(_){}
+}
+
+/* Rev780: rename inline. Convierte el <span> del nombre en un <input>
+   focus+select, y en blur/Enter POSTea favAdd con el nombre nuevo.
+   Para entradas de histórico que aún no son favoritos, esto también las
+   convierte en favorito (favAdd hace upsert). Esc cancela sin guardar. */
+function m_favRename(lat, lng, spanId){
+  var span = document.getElementById(spanId);
+  if (!span) return;
+  var current = '';
+  try {
+    var fm = (typeof favMatch === 'function') ? favMatch(lat, lng) : null;
+    if (fm && fm.name) current = fm.name;
+    else current = String(span.textContent || '').replace(/^[⏳\s]+/, '').replace(/\s*\(Auto[^)]*\)\s*$/i,'').trim();
+  } catch(_){}
+  var inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = current;
+  inp.maxLength = 60;
+  inp.style.cssText = 'flex:1;min-width:0;background:rgba(0,0,0,.4);border:2px solid var(--org);color:#fff;border-radius:8px;padding:8px 12px;font-size:26px;font-weight:800;box-sizing:border-box';
+  var parent = span.parentNode;
+  if (!parent) return;
+  parent.replaceChild(inp, span);
+  setTimeout(function(){ try { inp.focus(); inp.select(); } catch(_){} }, 30);
+  var done = false;
+  var commit = function(save){
+    if (done) return; done = true;
+    if (save){
+      var nm = (inp.value || '').trim();
+      if (nm && typeof favAdd === 'function') favAdd(lat, lng, nm);
+    }
+    try { m_renderFavSaveFavorites(); } catch(_){}
+    try { m_renderFavSaveHistory(); } catch(_){}
+  };
+  inp.addEventListener('blur', function(){ commit(true); });
+  inp.addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter') { ev.preventDefault(); commit(true); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); commit(false); }
+  });
 }
 
 /* Rev441 Sprint B: toggle favorito desde el corazon ❤ del listado.
@@ -20344,17 +20936,27 @@ function m_renderFavSaveFavorites(){
       } catch(_){}
     }
     var nm = f.name ? f.name : '(sin nombre)';
+    var nameIdF = 'm-fav-name-fav-'+i;
+    /* Rev785: tag @usuario para saber quien creo el favorito. Los null
+       son "compartidos" — sin dueno identificado. */
+    var ownerTag = f.userAlias
+      ? '<span style="color:#8be0ff;font-size:19px;font-weight:600;margin-left:12px;opacity:.85;white-space:nowrap">@'+String(f.userAlias).replace(/[<>&"]/g,'')+'</span>'
+      : '<span style="color:#9aa;font-size:19px;font-style:italic;margin-left:12px;opacity:.7;white-space:nowrap">(compartido)</span>';
     var goAttr   = 'onclick="m_favGoTo('+f.lat+','+f.lng+')"';
     var togAttr  = 'onclick="m_favToggle('+f.lat+','+f.lng+')"';
     var delAttr  = 'onclick="m_favDeleteRecord('+f.lat+','+f.lng+')"';
+    /* Rev780: boton ✏ para renombrar inline. */
+    var renAttr  = 'onclick="m_favRename('+f.lat+','+f.lng+',\''+nameIdF+'\')"';
     /* Rev442: una sola linea, mismo formato que historial. */
     html += '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px dashed rgba(255,255,255,.12);flex-wrap:wrap">'+
               '<span '+togAttr+' title="Quitar de favoritos" style="color:#ff5577;flex:0 0 auto;cursor:pointer;font-size:35px">❤</span>'+
               '<div style="flex:1;min-width:0;overflow:hidden">'+
-                '<span style="color:#ff5577;font-size:31px;font-weight:800;line-height:1">'+nm+'</span>'+
+                '<span id="'+nameIdF+'" style="color:#ff5577;font-size:31px;font-weight:800;line-height:1">'+nm+'</span>'+
+                ownerTag+
                 '<span style="opacity:.75;color:#9aa;font-family:monospace;font-size:23px;white-space:nowrap;margin-left:14px">— '+fmtLatLng(f.lat, f.lng)+'</span>'+
               '</div>'+
               '<small style="opacity:.9;font-size:25px;white-space:nowrap;color:var(--org);font-weight:800;flex:0 0 auto">'+distStr+'</small>'+
+              '<button '+renAttr+' style="background:rgba(255,178,63,.18);border:1px solid rgba(255,178,63,.45);color:var(--org);border-radius:8px;padding:10px 16px;cursor:pointer;font-size:26px;font-weight:800;flex:0 0 auto;line-height:1" title="Renombrar">✏</button>'+
               '<button '+goAttr+' style="background:rgba(77,208,255,.18);border:1px solid rgba(77,208,255,.45);color:#4dd0ff;border-radius:8px;padding:10px 16px;cursor:pointer;font-size:26px;font-weight:800;flex:0 0 auto;line-height:1" title="Ir a este fondeo">📍</button>'+
               '<button '+delAttr+' style="background:rgba(255,90,90,.18);border:1px solid rgba(255,90,90,.45);color:#ff8a8a;border-radius:8px;padding:10px 16px;cursor:pointer;font-size:24px;font-weight:900;flex:0 0 auto;line-height:1" title="Borrar registro completo">✕</button>'+
             '</div>';
@@ -20417,8 +21019,11 @@ function m_renderFavSaveHistory(){
     }
     var goAttrH = 'onclick="m_favGoTo('+h.lat+','+h.lng+')"';
     var delAttrH = 'onclick="m_favDeleteRecord('+h.lat+','+h.lng+')"';
+    /* Rev780: ✏ tambien en historial. Si aun no es favorito, renombrar =
+       favorito nuevo con ese nombre (favAdd hace upsert). */
+    var renAttrH = 'onclick="m_favRename('+h.lat+','+h.lng+',\''+nameId+'\')"';
     /* Rev442: TODO en UNA sola linea:
-       ❤/♡  Nombre (Auto) - DD/MM HH:MM - DMS coords  ............. distancia  📍  ✕ */
+       ❤/♡  Nombre (Auto) - DD/MM HH:MM - DMS coords  ............. distancia  ✏  📍  ✕ */
     var lineContent =
       '<span style="font-size:31px;line-height:1;display:inline-flex;align-items:center;gap:10px" id="'+nameId+'">'+
         nameTxt + autoTag +
@@ -20428,6 +21033,7 @@ function m_renderFavSaveHistory(){
               heartIconH+
               '<div style="flex:1;min-width:0;overflow:hidden">'+lineContent+'</div>'+
               '<small style="opacity:.9;font-size:25px;white-space:nowrap;color:var(--org);font-weight:800;flex:0 0 auto">'+distStr+'</small>'+
+              '<button '+renAttrH+' style="background:rgba(255,178,63,.18);border:1px solid rgba(255,178,63,.45);color:var(--org);border-radius:8px;padding:10px 16px;cursor:pointer;font-size:26px;font-weight:800;flex:0 0 auto;line-height:1" title="Renombrar / marcar como favorito con nombre">✏</button>'+
               '<button '+goAttrH+' style="background:rgba(77,208,255,.18);border:1px solid rgba(77,208,255,.45);color:#4dd0ff;border-radius:8px;padding:10px 16px;cursor:pointer;font-size:26px;font-weight:800;flex:0 0 auto;line-height:1" title="Ir a este fondeo">📍</button>'+
               '<button '+delAttrH+' style="background:rgba(255,90,90,.18);border:1px solid rgba(255,90,90,.45);color:#ff8a8a;border-radius:8px;padding:10px 16px;cursor:pointer;font-size:24px;font-weight:900;flex:0 0 auto;line-height:1" title="Borrar registro completo">✕</button>'+
             '</div>';
@@ -21745,7 +22351,7 @@ if (typeof snoozeAlarms === 'undefined') {
      Antes se observaban IDs inexistentes ('lyr-ts-list', 'lyr-cp-list')
      por lo que las capas dinámicas no sincronizaban el disabled. */
   var obs = new MutationObserver(function(){ syncAll(); });
-  ['charts-list','cp-charts-list'].forEach(function(id){
+  ['charts-list','cp-charts-list','cx-charts-list'].forEach(function(id){
     var el = document.getElementById(id);
     if (el) obs.observe(el, { childList: true, subtree: true });
   });

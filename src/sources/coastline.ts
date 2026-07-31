@@ -31,7 +31,14 @@ const OVERPASS_MIRRORS = [
 ];
 const OVERPASS_USER_AGENT = "signalk-mareas-ihm/1.3.1 (shelter-detector; +https://github.com/)";
 const FETCH_TIMEOUT_MS = 25_000;
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;  // 24 h — coastline doesn't move
+/* Rev817 (feedback Carlos 2026-07-31 "la rosa cambia orientación en mismo
+   sitio horas distintas — no puede ser GPS jitter"): 24h → 30d. La
+   coastline OSM apenas cambia (edits humanos infrecuentes en costa). Cada
+   re-fetch a Overpass puede devolver nodos en orden distinto o con datos
+   ligeramente diferentes, y en zonas con coastline compleja (cabos,
+   islas) eso hace flipear sectores fronterizos entre visitas al mismo
+   fondeadero. Con 30 días la mask queda estable durante el uso normal. */
+const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;  // 30 d
 
 const NM_TO_DEG_LAT = 1 / 60;
 function nmToDegLngAtLat(nm: number, lat: number): number {
@@ -97,8 +104,11 @@ export interface AutoShelterError {
 }
 
 function cacheKey(lat: number, lng: number, distNm: number): string {
-  // Round to ~500 m so a small drift reuses the cached coastline. Include
-  // distance + algorithm version so a behaviour change forces a re-fetch.
+  /* Rev818 revert Rev817: vuelto a 3 decimales (~110 m). Con 2 decimales
+     (~1.1 km) se agrupaban áreas demasiado grandes y el algoritmo
+     mezclaba fetch de bbox no representativo del punto real → mask
+     absurda (100% shelter en Moaña bahía abierta). Con 3 dec el bucket
+     coincide con la resolución del bbox del fetch (0.3 nm ~ 556 m). */
   return `coastline_${ALGORITHM_VERSION}_${lat.toFixed(3)}_${lng.toFixed(3)}_d${distNm.toFixed(2)}`;
 }
 
@@ -141,7 +151,11 @@ async function overpassFetch(url: string, query: string): Promise<any> {
 // "arreglar" un supuesto falso positivo en Bouzas — rompio la deteccion en
 // Moaña (mezcla incorrecta de sectores). Revertido por feedback del usuario
 // ("lo solucionamos en la version publicada y la cagamos al cambiarlo").
-const DEFAULT_SHELTER_DIST_NM = 0.3;          // 0.3 nm ~ 556 m. Threshold simple "hay tierra cerca".
+/* Rev820 revert Rev819: vuelto a 0.3 nm. Cambiar el umbral rompió más
+   casos de los que arregló (Carlos: "va de culo, todas las localizaciones
+   mal, ni auto ni manual coherente"). El 0.3 era el default publicado con
+   el que iba "perfecto" según feedback previo. NO tocar. */
+const DEFAULT_SHELTER_DIST_NM = 0.3;          // 0.3 nm ~ 556 m.
 const ALGORITHM_VERSION = "v82";  // Rev367: revert a logica v76 simple (publicada). Invalida v80/v81.
 
 export async function detectShelterFromCoastline(
