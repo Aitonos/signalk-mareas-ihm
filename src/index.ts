@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev822";
+const PLUGIN_REVISION = "Rev831";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -2696,6 +2696,7 @@ try {
       "aisFallback",  // 9.  AIS online fallback (aisstream.io) — Rev741
       "tides",        // 10. Mareas + meteo
       "mbtiles",      // 10. Cartas offline
+      "customCharts", // 10b. Cartas por Países (WMS/WMTS/XYZ) — Rev824
       "sonda",        // 11. Cálculo de sonda
       "skpaths",      // 12. Publicación paths SignalK
       "master",       // 13. Usuario master
@@ -14769,6 +14770,11 @@ interface ChartLayerConfig {
   maxZoom?: number;
   cacheTtlMs?: number;
   auth?: ChartLayerAuth;
+  // Rev829: pistas mostradas en el modal cx-cfg-pop cuando el placeholder
+  // no está configurado (dónde conseguir la URL, si hace falta key, contacto).
+  // Bilingüe { es, en }; UI escoge según _lang.
+  helpText?: { es: string; en: string };
+  helpUrl?: string;                        // enlace externo (registro / docs)
 }
 let _chartLayers: ChartLayerConfig[] = [];
 (async () => {
@@ -14880,6 +14886,11 @@ const _CHART_PLACEHOLDERS: ChartLayerConfig[] = [
     },
     attribution: "Instituto Hidrográfico Portugal",
     minZoom: 5, maxZoom: 17, cacheTtlMs: 7 * 24 * 3600 * 1000,
+    helpText: {
+      es: "El Instituto Hidrográfico portugués distribuye ENC bajo registro previo (gratuito). Pide credenciales de acceso al servicio WMS/S-52 escribiendo al equipo de geoservicios. Al recibir la URL raíz del servicio (algo como https://…/wms), pégala en el campo URL de abajo. El resto de parámetros (LAYERS, CRS, etc.) ya están rellenos.",
+      en: "The Portuguese Hydrographic Institute distributes ENC after free registration. Request access to the WMS/S-52 service from their geoservices team. When you receive the base URL of the service (something like https://…/wms), paste it in the URL field below. All other WMS parameters (LAYERS, CRS, etc.) are already filled in.",
+    },
+    helpUrl: "https://www.hidrografico.pt/op/33",
   },
   {
     id: "shom-raster-marine",
@@ -14893,6 +14904,11 @@ const _CHART_PLACEHOLDERS: ChartLayerConfig[] = [
     },
     attribution: "SHOM — Requires subscription/INSPIRE key",
     minZoom: 5, maxZoom: 18, cacheTtlMs: 7 * 24 * 3600 * 1000,
+    helpText: {
+      es: "SHOM RASTER MARINE es un servicio de pago del hidrográfico francés. Necesitas: (1) contrato/subscripción en services.data.shom.fr y (2) una clave INSPIRE. La URL base típica es https://services.data.shom.fr/INSPIRE/wms/r (sustituye INSPIRE por tu clave). La alternativa LIBRE para Francia es 'Francia — IGN Cartas costeras' que ya está preconfigurada y no requiere clave.",
+      en: "SHOM RASTER MARINE is a paid service from the French hydrographic office. You need: (1) a subscription at services.data.shom.fr and (2) an INSPIRE key. Typical base URL is https://services.data.shom.fr/INSPIRE/wms/r (replace INSPIRE with your key). The FREE alternative for France is 'France — IGN Coastal charts' which is already preconfigured and needs no key.",
+    },
+    helpUrl: "https://services.data.shom.fr/",
   },
   /* Rev796: IGN Francia cartas costeras — WMTS público sin key. Como el
      WMTS con tilematrixset=PM usa el mismo tiling que XYZ (Web Mercator),
@@ -15026,6 +15042,8 @@ expressApp.get("/signalk-mareas-ihm/api/chart-layers", (_req: any, res: any) => 
     attribution: l.attribution,
     configured: _isLayerConfigured(l),
     isPlaceholder: _CHART_PLACEHOLDERS.some(p => p.id === l.id),
+    helpText: l.helpText,
+    helpUrl: l.helpUrl,
     hasAuth: !!l.auth,
     wmsParams: l.type === "wms" ? l.wmsParams : undefined,
   }));

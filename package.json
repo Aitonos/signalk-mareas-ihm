@@ -1,7 +1,7 @@
 {
   "name": "signalk-mareas-ihm",
-  "version": "2.11.0",
-  "description": "Anchor watch + AIS anti-collision (triple online: aisstream/aishub/aisfriends) + shelter forecast + worldwide tides + on-board IMU waves for Signal K. Setup wizard, multi-user PIN, multi-layer charts. Runs on OpenPlotter / Raspberry Pi.",
+  "version": "2.11.1",
+  "description": "Anchor watch + AIS anti-collision (triple online: aisstream/aishub/aisfriends) + shelter forecast + worldwide tides + on-board IMU waves + live rain radar (RainViewer) + worldwide port search for Signal K. National chart layers preconfigured for Spain IHM · France IGN · USA NOAA · Norway Kartverket · Finland Traficom · Canada CHS; bring-your-own URL for Portugal IH and France SHOM RASTER. Setup wizard, multi-user PIN. Runs on OpenPlotter / Raspberry Pi.",
   "type": "module",
   "main": "./dist/index.js",
   "exports": "./dist/index.js",

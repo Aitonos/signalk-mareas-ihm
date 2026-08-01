@@ -22,7 +22,11 @@ A single Signal K plugin that turns your boat computer into a serious **anchor w
 - 🏔️ **Shelter forecast** — 16-sector wind rose with automatic detection from OSM coastline + breakwaters, A-F grade + 0-100% protection score, 12 h strip, real-time downgrade from on-board vane/IMU.
 - 🌊 **On-board wave measurement** — 24 h history from your IMU (intensity, period, height by 5-minute bins).
 - 📊 **Anchoring calculator** — chain, scope, depth, swing prediction.
-- 🗺️ **Multi-layer chart viewer** — world bathymetry + Esri Satellite + IHM ENC S-52 + NOAA ENC (USA) + offline MBTiles + OpenStreetMap + OpenSeaMap + SK Charts integration, all with adjustable transparency.
+- 🗺️ **Multi-layer chart viewer** — world bathymetry + Esri Satellite + OpenStreetMap + OpenSeaMap seamarks + offline MBTiles + Signal K registered charts, all with adjustable transparency. Plus **configurable national hydrographic chart layers** via a backend tile proxy (CORS + 30-day disk cache):
+  - **Free, ready to use (preconfigured)**: 🇪🇸 Spain (IHM ENC S-52), 🇫🇷 France (IGN Cartes littorales), 🇺🇸 USA (NOAA ENC), 🇳🇴 Norway (Kartverket), 🇫🇮 Finland (Traficom Merikarttasarja) and 🇨🇦 Canada (CHS NONNA bathymetry).
+  - **Restricted, bring your own URL / API key**: 🇵🇹 Portugal (IH ENC — free registration required) and 🇫🇷 France SHOM RASTER (paid subscription + INSPIRE key). The config modal in the app shows a hint per service explaining where to request the URL and links the official portal.
+- 🌧️ **Live rain radar** — RainViewer overlay with animated timeline (~2 h of past frames + ~30 min nowcast, play/pause + slider), adjustable opacity, no API key. Enabling radar temporarily extends the map's min-zoom so you can zoom out enough to see a continent-wide cloud pattern.
+- 🔍 **Worldwide port search** — sidebar button opens a search modal (OpenStreetMap Nominatim, prioritises marina / harbour / dock / bay); one click flies to the port and disables the boat auto-follow so the camera stays where you sent it.
 - 🌅 **Multi-source worldwide tides** with automatic engine selection by proximity: IHM Spain official (>70 stations) → [`signalk-tides`](https://github.com/openwatersio/signalk-tides) if installed → **NEAPS** harmonic-constants engine embedded (~7600 stations NOAA + TICON-4) → Open-Meteo as last resort.
 - 🌤️ **Weather forecast** via Open-Meteo (ICON, GFS, ECMWF, Arome, GEM, JMA).
 - 🌀 **Built-in shortcuts** to Windy, Windregatta.com, KIP, SK Freeboard.
@@ -103,10 +107,17 @@ Most anchor watch apps are paid, closed source, single-device and tied to a vend
 - **Vibration fallback** on Android when autoplay policy blocks audio.
 
 #### Charts & layers
-- **Esri Satellite**, **IHM ENC S-52** (Spain official charts), **NOAA ENC** (USA official charts), **Bathymetry overlay**, **OpenStreetMap**, **OpenSeaMap** seamarks, **Bing Hybrid**, **Esri Clarity**, **Google Satellite**.
+- **Base layers**: Esri Satellite, Bing Hybrid, Esri Clarity, Google Satellite, OpenStreetMap.
+- **Bathymetry overlay** and **OpenSeaMap** seamarks always available.
+- **National hydrographic charts by country** (configurable panel, WMS / WMTS / XYZ, backend proxy with 30-day disk cache):
+  - ✅ **Free & preconfigured** (green ✓ badge, one-click enable): 🇪🇸 Spain IHM ENC S-52, 🇫🇷 France IGN "Cartes littorales", 🇺🇸 USA NOAA ENC, 🇳🇴 Norway Kartverket, 🇫🇮 Finland Traficom Merikarttasarja A public, 🇨🇦 Canada CHS NONNA 10 bathymetry.
+  - ⚠ **Restricted / bring your own URL** (warning badge, click the ⚙ to configure): 🇵🇹 Portugal IH ENC (free registration with the Portuguese Hydrographic Institute) and 🇫🇷 France SHOM RASTER MARINE (paid subscription + INSPIRE key). The config modal in the app shows a bilingual hint per service — where to request access, what URL format is expected, whether an API key is needed, and links to the official portal.
+  - Each activated country layer routes through the plugin's own tile proxy that resolves CORS, caches tiles on disk for 30 days and normalises WMS 1.1.x / 1.3.x quirks.
+- **🌧 Live rain radar** — RainViewer overlay (past + nowcast frames) with adjustable opacity, no API key required.
 - **MBTiles offline** — drop your `.mbtiles` files in a folder and they show up automatically.
 - **Signal K registered charts** — any chart you've registered with Signal K appears as a layer.
 - **Per-layer opacity slider** with default values you can tweak.
+- **🔍 Worldwide port search** from the sidebar (OpenStreetMap Nominatim, prioritises marina / harbour / dock / bay), one click flies the map to the port and disables auto-follow so you stay put.
 
 #### Home Automation / KIP / Freeboard
 - **KIP buttons** for drop/lift and toggle alarms — open Freeboard-SK with one tap from the side bar.
@@ -225,7 +236,11 @@ Un único plugin de Signal K que convierte el ordenador del barco en un **gestor
 - 🏔️ **Previsión de abrigo** — rosa de 16 sectores con auto-detección desde costa OSM + escolleras, grado A-F + 0-100% protección, strip 12 h, degradación en tiempo real por veleta/IMU.
 - 🌊 **Medición de olas a bordo** — historial 24 h desde el IMU (intensidad/período/altura por bin de 5 min).
 - 📊 **Calculadora de fondeo** — cadena, scope, sonda, predicción de borneo.
-- 🗺️ **Visor de cartas multicapa** — Batimetría mundial + Esri Satélite + IHM ENC S-52 + NOAA ENC (EE.UU.) + MBTiles offline + OpenStreetMap + OpenSeaMap + SK Charts, con transparencias ajustables.
+- 🗺️ **Visor de cartas multicapa** — Batimetría mundial + Esri Satélite + OpenStreetMap + OpenSeaMap señalización marítima + MBTiles offline + cartas registradas en Signal K, con transparencias ajustables. Además **capas hidrográficas nacionales configurables** vía proxy backend (CORS + caché 30 días en disco):
+  - **Libres, listas para usar (preconfiguradas)**: 🇪🇸 España (IHM ENC S-52), 🇫🇷 Francia (IGN Cartes littorales), 🇺🇸 EE.UU. (NOAA ENC), 🇳🇴 Noruega (Kartverket), 🇫🇮 Finlandia (Traficom Merikarttasarja) y 🇨🇦 Canadá (CHS batimetría NONNA).
+  - **Restringidas, tú traes URL / clave API**: 🇵🇹 Portugal (IH ENC — registro gratuito requerido) y 🇫🇷 Francia SHOM RASTER (suscripción de pago + clave INSPIRE). El modal de configuración de la app incluye una pista por servicio explicando dónde solicitar la URL y enlaza al portal oficial.
+- 🌧️ **Radar de lluvia en vivo** — overlay RainViewer con timeline animado (~2 h de frames pasados + ~30 min de previsión, play/pause + slider), opacidad ajustable, sin API key. Al activar el radar el min-zoom del mapa se extiende temporalmente para poder alejar lo suficiente y ver un patrón de nubes a escala continental.
+- 🔍 **Búsqueda mundial de puertos** — botón en la sidebar que abre un modal (OpenStreetMap Nominatim, prioriza marina / harbour / dock / bay); un clic vuela al puerto y desactiva el auto-follow del barco para que la cámara no rebote de vuelta.
 - 🌅 **Mareas mundiales multi-fuente** con selección automática de motor por proximidad: IHM España oficial (>70 estaciones) → [`signalk-tides`](https://github.com/openwatersio/signalk-tides) si está instalado → motor de **NEAPS** por constantes armónicas embebido (~7600 estaciones NOAA + TICON-4) → Open-Meteo como último recurso.
 - 🌤️ **Previsión meteo** Open-Meteo (ICON, GFS, ECMWF, Arome, GEM, JMA).
 - 🌀 **Atajos integrados** a Windy, Windregatta.com, KIP, SK Freeboard.
@@ -306,10 +321,17 @@ La mayoría de apps de anchor watch son de pago, código cerrado, un solo dispos
 - **Vibración fallback** en Android cuando la política de autoplay bloquea el audio.
 
 #### Cartas y capas
-- **Satélite Esri**, **IHM ENC S-52** (cartas oficiales España), **NOAA ENC** (cartas oficiales EE.UU.), **Batimetría**, **OpenStreetMap**, **OpenSeaMap** señalización marítima, **Bing Hybrid**, **Esri Clarity**, **Google Satélite**.
+- **Capas base**: Satélite Esri, Bing Hybrid, Esri Clarity, Google Satélite, OpenStreetMap.
+- **Batimetría** y **OpenSeaMap** (señalización marítima) siempre disponibles.
+- **Cartas hidrográficas nacionales por país** (panel configurable, WMS / WMTS / XYZ, proxy backend con caché 30 días en disco):
+  - ✅ **Libres y preconfiguradas** (badge verde ✓, un clic para activar): 🇪🇸 España IHM ENC S-52, 🇫🇷 Francia IGN "Cartes littorales", 🇺🇸 EE.UU. NOAA ENC, 🇳🇴 Noruega Kartverket, 🇫🇮 Finlandia Traficom Merikarttasarja A public, 🇨🇦 Canadá CHS batimetría NONNA 10.
+  - ⚠ **Restringidas / tú traes URL** (badge de aviso, pulsa ⚙ para configurar): 🇵🇹 Portugal IH ENC (registro gratuito en el Instituto Hidrográfico portugués) y 🇫🇷 Francia SHOM RASTER MARINE (suscripción de pago + clave INSPIRE). El modal de configuración de la app muestra una pista bilingüe por servicio — dónde solicitar el acceso, qué formato de URL se espera, si hace falta clave API, y enlace al portal oficial.
+  - Cada capa nacional activada pasa por el proxy de teselas del propio plugin: resuelve CORS, cachea 30 días en disco y normaliza las diferencias entre WMS 1.1.x y 1.3.x.
+- **🌧 Radar de lluvia en vivo** — overlay RainViewer (frames pasados + previsión) con opacidad ajustable, sin API key.
 - **MBTiles offline** — pon tus archivos `.mbtiles` en una carpeta y aparecen automáticamente.
 - **Cartas registradas en Signal K** — cualquier carta registrada con Signal K aparece como capa.
 - **Slider de opacidad por capa** con valores por defecto editables.
+- **🔍 Búsqueda mundial de puertos** desde la sidebar (OpenStreetMap Nominatim, prioriza marina / harbour / dock / bay), un clic vuela el mapa al puerto y desactiva el auto-follow para que la cámara no rebote al barco.
 
 #### Domótica / KIP / Freeboard
 - **Botones KIP** para echar/levar y conmutar alarmas — abre Freeboard-SK con un toque desde la sidebar.

@@ -1,5 +1,47 @@
 # Changelog
 
+## [2.11.1] - 2026-07-31
+
+### English
+
+**RainViewer radar with animation timeline**
+
+The 🌧 rain radar layer now animates. When enabled, a compact timeline appears at the bottom of the map with ▶/⏸, a frame slider covering the last ~2 h of past frames + ~30 min of nowcast (forecast), a live time label and a "Now" button to snap back to the current frame. Slider moves pause playback automatically; the layer keeps its 2.5-min refresh from the RainViewer API so new frames appear at the right of the slider as they publish. No API key required.
+
+**Wizard: new "Charts by country" step (Rev824)**
+
+Added a wizard step (between Offline charts and Depth calculator) that lists every national hydrographic chart layer registered in the plugin — Spain IHM, Portugal IH, France IGN/SHOM, USA NOAA, Norway Kartverket, Finland Traficom, Canada CHS NONNA, OpenSeaMap — with a ✓/⚠ badge showing at-a-glance which ones are ready to use and which still need a URL or API key. The ⚙ button per row opens the same configuration modal used from the Layers panel, so setup happens once during onboarding instead of hunting for the panel later.
+
+**Chart config modal: per-service help hint (Rev829)**
+
+The ⚙ configuration modal now shows a bilingual hint for each service that ships without a preconfigured URL — where to request access, what URL format is expected, whether an API key is needed, and a clickable link to the official portal. Populated so far for 🇵🇹 Portugal IH ENC (free registration with the Portuguese Hydrographic Institute) and 🇫🇷 France SHOM RASTER MARINE (paid subscription + INSPIRE key).
+
+**Documentation: README and NPM description**
+
+The README's "Charts & layers" section (both EN and ES) now clearly separates the six free-and-preconfigured national charts (Spain IHM, France IGN, USA NOAA, Norway Kartverket, Finland Traficom, Canada CHS NONNA — one-click enable) from the two restricted ones (Portugal IH, France SHOM RASTER — user needs to request access and paste URL/key). The NPM `description` field mirrors the same split so the SignalK App Store search results are accurate.
+
+---
+
+### Español
+
+**Radar RainViewer con línea de tiempo animada**
+
+La capa 🌧 de radar de lluvia ahora anima. Al activarla aparece una barra compacta en la parte inferior del mapa con ▶/⏸, un slider que cubre las últimas ~2 h de frames pasados + ~30 min de previsión, una etiqueta de hora en vivo y un botón "Ahora" para saltar al frame actual. Al mover el slider la reproducción se pausa automáticamente; la capa mantiene su refresco cada 2,5 min contra la API de RainViewer, así que los frames nuevos aparecen por la derecha del slider según se publican. Sin API key.
+
+**Asistente: nuevo paso "Cartas por Países" (Rev824)**
+
+Añadido un paso al wizard (entre Cartas offline y Cálculo de sonda) que lista todas las cartas hidrográficas nacionales registradas en el plugin — España IHM, Portugal IH, Francia IGN/SHOM, EEUU NOAA, Noruega Kartverket, Finlandia Traficom, Canadá CHS NONNA, OpenSeaMap — con badge ✓/⚠ para ver de un vistazo cuáles están listas y cuáles necesitan URL o clave API. El botón ⚙ por fila abre el mismo modal de configuración que hay en el panel de capas, así el setup se hace una sola vez durante el onboarding en vez de tener que buscar el panel después.
+
+**Modal de configuración de carta: pista por servicio (Rev829)**
+
+El modal ⚙ de configuración muestra ahora una pista bilingüe para cada servicio sin URL preconfigurada — dónde solicitar acceso, qué formato de URL se espera, si hace falta clave API, y un enlace clicable al portal oficial. Rellenada de momento para 🇵🇹 Portugal IH ENC (registro gratuito en el Instituto Hidrográfico portugués) y 🇫🇷 Francia SHOM RASTER MARINE (suscripción de pago + clave INSPIRE).
+
+**Documentación: README y descripción NPM**
+
+La sección "Cartas y capas" del README (ES y EN) separa ahora claramente las seis cartas nacionales libres y preconfiguradas (España IHM, Francia IGN, EE.UU. NOAA, Noruega Kartverket, Finlandia Traficom, Canadá CHS NONNA — un clic para activar) de las dos restringidas (Portugal IH, Francia SHOM RASTER — hay que solicitar acceso y pegar URL/clave). El campo `description` del `package.json` refleja el mismo desglose para que los resultados de búsqueda en el App Store de SignalK sean precisos.
+
+---
+
 ## [2.11.0] - 2026-07-31
 
 ### English

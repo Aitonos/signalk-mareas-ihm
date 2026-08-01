@@ -2158,6 +2158,17 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 </div>
 <div id="map"></div>
 
+<!-- Rev823/826: barra de tiempo del radar RainViewer. Oculta por defecto,
+     se muestra cuando la capa está activa y hay frames cargados. La
+     posición `bottom` la ajusta _rvUpdateTimelineUI() en JS según si el
+     bottom bar del visor está desplegado o colapsado. -->
+<div id="rv-timeline" style="display:none;position:absolute;left:50%;transform:translateX(-50%);bottom:78px;z-index:900;background:rgba(20,26,34,0.86);color:#e6f0f6;border:1px solid #2b3a48;border-radius:10px;padding:8px 12px;box-shadow:0 4px 14px rgba(0,0,0,0.35);align-items:center;gap:10px;font-size:14px;max-width:92vw;pointer-events:auto;transition:bottom .28s ease" aria-label="RainViewer timeline">
+  <button id="rv-play" type="button" onclick="rvPlayPause()" style="background:#1f2b36;color:#e6f0f6;border:1px solid #3a4b5c;border-radius:6px;padding:4px 10px;font-size:16px;line-height:1;cursor:pointer;min-width:36px">▶</button>
+  <input id="rv-slider" type="range" min="0" max="0" value="0" step="1" oninput="rvSliderChange(this.value)" onmousedown="this._dragging=true" onmouseup="this._dragging=false" ontouchstart="this._dragging=true" ontouchend="this._dragging=false" style="flex:1;min-width:180px;accent-color:#4aa3ff">
+  <span id="rv-time-lbl" style="min-width:98px;text-align:center;font-variant-numeric:tabular-nums">--:--</span>
+  <button id="rv-live" type="button" onclick="rvSliderLive()" title="Ahora / Live" data-i18n-title="rv_live" style="background:#1f2b36;color:#e6f0f6;border:1px solid #3a4b5c;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer" data-i18n="rv_live">Ahora</button>
+</div>
+
 <!-- Rev802/803: botón de búsqueda de puertos ahora integrado en la m-sidebar (ver L2401 aprox). Bloque flotante eliminado. -->
 
 <div class="popup-overlay" id="port-search-pop" onclick="if(event.target.id==='port-search-pop')closePopup('port-search-pop')">
@@ -2227,6 +2238,13 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
       </svg>
     </span>
     <span class="lbl" data-i18n="sb_mareas">Mareas</span>
+  </button>
+  <!-- Rev830 (feedback Carlos): buscador mundial de puertos 🔍 en la
+       sidebar izquierda, entre Mareas y el container de extras
+       configurables (KIP/Freeboard + los añadidos desde Configuración). -->
+  <button class="m-sb-btn" id="m-sb-port" onclick="portSearchOpen()" data-i18n-title="sb_puertos_tip" title="Buscar puertos del mundo">
+    <span class="ico">🔍</span>
+    <span class="lbl" data-i18n="sb_puertos">Puertos</span>
   </button>
   <!-- Rev450: KIP/Freeboard ahora son botones dinamicos pintados desde
        backend (defaults reemplazables). Container para extras de sidebar izq. -->
@@ -2404,9 +2422,9 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
        del modal y el i18n shelter_title también cambian a 🏔️. -->
   <button class="m-sb-btn" id="m-sb-abrigo" onclick="openShelterConfig()" data-i18n-title="sb_abrigo_tip" title="Previsión abrigo"><span class="ico">🏔️</span><span data-i18n="sb_abrigo">Abrigo</span></button>
   <button class="m-sb-btn" id="m-sb-meteo"  onclick="toggleMeteo&&toggleMeteo()" data-i18n-title="menu_meteo" title="Previsión Meteo"><span class="ico">🌡️</span><span data-i18n="m_meteo_short">Meteo</span></button>
-  <!-- Rev803: buscador global de puertos en la sidebar. Reemplaza al botón
-       flotante Rev802. Icono 🔍 (lupa) pedido por Carlos. -->
-  <button class="m-sb-btn" id="m-sb-port"   onclick="portSearchOpen()" data-i18n-title="sb_puertos_tip" title="Buscar puertos del mundo"><span class="ico">🔍</span><span data-i18n="sb_puertos">Puertos</span></button>
+  <!-- Rev830 (feedback Carlos): el buscador 🔍 Puertos se movió a la sidebar
+       izquierda, justo antes del candado 🔓 Acceso (ver #m-leftbar más
+       arriba). Aquí ya no aparece. -->
   <!-- Rev450: container para botones extras dinamicos sidebar derecha
        (defaults KIP/FB + cualquiera anadido desde Configuracion). -->
   <div id="m-sb-extras-right" class="m-sb-extras"></div>
@@ -3244,10 +3262,20 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
   </div>
 </div>
 <!-- Rev816: modal cx-cfg-pop OUT del panel principal (backdrop-filter del panel rompía position fixed y confinaba el modal). -->
-<div class="popup-overlay" id="cx-cfg-pop" onclick="if(event.target.id==='cx-cfg-pop')closePopup('cx-cfg-pop')">
+<!-- Rev828: z-index elevado a 2500. Se abre habitualmente desde el step del
+     wizard ("Cartas por Paises") que ya es un popup-overlay (z:2000); sin
+     este boost quedaba visualmente detras del wizard y parecia no abrirse. -->
+<div class="popup-overlay" id="cx-cfg-pop" style="z-index:2500" onclick="if(event.target.id==='cx-cfg-pop')closePopup('cx-cfg-pop')">
   <div class="popup-box" onclick="event.stopPropagation()" style="max-width:720px">
     <h4 style="display:flex;align-items:center;gap:14px"><span style="font-size:1.2em">🗺️</span><span id="cx-cfg-title">Configurar carta</span></h4>
     <div style="font-size:20px;color:#cde;margin:6px 0 20px;line-height:1.35" id="cx-cfg-hint"></div>
+    <!-- Rev829: bloque de pista extendida (dónde conseguir la URL, si hace
+         falta key, alternativas libres). Se rellena desde cxCfgOpen si el
+         backend envía helpText / helpUrl para ese layer. -->
+    <div id="cx-cfg-help" style="display:none;margin:0 0 20px;padding:16px 18px;background:rgba(154,170,204,.10);border:1px solid rgba(154,170,204,.35);border-radius:10px;font-size:18px;color:#cde;line-height:1.5">
+      <div id="cx-cfg-help-text"></div>
+      <a id="cx-cfg-help-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;margin-top:10px;color:var(--org);font-weight:800;text-decoration:none">🔗 <span id="cx-cfg-help-link-label">Abrir enlace oficial</span> ↗</a>
+    </div>
     <div style="margin:16px 0">
       <label style="display:block;font-size:20px;color:#ccc;font-weight:700;margin-bottom:10px" id="cx-cfg-url-label">URL base del servicio</label>
       <input type="text" id="cx-cfg-url" placeholder="https://..." style="width:100%;padding:16px 18px;font-size:22px;border-radius:10px;border:2px solid rgba(255,255,255,.25);background:rgba(0,0,0,.35);color:#fff;box-sizing:border-box">
@@ -5965,6 +5993,7 @@ var _i18n={
   port_search_hint:{es:'Escribe un nombre de puerto, marina o ciudad costera. Ej: "Bergen", "Vigo", "Halifax".',en:'Type a port, marina or coastal city. E.g. "Bergen", "Vigo", "Halifax".'},
   port_search_btn:{es:'Buscar',en:'Search'},
   port_search_empty:{es:'Introduce un término y pulsa Buscar.',en:'Type something and press Search.'},
+  rv_live:{es:'Ahora',en:'Now'},
   mostrar_derrotas:{es:'Mi track (GPS)',en:'My track (GPS)'},
   mostrar_ais:{es:'Tracks de otros barcos (AIS)',en:'Other boats\' tracks (AIS)'},
   /* Rev610 Bloque C: UI de tracks. */
@@ -14633,72 +14662,201 @@ function portSearchGo(lat,lng,name){
   }
 }
 
-/* Rev801: RainViewer radar de lluvia. API pública sin key. Descubre el
-   hash del frame más reciente vía /public/weather-maps.json y monta un
-   L.tileLayer contra tilecache.rainviewer.com. Refresh cada 2.5 min para
-   traer los frames nuevos (el hash cambia cada 10 min). CORS abierto,
-   fetch directo desde el navegador. */
+/* Rev801/823: RainViewer radar de lluvia con animación temporal.
+   Rev801 pintaba solo el frame más reciente. Rev823 guarda TODA la
+   cadena de frames (past ~12 x 10 min = 2h) + nowcast (~3 x 10 min = 30 min
+   futuro) y añade una barra de tiempo flotante con play/pause + slider. */
 var _rvLayer=null, _rvHash=null, _rvHost=null, _rvTimer=null;
+var _rvFrames=[];        /* array {ts, hash, kind:'past'|'nowcast'} */
+var _rvFrameIdx=-1;      /* índice actual dentro de _rvFrames */
+var _rvPlayTimer=null;   /* setInterval de la animación */
+var _rvPlayMs=650;       /* ms entre frames en play */
 function _rvUrlFor(host,hash){
   /* Formato: /v2/radar/<hash>/256/{z}/{x}/{y}/<colorscheme>/<smooth>_<snow>.png
      colorscheme 2 = "Universal Blue" (típico radar), smooth=1, snow=1. */
   return host+'/v2/radar/'+hash+'/256/{z}/{x}/{y}/2/1_1.png';
+}
+function _rvBuildLayer(host,hash,opa){
+  var ly=L.tileLayer(_rvUrlFor(host,hash),{
+    /* Rev805: RainViewer solo tiene tiles hasta z=10 y solo donde hay
+       cobertura radar. Fuera → 404 con mensaje "zoom level not supported"
+       burned en PNG. Silenciamos con errorTileUrl transparente + tileerror
+       no-op y clampeamos maxNativeZoom=7. */
+    minZoom:0, maxZoom:22,
+    minNativeZoom:0, maxNativeZoom:7,
+    opacity:typeof opa==='number'?opa:0.7,
+    zIndex:400,
+    attribution:'© RainViewer',
+    crossOrigin:true,
+    errorTileUrl:'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='
+  });
+  try{ ly.on('tileerror',function(){}); }catch(_){}
+  return ly;
+}
+function _rvLastPastIdx(){
+  var last=-1;
+  for(var i=0;i<_rvFrames.length;i++){ if(_rvFrames[i].kind==='past') last=i; }
+  return last;
 }
 function rainviewerFetch(){
   fetch('https://api.rainviewer.com/public/weather-maps.json',{cache:'no-store'})
     .then(function(r){return r.ok?r.json():null;})
     .then(function(d){
       if(!d||!d.radar||!Array.isArray(d.radar.past)||!d.radar.past.length)return;
-      var last=d.radar.past[d.radar.past.length-1];
-      var m=/\/([a-f0-9]+)$/.exec(last.path||'');
-      if(!m)return;
-      var newHash=m[1];
       var host=d.host||'https://tilecache.rainviewer.com';
-      if(newHash===_rvHash && host===_rvHost) return;
-      _rvHash=newHash; _rvHost=host;
-      /* Reconstruir la layer con el hash fresco. Preservar activación y opacidad. */
+      /* Consolidar past + nowcast en un solo array temporal ordenado. */
+      var frames=[];
+      d.radar.past.forEach(function(f){
+        var m=/\/([a-f0-9]+)$/.exec(f.path||'');
+        if(m) frames.push({ts:f.time*1000, hash:m[1], kind:'past'});
+      });
+      if(Array.isArray(d.radar.nowcast)){
+        d.radar.nowcast.forEach(function(f){
+          var m=/\/([a-f0-9]+)$/.exec(f.path||'');
+          if(m) frames.push({ts:f.time*1000, hash:m[1], kind:'nowcast'});
+        });
+      }
+      if(!frames.length) return;
+      /* Detectar si el usuario está mirando el "vivo" o un frame arbitrario.
+         Si está en el vivo (o aún no hay layer), saltamos al nuevo último past.
+         Si está en un frame concreto, respetamos su posición. */
+      var wasAtLive = (_rvFrameIdx<0) || (_rvFrameIdx===_rvLastPastIdx());
+      _rvFrames=frames;
+      _rvHost=host;
+      _rvUpdateTimelineUI();
+      if(!wasAtLive){
+        /* Recolocar el idx sobre el frame con el mismo hash si aún existe,
+           o quedarse quieto en el índice actual (los frames van rotando). */
+        var stillHere=-1;
+        for(var i=0;i<frames.length;i++){ if(frames[i].hash===_rvHash){stillHere=i;break;} }
+        if(stillHere>=0){ _rvFrameIdx=stillHere; _rvUpdateTimelineUI(); }
+        return;
+      }
+      var newIdx=_rvLastPastIdx();
+      if(newIdx<0) newIdx=frames.length-1;
+      var newHash=frames[newIdx].hash;
+      if(newHash===_rvHash && _rvLayer) { _rvFrameIdx=newIdx; _rvUpdateTimelineUI(); return; }
       var wasActive=_rvLayer && map && map.hasLayer(_rvLayer);
       var opa=_rvLayer?_rvLayer.options.opacity:0.7;
       if(_rvLayer && map){ try{ map.removeLayer(_rvLayer); }catch(_){} }
-      _rvLayer=L.tileLayer(_rvUrlFor(host,newHash),{
-        /* Rev805: RainViewer devuelve HTTP 200 con PNG que CONTIENE texto
-           "zoom level not supported" a zoom altos (no un error HTTP). Por
-           eso errorTileUrl no lo intercepta. Único fix: no pedir zooms
-           altos → maxNativeZoom=7 (Navegal lo pide a z=7 en su log; z=10
-           empezaba a dar texto de error). Leaflet estira las tiles de z7
-           hasta z22 sin re-pedir al server. */
-        minZoom:0, maxZoom:22,
-        minNativeZoom:0, maxNativeZoom:7,
-        opacity:opa,
-        zIndex:400,
-        attribution:'© RainViewer',
-        crossOrigin:true,
-        errorTileUrl:'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='
-      });
-      try{ _rvLayer.on('tileerror',function(){}); }catch(_){}
+      _rvHash=newHash; _rvFrameIdx=newIdx;
+      _rvLayer=_rvBuildLayer(host,newHash,opa);
       if(wasActive && map) _rvLayer.addTo(map);
-      try{ console.log('[IHM-RV] radar frame refreshed, hash='+newHash); }catch(_){}
+      _rvUpdateTimelineUI();
+      try{ console.log('[IHM-RV] frames refreshed, past='+d.radar.past.length+' nowcast='+(d.radar.nowcast||[]).length); }catch(_){}
     })
     .catch(function(e){try{console.warn('[IHM-RV] fetch failed',e);}catch(_){}});
 }
+function _rvShowFrame(idx){
+  if(!_rvFrames.length || idx<0 || idx>=_rvFrames.length) return;
+  var f=_rvFrames[idx];
+  var wasActive=_rvLayer && map && map.hasLayer(_rvLayer);
+  var opa=_rvLayer?_rvLayer.options.opacity:0.7;
+  if(_rvLayer && map){ try{ map.removeLayer(_rvLayer); }catch(_){} }
+  _rvHash=f.hash;
+  _rvFrameIdx=idx;
+  _rvLayer=_rvBuildLayer(_rvHost,f.hash,opa);
+  if(wasActive && map) _rvLayer.addTo(map);
+  _rvUpdateTimelineUI();
+}
+function _rvUpdateTimelineUI(){
+  var bar=document.getElementById('rv-timeline');
+  if(!bar) return;
+  var visible=_rvLayer && map && map.hasLayer(_rvLayer) && _rvFrames.length>0;
+  bar.style.display=visible?'flex':'none';
+  if(!visible) return;
+  /* Rev826: reposicionar según estado del bottom bar. Colapsado (clase
+     bar-hidden) → pegar la timeline abajo (14 px). Desplegado → subir
+     por encima (~78 px) para no quedar tapada. */
+  var bb=document.getElementById('m-bottom-bar');
+  var bbHidden=!!(bb && bb.classList.contains('bar-hidden'));
+  bar.style.bottom=bbHidden?'14px':'78px';
+  var slider=document.getElementById('rv-slider');
+  var lbl=document.getElementById('rv-time-lbl');
+  var play=document.getElementById('rv-play');
+  var idx=_rvFrameIdx>=0?_rvFrameIdx:0;
+  if(slider){
+    slider.min=0;
+    slider.max=_rvFrames.length-1;
+    if(!slider._dragging) slider.value=idx;
+  }
+  if(lbl){
+    var f=_rvFrames[idx];
+    if(f){
+      var d=new Date(f.ts);
+      var hh=('0'+d.getHours()).slice(-2), mm=('0'+d.getMinutes()).slice(-2);
+      var suffix='';
+      var lastPast=_rvLastPastIdx();
+      if(f.kind==='past' && idx===lastPast) suffix=(_lang==='en'?' · now':' · ahora');
+      else if(f.kind==='nowcast') suffix=(_lang==='en'?' · forecast':' · previsión');
+      lbl.textContent=hh+':'+mm+suffix;
+    }
+  }
+  if(play) play.textContent=_rvPlayTimer?'⏸':'▶';
+}
+function rvPlayPause(){
+  if(_rvPlayTimer){ clearInterval(_rvPlayTimer); _rvPlayTimer=null; _rvUpdateTimelineUI(); return; }
+  if(!_rvFrames.length) return;
+  _rvPlayTimer=setInterval(function(){
+    var next=_rvFrameIdx+1;
+    if(next>=_rvFrames.length) next=0;
+    _rvShowFrame(next);
+  },_rvPlayMs);
+  _rvUpdateTimelineUI();
+}
+function rvSliderChange(v){
+  var idx=parseInt(v,10);
+  if(!isFinite(idx)) return;
+  if(_rvPlayTimer){ clearInterval(_rvPlayTimer); _rvPlayTimer=null; }
+  _rvShowFrame(idx);
+}
+function rvSliderLive(){
+  if(_rvFrames.length){
+    if(_rvPlayTimer){ clearInterval(_rvPlayTimer); _rvPlayTimer=null; }
+    _rvShowFrame(_rvLastPastIdx());
+  }
+}
+/* Rev826: guarda el minZoom "normal" del visor para restaurarlo cuando
+   se desactiva el radar. Al activar bajamos a 3 (permite ver >2000 km
+   de ancho a lat ~45°, más que suficiente para valorar el patrón de
+   lluvia continental). Las capas base con minZoom>3 simplemente pintan
+   vacío o extendidas — es el mismo comportamiento que ya tenemos con
+   otras layers al hacer zoom in/out fuera de rango nativo. */
+var _rvOriginalMinZoom=null;
+function _rvExpandZoomOut(){
+  if(!map) return;
+  if(_rvOriginalMinZoom===null){
+    try{ _rvOriginalMinZoom=map.getMinZoom(); }catch(_){ _rvOriginalMinZoom=12; }
+  }
+  try{ map.setMinZoom(3); }catch(_){}
+}
+function _rvRestoreZoomOut(){
+  if(!map || _rvOriginalMinZoom===null) return;
+  try{ map.setMinZoom(_rvOriginalMinZoom); }catch(_){}
+  _rvOriginalMinZoom=null;
+}
 function tRadar(on){
   if(on){
+    _rvExpandZoomOut();
     if(!_rvHash){
-      /* Primera activación: fetch inicial + reintentar activar cuando llegue el hash. */
       rainviewerFetch();
       var retry=0;
       var tick=setInterval(function(){
         retry++;
-        if(_rvLayer && map){ _rvLayer.addTo(map); clearInterval(tick); return; }
-        if(retry>10) clearInterval(tick); /* 10s timeout */
+        if(_rvLayer && map){ _rvLayer.addTo(map); _rvUpdateTimelineUI(); clearInterval(tick); return; }
+        if(retry>10) clearInterval(tick);
       },1000);
     } else if(_rvLayer && map){
       _rvLayer.addTo(map);
+      _rvUpdateTimelineUI();
     }
-    if(!_rvTimer) _rvTimer=setInterval(rainviewerFetch,150000); /* 2.5 min */
+    if(!_rvTimer) _rvTimer=setInterval(rainviewerFetch,150000);
   } else {
     if(_rvLayer && map) try{ map.removeLayer(_rvLayer); }catch(_){}
     if(_rvTimer){ clearInterval(_rvTimer); _rvTimer=null; }
+    if(_rvPlayTimer){ clearInterval(_rvPlayTimer); _rvPlayTimer=null; }
+    _rvRestoreZoomOut();
+    _rvUpdateTimelineUI();
   }
 }
 function opaRadar(v){ if(_rvLayer) _rvLayer.setOpacity(v/100); }
@@ -14817,6 +14975,33 @@ function cxCfgOpen(id){
   document.getElementById('cx-cfg-url').value=meta.urlBase||meta.urlTemplate||'';
   document.getElementById('cx-cfg-apikey').value='';
   document.getElementById('cx-cfg-delete-btn').style.display=meta.configured?'':'none';
+  /* Rev829: pista extendida (helpText + helpUrl). Se muestra solo si el
+     backend la envía. Útil sobre todo para servicios placeholder no
+     configurados (Portugal IH, SHOM RASTER) donde el usuario necesita
+     saber a dónde ir a por la URL. */
+  var helpBox=document.getElementById('cx-cfg-help');
+  var helpTxt=document.getElementById('cx-cfg-help-text');
+  var helpLink=document.getElementById('cx-cfg-help-link');
+  var helpLinkLbl=document.getElementById('cx-cfg-help-link-label');
+  var msg=null;
+  if (meta.helpText && typeof meta.helpText==='object'){
+    msg = (_lang==='en' ? meta.helpText.en : meta.helpText.es) || meta.helpText.es || meta.helpText.en || null;
+  }
+  if (msg){
+    if (helpTxt) helpTxt.textContent = msg;
+    if (helpLink){
+      if (meta.helpUrl){
+        helpLink.href = meta.helpUrl;
+        helpLink.style.display = '';
+        if (helpLinkLbl) helpLinkLbl.textContent = (_lang==='en'?'Open official link':'Abrir enlace oficial');
+      } else {
+        helpLink.style.display = 'none';
+      }
+    }
+    if (helpBox) helpBox.style.display = '';
+  } else {
+    if (helpBox) helpBox.style.display = 'none';
+  }
   openPopup('cx-cfg-pop');
 }
 function cxCfgSave(){
@@ -17637,7 +17822,7 @@ function m_wizardOpenManually(){
   fetch(A+'/wizard/state',{cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(j){
-      var defaultOrder = ['summary','language','units','boat','systemCheck','sensorCheck','imu','notifications','aisFallback','tides','mbtiles','sonda','skpaths','master'];
+      var defaultOrder = ['summary','language','units','boat','systemCheck','sensorCheck','imu','notifications','aisFallback','tides','mbtiles','customCharts','sonda','skpaths','master'];
       _wizardState = j || {currentStepId:'summary', stepsCompleted:[], data:{}, totalSteps:defaultOrder.length, stepsOrder:defaultOrder};
       /* Rev729 (feedback Carlos "Resumen pasa a ser la HOME"): al abrir el
          wizard manualmente siempre arrancamos en summary — es el hub
@@ -17674,6 +17859,7 @@ function m_wizardRender(){
     aisFallback:   {es:'🚢 AIS por internet',                 en:'🚢 AIS over internet'},
     tides:         {es:'🌊 Mareas y meteo',                   en:'🌊 Tides & weather'},
     mbtiles:       {es:'🗺️ Cartas offline',                    en:'🗺️ Offline charts'},
+    customCharts:  {es:'🌐 Cartas por Países',                 en:'🌐 Charts by country'},
     sonda:         {es:'📐 Cálculo de sonda',                  en:'📐 Depth calculator'},
     skpaths:       {es:'📡 Paths publicados en SignalK',      en:'📡 Paths published to SignalK'},
     master:        {es:'🔒 Usuario maestro',                  en:'🔒 Master user'},
@@ -17719,7 +17905,7 @@ function m_wizardNext(data){
      el frontend calculaba isLast=true por [].indexOf===[]:length-1 y
      cerraba el wizard en cualquier Continuar). Además guardo el fallback
      al estado local para futuras llamadas. */
-  var defaultOrder = ['summary','language','units','boat','systemCheck','sensorCheck','imu','notifications','aisFallback','tides','mbtiles','sonda','skpaths','master'];
+  var defaultOrder = ['summary','language','units','boat','systemCheck','sensorCheck','imu','notifications','aisFallback','tides','mbtiles','customCharts','sonda','skpaths','master'];
   var stepsOrder = (_wizardState.stepsOrder && _wizardState.stepsOrder.length) ? _wizardState.stepsOrder : defaultOrder;
   _wizardState.stepsOrder = stepsOrder;
   var currentStepId = _wizardState.currentStepId;
@@ -17825,6 +18011,10 @@ function m_wizardHomeExit(){
   try { closePopup('m-user-control-pop'); } catch(_){}
   try { closePopup('calc-pop'); } catch(_){}
   try { closePopup('curvas-pop'); } catch(_){}
+  /* Rev828: si el step "Cartas por Paises" abrio el modal cx-cfg-pop encima,
+     tambien hay que cerrarlo. Sin esto quedaba abierto en el visor y parecia
+     que Home habia abierto "Configuracion". */
+  try { closePopup('cx-cfg-pop'); } catch(_){}
 }
 /* Rev729: salta al step summary sin salir del wizard. Usado por el botón
    📋 de la barra inferior. */
@@ -18525,7 +18715,7 @@ window.m_wizardSummaryGoto = function(target){
      navegan DENTRO del asistente al step correspondiente. Nada de abrir
      modales externos ni menús laterales — todo in-situ. */
   if (!_wizardState) return;
-  var valid = ['language','units','boat','systemCheck','sensorCheck','imu','notifications','aisFallback','tides','mbtiles','sonda','skpaths','master'];
+  var valid = ['language','units','boat','systemCheck','sensorCheck','imu','notifications','aisFallback','tides','mbtiles','customCharts','sonda','skpaths','master'];
   if (valid.indexOf(target) < 0) return;
   _wizardState.currentStepId = target;
   if (typeof m_wizardRender==='function') m_wizardRender();
@@ -18543,6 +18733,7 @@ window.m_wizardStep_summary = function(body){
     { id:'aisFallback',   icon:'🚢', label:(lang==='en')?'AIS over internet':'AIS por internet' },
     { id:'tides',         icon:'🌊', label:(lang==='en')?'Tides & weather':'Mareas y meteo' },
     { id:'mbtiles',       icon:'🗺️', label:(lang==='en')?'Offline charts':'Cartas offline' },
+    { id:'customCharts',  icon:'🌐', label:(lang==='en')?'Charts by country':'Cartas por Países' },
     { id:'sonda',         icon:'📐', label:(lang==='en')?'Depth calculator':'Cálculo de sonda' },
     { id:'skpaths',       icon:'📡', label:(lang==='en')?'Paths published to SignalK':'Paths publicados en SignalK' },
     { id:'master',        icon:'🔒', label:(lang==='en')?'Master user':'Usuario maestro' },
@@ -19922,6 +20113,90 @@ window.m_wizardMbtSave = function(){
       }, 800);
     });
 };
+/* Rev824: step del wizard para "Cartas por Países" (custom charts). Lista
+   los servicios hidrográficos nacionales del backend con badge verde
+   (configurado, se puede activar) o naranja (placeholder, hace falta URL
+   / clave API). Botón ⚙ por fila abre el modal cx-cfg-pop existente. El
+   botón inferior lleva al panel de capas para probar visualmente. */
+window.m_wizardStep_customCharts = function(body){
+  var lang = _lang;
+  body.innerHTML = m_wizardBodyTitle() + '<div style="text-align:center;padding:40px 0;font-size:18px;opacity:.7">'
+    + ((lang==='en')?'🔎 Loading chart catalog…':'🔎 Cargando catálogo de cartas…') + '</div>';
+  fetch(A+'/chart-layers',{cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;})
+    .then(function(j){
+      var layers = (j && Array.isArray(j.layers)) ? j.layers.slice() : [];
+      layers.sort(function(a,b){
+        var an=(a.name||a.id||'').toLowerCase();
+        var bn=(b.name||b.id||'').toLowerCase();
+        return an.localeCompare(bn);
+      });
+      _cxCache = layers.slice();
+      var configured = layers.filter(function(l){return l.configured;}).length;
+      var pending    = layers.length - configured;
+      var html = m_wizardBodyTitle();
+      html += '<div style="max-width:860px;margin:0 auto">';
+      html += '<div style="font-size:20px;color:#cfd8dc;line-height:1.55;margin-bottom:22px">'
+           + ((lang==='en')
+             ? 'Enable official national chart layers on the map. Free services (Spain IHM, France IGN, USA NOAA, Norway, Finland, Canada, OpenSeaMap) already have their URL filled in. Restricted services (Portugal IH, France SHOM RASTER) need you to paste the endpoint and, if applicable, an API key. Each activated layer is proxied through this plugin (CORS + 30-day disk cache).'
+             : 'Activa capas oficiales de cartas hidrográficas nacionales en el mapa. Los servicios abiertos (España IHM, Francia IGN, EEUU NOAA, Noruega, Finlandia, Canadá, OpenSeaMap) ya llevan la URL rellena. Los servicios restringidos (Portugal IH, Francia SHOM RASTER) necesitan que pegues el endpoint y, si toca, una clave API. Cada capa activada pasa por el proxy del plugin (CORS + caché 30 días en disco).')
+           + '</div>';
+      html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">';
+      html += '<div style="flex:1;min-width:180px;padding:14px 18px;background:rgba(58,168,86,.12);border:1px solid rgba(58,168,86,.45);border-radius:10px">'
+           + '<div style="font-size:14px;color:#8fd7a4;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:4px">'+((lang==='en')?'Ready to use':'Listas para usar')+'</div>'
+           + '<div style="font-size:30px;font-weight:900;color:#3aa856">'+configured+'</div></div>';
+      html += '<div style="flex:1;min-width:180px;padding:14px 18px;background:rgba(255,178,63,.10);border:1px solid rgba(255,178,63,.45);border-radius:10px">'
+           + '<div style="font-size:14px;color:#ffb23f;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:4px">'+((lang==='en')?'Need configuration':'Sin configurar')+'</div>'
+           + '<div style="font-size:30px;font-weight:900;color:#ffb23f">'+pending+'</div></div>';
+      html += '</div>';
+      if (layers.length){
+        html += '<div style="background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.10);border-radius:10px;overflow:hidden">';
+        layers.forEach(function(c){
+          var name = c.name || c.id;
+          var url  = c.url || '';
+          var short = url ? (url.length>72 ? url.slice(0,68)+'…' : url) : ((lang==='en')?'(no URL yet)':'(sin URL aún)');
+          var badgeColor = c.configured ? '#3aa856' : '#ffb23f';
+          var badgeText  = c.configured ? '✓' : '⚠';
+          var badgeBg    = c.configured ? 'rgba(58,168,86,.18)' : 'rgba(255,178,63,.15)';
+          var actionTxt  = c.configured ? ((lang==='en')?'Edit':'Editar') : ((lang==='en')?'Configure':'Configurar');
+          html += '<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06)">'
+               + '<span style="display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;background:'+badgeBg+';color:'+badgeColor+';border-radius:8px;font-size:22px;font-weight:900;flex-shrink:0">'+badgeText+'</span>'
+               + '<div style="flex:1;min-width:0">'
+               +   '<div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:2px">'+name+'</div>'
+               +   '<div style="font-size:13px;color:#9ad;font-family:ui-monospace,Menlo,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+short+'</div>'
+               + '</div>'
+               + '<button onclick="cxCfgOpen(\''+encodeURIComponent(c.id).replace(/\'/g,"\\'")+'\')" style="background:rgba(255,255,255,.10);color:#fff;border:1px solid rgba(255,255,255,.28);padding:10px 16px;font-size:15px;font-weight:700;border-radius:8px;cursor:pointer;flex-shrink:0">⚙ '+actionTxt+'</button>'
+               + '</div>';
+        });
+        html += '</div>';
+      } else {
+        html += '<div style="padding:20px;background:rgba(255,178,63,.10);border:1px solid rgba(255,178,63,.35);border-radius:10px;color:#ffb23f;font-size:17px">'
+             + ((lang==='en')?'No chart layers registered yet. Reopen this step after a full plugin restart.':'Aún no hay capas registradas. Reabre este paso tras un reinicio completo del plugin.')
+             + '</div>';
+      }
+      html += '<div style="margin-top:26px;padding:16px 20px;background:rgba(154,170,204,.10);border:1px solid rgba(154,170,204,.30);border-radius:10px;font-size:17px;color:#cfd8dc;line-height:1.55">'
+           + ((lang==='en')
+             ? 'You can enable/disable each layer any time from the map \'Layers\' panel (👁 icon in the sidebar). This wizard step is just to help you fill URLs and API keys once.'
+             : 'Puedes activar/desactivar cada capa cuando quieras desde el panel \'Capas\' del mapa (icono 👁 en la sidebar). Este paso del asistente solo te ayuda a rellenar URLs y claves una vez.')
+           + '</div>';
+      html += '</div>';
+      body.innerHTML = html;
+      /* Rev830 (feedback Carlos "no queda grabada en verde"): el mero hecho
+         de haber visitado el step "Cartas por Países" y visto el catálogo
+         cuenta como completado — no hay input obligatorio propio (solo la
+         acción opcional de configurar servicios restringidos). Postamos
+         action:'complete' silenciosamente para que el Summary se pinte
+         verde, siguiendo el patrón de notifications/aisFallback/imu. */
+      try {
+        fetch(A+'/wizard/step',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({stepId:'customCharts', action:'complete', data:{visitedAt:Date.now()}})})
+          .catch(function(){});
+        if (_wizardState && Array.isArray(_wizardState.stepsCompleted) && _wizardState.stepsCompleted.indexOf('customCharts') < 0){
+          _wizardState.stepsCompleted.push('customCharts');
+        }
+      } catch(_){}
+    });
+};
+
 /* Rev670 (feedback Carlos "decir el nombre del usuario y si no hubiera modal
    de crear master"): step maestro con dos ramas:
    - Con maestro: muestra el alias del maestro + botón "Gestionar usuarios"
@@ -20643,6 +20918,10 @@ function m_bbToggleBar(){
   if (L) L.classList.toggle('bar-collapsed', nowHidden);
   if (R) R.classList.toggle('bar-collapsed', nowHidden);
   m_updateBBScrollIndicators();
+  /* Rev826: reposicionar la barra de tiempo del radar RainViewer si
+     está visible — abajo del todo si el bottom bar está oculto, o por
+     encima de él si está desplegado. */
+  try { if (typeof _rvUpdateTimelineUI==='function') _rvUpdateTimelineUI(); } catch(_){}
 }
 /* Hook init: cuando carga la app o cambia el orden, recalcular indicadores. */
 (function(){
