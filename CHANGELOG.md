@@ -1,5 +1,63 @@
 # Changelog
 
+## [2.11.2] - 2026-08-01
+
+### English
+
+**Shelter: smart auto-detect on open + "Marked" vs "Detected" + reset on move**
+
+The shelter rose now auto-detects at open time if the last detection is >10 min old — no need to press "Detect" every time. If you have touched sectors manually, the label switches from "Detected N sectors" to "Marked N sectors" and the auto-detect on open is skipped so it doesn't overwrite your work; only the explicit "Detect" button clears the manual flag. Additionally, if the boat moves more than 300 m from the origin of the last auto-detection, manual edits are dropped and a fresh auto-detect is triggered — "manual only while we are in the same place; if we move, back to full automatic".
+
+**AIS: filter own vessel out of the list (fix for own boat appearing as target)**
+
+The plugin now detects the vessel's own MMSI (from SignalK selfId, `getSelfPath('mmsi')`, or the manual override entered in the wizard) and filters it out of the AIS ingestion in ALL 4 paths: VHF (SignalK `vessels.*` iteration), aisstream WebSocket, aishub peer polling, aisfriends peer polling, plus the republish to `vessels.urn:mrn:imo:mmsi:*` and the online-sources registry. Without this, targets like AISFriends would fetch your own boat back from the internet and inject it into the SignalK bus, so it appeared in your AIS list asking for ACK and triggering collision alarms against yourself.
+
+**Wizard: unified "Vessel Base Data" block that mirrors SignalK admin UI**
+
+The "Boat data" wizard step now shows every field of SignalK's own "Vessel Base Data" block (Name, MMSI, Call Sign, Ship type — as a friendly selector with AIS category names, Draft, Length, Beam, Height, GPS Distance From Bow, GPS Distance From Center) with:
+- Green "SIGNALK" badge when the bus already has the value, orange "NOT SET" when empty.
+- Live sync back to SignalK: whatever you type is published via the internal `baseDeltaEditor` + `sendBaseDeltas` helper of the SignalK server, so the change appears in SignalK admin UI immediately without restart, and persists into `~/.signalk/baseDeltas.json` so it survives a reboot.
+- Nested objects handled correctly: `design.length.overall`, `design.draft.maximum`, `design.aisShipType.{id,name}` are wrapped in the shape SignalK expects.
+- Auto-detect drill-down: if a field lives inside a nested value object (like `design.length.overall`), the plugin now walks the object tree instead of returning null.
+
+**Deploy: rsync README + CHANGELOG + screenshots on every deploy**
+
+Fixed a gap where `deploy.ps1` did not sync `README.md`, `CHANGELOG.md` or the `screenshots/` folder to the Pi. In a dev-symlink setup (`~/.signalk/node_modules/signalk-mareas-ihm → /home/pi/signalk-mareas-ihm`) the SignalK App Store reads those files from disk, so without them the app store page showed "This plugin doesn't ship a README" and empty screenshot thumbnails.
+
+**Instructions modal updated**
+
+`public/instrucciones_es.html` now covers all 2.11.x features (rain radar timeline, charts by country, ports search, multi-source AIS badges, self-MMSI filter, unified Vessel Base Data in the wizard, shelter smart open + Detected/Marked + reset on move).
+
+---
+
+### Español
+
+**Abrigo: auto-detección inteligente al abrir + "Marcados" vs "Detectados" + reset al moverse**
+
+La rosa del abrigo auto-detecta al abrir la ventana si la última detección tiene más de 10 min — sin necesidad de pulsar "Detectar" cada vez. Si has tocado sectores a mano, la etiqueta cambia de "Detectados N sectores" a "Marcados N sectores" y la auto-detección al abrir se salta para no pisar tu trabajo; solo el botón "Detectar" limpia el flag manual. Además, si el barco se aleja más de 300 m del origen de la última auto-detección, se descartan los edits manuales y se re-detecta — "manual solo mientras estamos en el mismo sitio; si nos movemos, pasa a full automático".
+
+**AIS: filtro del propio barco de la lista (fix de tu barco apareciendo como target)**
+
+El plugin detecta ahora el MMSI del propio barco (desde el selfId de SignalK, `getSelfPath('mmsi')`, o el override manual introducido en el asistente) y lo filtra de las 4 rutas de ingesta AIS: VHF (iteración de `vessels.*` en SignalK), WebSocket de aisstream, peer polling de aishub, peer polling de aisfriends, más la republicación a `vessels.urn:mrn:imo:mmsi:*` y el registro de fuentes online. Sin este filtro, motores online como AISFriends recogían tu propio barco de la red y lo devolvían al bus de SignalK, así que aparecía en tu lista AIS pidiendo ACK y disparando alarma de colisión contra ti mismo.
+
+**Asistente: bloque "Datos del barco" unificado que espeja el bloque de admin de SignalK**
+
+El paso "Datos del barco" del asistente muestra ahora todos los campos del bloque "Vessel Base Data" de SignalK (Nombre, MMSI, Indicativo, Tipo de barco — como selector con nombres AIS legibles, Calado, Eslora, Manga, Puntal, Distancia GPS a proa, Distancia GPS al centro) con:
+- Badge verde "SIGNALK" cuando el bus ya tiene el valor, naranja "SIN VALOR" cuando está vacío.
+- Sincronización en vivo hacia SignalK: lo que escribes se publica a través del `baseDeltaEditor` interno + helper `sendBaseDeltas` del propio servidor SignalK, así que el cambio aparece en la UI admin de SignalK inmediatamente sin reiniciar, y persiste en `~/.signalk/baseDeltas.json` para sobrevivir un reboot.
+- Objetos anidados manejados correctamente: `design.length.overall`, `design.draft.maximum`, `design.aisShipType.{id,name}` se envuelven en la forma que SignalK espera.
+- Drill-down auto en la lectura: si un campo vive dentro de un objeto value anidado (como `design.length.overall`), el plugin baja por el árbol en lugar de devolver null.
+
+**Deploy: rsync README + CHANGELOG + screenshots en cada deploy**
+
+Arreglado un hueco donde `deploy.ps1` no sincronizaba `README.md`, `CHANGELOG.md` ni la carpeta `screenshots/` al Pi. En un montaje dev-symlink (`~/.signalk/node_modules/signalk-mareas-ihm → /home/pi/signalk-mareas-ihm`) el App Store de SignalK lee esos ficheros del disco, así que sin ellos la ficha del app store mostraba "This plugin doesn't ship a README" y las miniaturas de screenshots en blanco.
+
+**Modal de instrucciones actualizado**
+
+`public/instrucciones_es.html` cubre ahora todas las features 2.11.x (timeline del radar de lluvia, Cartas por Países, buscador de puertos, badges AIS multi-fuente, filtro self-MMSI, Vessel Base Data unificado en el asistente, apertura inteligente del shelter + Detectados/Marcados + reset por movimiento).
+
+---
+
 ## [2.11.1] - 2026-07-31
 
 ### English

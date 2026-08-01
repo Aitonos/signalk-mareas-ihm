@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev831";
+const PLUGIN_REVISION = "Rev843";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -6540,6 +6540,74 @@ const _AIS_LAST_POS_TTL_MS = 5 * 60 * 1000;   // 5 min para posicion (target sig
 const _AIS_DB_MAX_ENTRIES = 2000;             // hard cap; expulsa LRU (lastSeenMs) al exceder
 let _aisKnownDB: { [mmsi: string]: AisKnownEntry } = {};
 let _aisKnownDBDirty = false;
+
+/* Rev834 (feedback Carlos "sale nuestro propio barco como uno de los target
+   en AIS; y pide ACK o da alarma de colisión"): helper que devuelve el MMSI
+   del propio barco. Prioridad:
+   1. `_selfMmsiOverride` — override manual del wizard/config (cache ihmCache "selfMmsi").
+   2. `app.selfId` si viene con formato `urn:mrn:imo:mmsi:XXXXXXX`.
+   3. `getSelfPath('mmsi')` del bus SignalK.
+   Se cachea 60 s porque este check corre en cada evaluator tick y en cada
+   push del cliente AIS online. */
+let _selfMmsiOverride: string | null = null;
+let _selfMmsiCache: string | null = null;
+let _selfMmsiCachedAt = 0;
+function _invalidateSelfMmsiCache() { _selfMmsiCachedAt = 0; _selfMmsiCache = null; }
+function _getSelfMmsi(): string | null {
+  const now = Date.now();
+  if (_selfMmsiCache && now - _selfMmsiCachedAt < 60_000) return _selfMmsiCache;
+  let mmsi: string | null = null;
+  if (_selfMmsiOverride && /^\d{9}$/.test(_selfMmsiOverride)) mmsi = _selfMmsiOverride;
+  if (!mmsi) {
+    try {
+      const sid = (app as any)?.selfId ?? "";
+      const m = /urn:mrn:imo:mmsi:(\d{9})/.exec(String(sid));
+      if (m) mmsi = m[1];
+    } catch { /* ignore */ }
+  }
+  if (!mmsi) {
+    try {
+      const raw: any = (app as any).getSelfPath?.("mmsi");
+      const v = (raw && typeof raw === "object" && "value" in raw) ? (raw as any).value : raw;
+      if (typeof v === "string" && /^\d{9}$/.test(v)) mmsi = v;
+      else if (typeof v === "number" && v > 0) mmsi = String(v);
+    } catch { /* ignore */ }
+  }
+  _selfMmsiCache = mmsi;
+  _selfMmsiCachedAt = now;
+  return mmsi;
+}
+/* Fuente detectada (para telemetría del wizard) — "config" | "selfId" | "sk" | "none". */
+function _getSelfMmsiSource(): "config" | "selfId" | "sk" | "none" {
+  if (_selfMmsiOverride && /^\d{9}$/.test(_selfMmsiOverride)) return "config";
+  try {
+    const sid = (app as any)?.selfId ?? "";
+    if (/urn:mrn:imo:mmsi:\d{9}/.test(String(sid))) return "selfId";
+  } catch { /* ignore */ }
+  try {
+    const raw: any = (app as any).getSelfPath?.("mmsi");
+    const v = (raw && typeof raw === "object" && "value" in raw) ? (raw as any).value : raw;
+    if ((typeof v === "string" && /^\d{9}$/.test(v)) || (typeof v === "number" && v > 0)) return "sk";
+  } catch { /* ignore */ }
+  return "none";
+}
+/* Carga el override desde ihmCache en el arranque. */
+(async () => {
+  try {
+    const cached = await ihmCache.get("selfMmsi");
+    if (typeof cached === "string" && /^\d{9}$/.test(cached)) {
+      _selfMmsiOverride = cached;
+      _invalidateSelfMmsiCache();
+      app.debug(`[IHM-SELF-MMSI] loaded manual override: ${cached}`);
+    }
+  } catch { /* ignore */ }
+})();
+/* Extrae 9 dígitos MMSI de un id de vessel SK ("urn:mrn:imo:mmsi:XXX" o
+   plain MMSI). Devuelve null si no encuentra un MMSI válido. */
+function _extractMmsi(idOrKey: string): string | null {
+  const m = /(\d{9})/.exec(String(idOrKey));
+  return m ? m[1] : null;
+}
 // Rev403: bajado de 30s -> 8s. Si el plugin se cae entre persistencias, los
 // nombres nuevos se perdian (causa probable de "no cargan nombres al abrir").
 const _AIS_DB_PERSIST_DEBOUNCE_MS = 8_000;
@@ -6557,6 +6625,10 @@ function _aisDBLookup(mmsi: string): AisKnownEntry | null {
 }
 
 function _aisDBUpdate(mmsi: string, patch: Partial<Omit<AisKnownEntry, "mmsi" | "lastSeenMs">>) {
+  /* Rev834: nunca guardar el propio MMSI como target — evita que aparezca
+     en la lista, dispare alarmas de colisión o pida ACK. Ver _getSelfMmsi. */
+  const selfMmsi = _getSelfMmsi();
+  if (selfMmsi && mmsi === selfMmsi) return;
   const prev = _aisKnownDB[mmsi];
   const now = Date.now();
   const merged: AisKnownEntry = {
@@ -6616,6 +6688,12 @@ type _AisOnlineSource = "aisstream" | "aishub" | "aisfriends";
 const _AIS_ONLINE_FRESH_MS = 120_000;
 const _aisOnlineSeen: Map<string, Map<_AisOnlineSource, number>> = new Map();
 function _aisMarkOnlineSeen(mmsi: string, source: _AisOnlineSource): void {
+  /* Rev835: no marcar el propio MMSI en el registro de fuentes online.
+     Sin esto, aunque _aisDBUpdate bloquee la escritura en _aisKnownDB, el
+     _sourcesFor() seguía atribuyendo badges (VHF/AS/AH/AF) al propio barco
+     por entradas antiguas y el listado mostraba Tunatunes con 🇫🇷 AISFriends. */
+  const selfMmsi = _getSelfMmsi();
+  if (selfMmsi && mmsi === selfMmsi) return;
   let m = _aisOnlineSeen.get(mmsi);
   if (!m) { m = new Map(); _aisOnlineSeen.set(mmsi, m); }
   m.set(source, Date.now());
@@ -6629,6 +6707,8 @@ function _aisOnlineSourcesFor(mmsi: string): _AisOnlineSource[] {
   return out.sort(); // stable order across calls
 }
 function _aisstreamMergeUpdate(u: _AisstreamMergePayload): void {
+  /* Rev835: guard duro contra el propio MMSI antes que nada. */
+  { const selfMmsi = _getSelfMmsi(); if (selfMmsi && u.mmsi === selfMmsi) return; }
   _aisMarkOnlineSeen(u.mmsi, "aisstream");
   const cur = _aisKnownDB[u.mmsi];
   const nowMs = Date.now();
@@ -6667,6 +6747,9 @@ function _aisstreamMergeUpdate(u: _AisstreamMergePayload): void {
   } catch { /* republish is a nice-to-have, no fallar por él */ }
 }
 function _aisstreamRepublishToSK(u: _AisstreamMergePayload): void {
+  /* Rev835: nunca republicar el propio MMSI al bus SK — evita el ciclo
+     motor online → bus SK → listado AIS → target fantasma "Tunatunes". */
+  { const selfMmsi = _getSelfMmsi(); if (selfMmsi && u.mmsi === selfMmsi) return; }
   const ctx = "vessels.urn:mrn:imo:mmsi:" + u.mmsi;
   const values: Array<{ path: string; value: any }> = [];
   if (u.lat != null && u.lng != null) {
@@ -6730,6 +6813,8 @@ let _aishubDedupVhf = 0;
 let _aishubDedupAisstream = 0;
 let _aishubAdopted = 0;
 function _aishubMergeUpdate(u: _AisstreamMergePayload): void {
+  /* Rev835: guard duro contra el propio MMSI. */
+  { const selfMmsi = _getSelfMmsi(); if (selfMmsi && u.mmsi === selfMmsi) return; }
   _aisMarkOnlineSeen(u.mmsi, "aishub");
   const cur = _aisKnownDB[u.mmsi];
   const nowMs = Date.now();
@@ -6790,6 +6875,8 @@ let _aisfriendsDedupAisstream = 0;
 let _aisfriendsDedupAishub = 0;
 let _aisfriendsAdopted = 0;
 function _aisfriendsMergeUpdate(u: _AisstreamMergePayload): void {
+  /* Rev835: guard duro contra el propio MMSI. */
+  { const selfMmsi = _getSelfMmsi(); if (selfMmsi && u.mmsi === selfMmsi) return; }
   _aisMarkOnlineSeen(u.mmsi, "aisfriends");
   const cur = _aisKnownDB[u.mmsi];
   const nowMs = Date.now();
@@ -8212,6 +8299,7 @@ function evaluateAnchorWatch() {
     try {
       const vessels = (app as any).getPath?.("vessels") ?? {};
       const selfId = app.selfId;
+      const selfMmsi = _getSelfMmsi(); // Rev834
       // Build aisInZone with both name (for display) AND mmsiClean (for ACK matching).
       // Filtering by MMSI directly avoids the fragile name→MMSI re-lookup that broke
       // ACKs when targets shared names or when name was empty.
@@ -8222,6 +8310,11 @@ function evaluateAnchorWatch() {
       const baseAlarmR = radiusTotalForRing + anchorWatch.alarmRadiusExtra;
       for (const [id, vessel] of Object.entries(vessels)) {
         if (id === selfId || id === "self") continue;
+        /* Rev834: además de selfId, filtrar por MMSI extraído. Motores online
+           republican con id "urn:mrn:imo:mmsi:<mmsi>" que puede no coincidir
+           con app.selfId (UUID) → sin este filtro el propio barco entraba
+           como target y pedía ACK. */
+        if (selfMmsi && _extractMmsi(id) === selfMmsi) continue;
         const v = vessel as any;
         const pos = v?.navigation?.position?.value;
         if (!pos?.latitude || !pos?.longitude) continue;
@@ -8691,12 +8784,49 @@ const SHELTER_REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7d
 let _shelterRefreshInFlight = false;
 let _lastShelterRefreshAttemptMs = 0;
 const SHELTER_REFRESH_RETRY_MS = 60 * 60 * 1000; // 1h tras fallo
+/* Rev832 (feedback Carlos "manual solo si estamos en el mismo sitio; si nos
+   movemos se obvia y pasa a full automático"): distancia (en metros) más
+   allá de la cual asumimos que el barco se ha movido a un sitio nuevo y hay
+   que descartar los edits manuales y re-detectar. 300 m ~ mismo puerto pero
+   cambia si el barco se re-fondea al lado o le llevan al muelle. */
+const SHELTER_LOCATION_MOVE_M = 300;
+function _haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 function _maybeRefreshShelter() {
   if (!anchorWatch.anchored || !anchorWatch.anchorPosition) return;
-  if (_shelterManualEdited) return;
   if (_shelterRefreshInFlight) return;
   const now = Date.now();
-  // Si el último ÉXITO fue hace <24h Y no ha habido fallo reciente, salir.
+  const lat = anchorWatch.anchorPosition.lat;
+  const lng = anchorWatch.anchorPosition.lng;
+  /* Rev832: chequeo previo al flag manualEdited — si el barco se ha movido
+     más de SHELTER_LOCATION_MOVE_M respecto al origen del último auto-detect,
+     descartamos manual y forzamos re-detección aunque la última fuera reciente. */
+  const lastOrigin = _lastAutoShelter?.origin;
+  if (lastOrigin) {
+    const moveM = _haversineM(lastOrigin.lat, lastOrigin.lng, lat, lng);
+    if (moveM > SHELTER_LOCATION_MOVE_M) {
+      if (_shelterManualEdited) {
+        app.debug(`[IHM-SHELTER-AUTO] boat moved ${Math.round(moveM)}m > ${SHELTER_LOCATION_MOVE_M}m -> discarding manual edits, re-detecting`);
+        _shelterManualEdited = false;
+      }
+      if (_lastShelterRefreshAttemptMs && now - _lastShelterRefreshAttemptMs < SHELTER_REFRESH_RETRY_MS) return;
+      _lastShelterRefreshAttemptMs = now;
+      _shelterRefreshInFlight = true;
+      _autoDetectShelterIfPossible(lat, lng)
+        .finally(() => { _shelterRefreshInFlight = false; });
+      return;
+    }
+  }
+  /* Path original: refresco por antigüedad (7 días), respetando manual edits. */
+  if (_shelterManualEdited) return;
+  // Si el último ÉXITO fue hace <7d Y no ha habido fallo reciente, salir.
   if (now - _lastAutoDetectMs < SHELTER_REFRESH_INTERVAL_MS) return;
   // Si tenemos un intento reciente que falló (no llegamos al success), esperar
   // al menos 1h antes de reintentar (no hacer hammer al Overpass).
@@ -8704,7 +8834,7 @@ function _maybeRefreshShelter() {
   _lastShelterRefreshAttemptMs = now;
   _shelterRefreshInFlight = true;
   app.debug(`[IHM-SHELTER-AUTO] periodic refresh starting (anchored, no manual edit, last success ${_lastAutoDetectMs ? Math.round((now - _lastAutoDetectMs) / 60_000) + 'min ago' : 'never'})`);
-  _autoDetectShelterIfPossible(anchorWatch.anchorPosition.lat, anchorWatch.anchorPosition.lng)
+  _autoDetectShelterIfPossible(lat, lng)
     .finally(() => { _shelterRefreshInFlight = false; });
 }
 
@@ -12111,6 +12241,329 @@ expressApp.post("/signalk-mareas-ihm/api/weather/refresh", requireControlAccess,
   res.json({ ok: true, advisory: _lastAdvisory, fetchedAt: _lastWeather?.fetchedAt ?? null });
 });
 
+// Rev834: self MMSI — get/set. Devuelve el MMSI del propio barco y la
+// fuente (config manual / selfId / SK / ninguna). Se usa en el wizard para
+// que el usuario confirme el MMSI y, si no se detecta, lo introduzca a
+// mano. El filtro AIS (evaluator + list builder + _aisDBUpdate) se apoya
+// en este valor para NO mostrar el propio barco como target.
+expressApp.get("/signalk-mareas-ihm/api/config/self-mmsi", (_req: any, res: any) => {
+  const mmsi = _getSelfMmsi();
+  const source = _getSelfMmsiSource();
+  res.json({ mmsi, source, override: _selfMmsiOverride });
+});
+expressApp.post("/signalk-mareas-ihm/api/config/self-mmsi", requireControlAccess, async (req: any, res: any) => {
+  const raw = req?.body?.mmsi;
+  if (raw == null || raw === "") {
+    _selfMmsiOverride = null;
+    _invalidateSelfMmsiCache();
+    try { await ihmCache.set("selfMmsi", ""); } catch { /* ignore */ }
+    return res.json({ ok: true, mmsi: _getSelfMmsi(), source: _getSelfMmsiSource() });
+  }
+  const s = String(raw).trim();
+  if (!/^\d{9}$/.test(s)) {
+    return res.status(400).json({ ok: false, error: "invalid_mmsi", message: "MMSI must be 9 digits" });
+  }
+  _selfMmsiOverride = s;
+  _invalidateSelfMmsiCache();
+  try { await ihmCache.set("selfMmsi", s); } catch { /* ignore */ }
+  /* Rev834: si el MMSI recién configurado ya estaba en _aisKnownDB como target
+     (falso positivo previo), lo eliminamos para que no siga apareciendo en el
+     listado / no vuelva a disparar alarmas. */
+  if (_aisKnownDB[s]) {
+    delete _aisKnownDB[s];
+    _aisKnownDBDirty = true;
+  }
+  /* Rev835: propagar el MMSI al bus SignalK como delta self, para que
+     otros consumidores (Freeboard, WilhelmSK, KIP, plugins terceros) tengan
+     el mismo valor y el próximo restart lo lea desde SK directamente sin
+     necesitar el override manual. */
+  try {
+    const delta: any = {
+      context: ("vessels." + app.selfId),
+      updates: [{
+        timestamp: new Date().toISOString(),
+        values: [{ path: "", value: { mmsi: s } }],
+      }],
+    };
+    app.handleMessage(plugin.id, delta);
+    app.debug(`[IHM-SELF-MMSI] published to SK self: ${s}`);
+  } catch (e: any) {
+    app.debug(`[IHM-SELF-MMSI] publish to SK failed: ${e?.message ?? e}`);
+  }
+  res.json({ ok: true, mmsi: _getSelfMmsi(), source: _getSelfMmsiSource() });
+});
+
+/* Rev835 (feedback Carlos "copia todos los campos que tenemos en SignalK; y
+   si no hay campo en SK, y lo escribimos en el wizard, rellenamos el dato de
+   SK"): Vessel Base Data unificado. Espeja el bloque "Vessel Base Data" de
+   la UI admin de SignalK (Name, MMSI, Call Sign, Ship Type, Draft, Length,
+   Beam, Height, GPS Distance From Bow, GPS Distance From Center). GET lee
+   los valores actuales del bus. POST publica deltas self para los campos
+   que el usuario nos pase — SK pasa a ser la fuente única de verdad. */
+type _VbdFieldSpec = { key: string; skPath: string; type: "string" | "number"; publishAs?: "self-root" | "path"; };
+const _VBD_FIELDS: _VbdFieldSpec[] = [
+  { key: "name",       skPath: "name",                       type: "string", publishAs: "self-root" },
+  { key: "mmsi",       skPath: "mmsi",                       type: "string", publishAs: "self-root" },
+  { key: "callsign",   skPath: "communication.callsignVhf",  type: "string" },
+  { key: "shipType",   skPath: "design.aisShipType",         type: "number" },
+  { key: "draft",      skPath: "design.draft",               type: "number" },
+  { key: "length",     skPath: "design.length.overall",      type: "number" },
+  { key: "beam",       skPath: "design.beam",                type: "number" },
+  { key: "height",     skPath: "design.airHeight",           type: "number" },
+  { key: "fromBow",    skPath: "sensors.gps.fromBow",        type: "number" },
+  { key: "fromCenter", skPath: "sensors.gps.fromCenter",     type: "number" },
+];
+function _skUnwrap(v: any): any {
+  if (v == null) return null;
+  if (typeof v !== "object") return v;
+  /* Unwrap patrones habituales. */
+  if ("overall" in v && (v as any).overall != null) return (v as any).overall;
+  if ("maximum" in v && (v as any).maximum != null) return (v as any).maximum;
+  if ("current" in v && (v as any).current != null) return (v as any).current;
+  if ("id" in v && typeof (v as any).id === "number") return (v as any).id;
+  return v;
+}
+function _skReadPath(path: string): any {
+  /* Rev837 (feedback Carlos "sigue sin chupar el dato de SK" para length):
+     SK server no siempre resuelve paths con punto DENTRO de un value objeto
+     (p.ej. "design.length.overall" devuelve null porque design.length.value
+     es un objeto {overall:9}, y overall no es un sub-path SK real). Estrategia:
+     1) Prueba el path completo.
+     2) Si null y contiene ".", ve cortando el último segmento y baja manualmente
+        por el objeto (value.subKey.subKey…). */
+  try {
+    let raw: any = (app as any).getSelfPath?.(path);
+    if (raw != null) {
+      if (typeof raw === "object" && "value" in raw) {
+        const v = (raw as any).value;
+        return _skUnwrap(v);
+      }
+      return raw;
+    }
+    /* Fallback: reducir el path pieza a pieza. */
+    const parts = path.split(".");
+    for (let cut = parts.length - 1; cut >= 1; cut--) {
+      const base = parts.slice(0, cut).join(".");
+      const rest = parts.slice(cut);
+      const rawBase: any = (app as any).getSelfPath?.(base);
+      if (rawBase == null) continue;
+      let node: any = (typeof rawBase === "object" && "value" in rawBase) ? (rawBase as any).value : rawBase;
+      for (const k of rest) {
+        if (node == null || typeof node !== "object") { node = null; break; }
+        node = (node as any)[k];
+      }
+      if (node != null) return _skUnwrap(node);
+    }
+    return null;
+  } catch { return null; }
+}
+expressApp.get("/signalk-mareas-ihm/api/config/vessel-base", (_req: any, res: any) => {
+  const out: Record<string, { value: any; hasValue: boolean }> = {};
+  for (const f of _VBD_FIELDS) {
+    const v = _skReadPath(f.skPath);
+    const hasValue = v != null && v !== "" && !(typeof v === "number" && !isFinite(v));
+    out[f.key] = { value: hasValue ? v : null, hasValue };
+  }
+  res.json({ fields: out, selfId: (app as any).selfId ?? null });
+});
+/* Rev842 (feedback Carlos "solo refresca si se hace un restart del server"):
+   editar el archivo baseDeltas.json a mano NO basta — SK server solo relee
+   ese fichero al arrancar. Para que el cambio aparezca en admin UI SIN
+   restart hay que:
+   1. Actualizar el `app.config.baseDeltaEditor` in-memory (mismo objeto que
+      lee admin UI).
+   2. Persistir con `baseDeltaEditor.save()` para que sobreviva el próximo
+      reboot.
+   3. Reemitir los deltas al bus con `$source: 'defaults'` para que el árbol
+      vivo también refleje el cambio. Es el mismo patrón exacto que usa la
+      función interna sendBaseDeltas() de SK server. */
+function _skBaseDeltasPath(): string {
+  const dataDir = app.getDataDirPath();
+  return path.join(path.dirname(path.dirname(dataDir)), "baseDeltas.json");
+}
+/* Nombre canónico AIS ITU-R M.1371 usado por SK schema. */
+function _aisShipTypeCanonName(code: number): string {
+  const map: Record<number, string> = {
+    30: "Fishing", 31: "Towing", 32: "Towing (long/wide)",
+    33: "Dredging or underwater ops", 34: "Diving ops", 35: "Military ops",
+    36: "Sailing", 37: "Pleasure Craft",
+    50: "Pilot Vessel", 51: "Search and Rescue vessel", 52: "Tug",
+    53: "Port Tender", 54: "Anti-pollution equipment", 55: "Law Enforcement",
+    58: "Medical Transport",
+  };
+  if (map[code]) return map[code];
+  if (code >= 40 && code <= 49) return "High Speed Craft";
+  if (code >= 60 && code <= 69) return "Passenger";
+  if (code >= 70 && code <= 79) return "Cargo";
+  if (code >= 80 && code <= 89) return "Tanker";
+  return "Other";
+}
+/* Aplica los cambios al baseDeltaEditor del server (in-memory) + persiste
+   al archivo + re-emite al bus con source 'defaults'. Todo atómico. */
+async function _applyBaseDeltaEdit(
+  selfRootValues: Record<string, any>,
+  pathValues: Array<{ path: string; value: any }>,
+): Promise<void> {
+  const editor: any = (app as any)?.config?.baseDeltaEditor;
+  if (!editor || typeof editor.setSelfValue !== "function") {
+    /* Fallback: SK viejo sin editor expuesto → escribir al archivo directamente.
+       (Requerirá restart para verse en admin UI, pero al menos persiste.) */
+    app.debug(`[IHM-VBD] baseDeltaEditor no disponible; fallback a escribir archivo`);
+    return;
+  }
+  /* --- Self-root fields (name, mmsi, callsign). --- */
+  if (selfRootValues.name != null) editor.setSelfValue("name", selfRootValues.name);
+  if (selfRootValues.mmsi != null) editor.setSelfValue("mmsi", selfRootValues.mmsi);
+  if (selfRootValues.callsign != null) {
+    /* communication.callsignVhf: setSelfValue con path punteado escribe como
+       delta con path='communication.callsignVhf' y value=string, que es el
+       formato correcto. Alternativamente el admin UI lo escribe anidado bajo
+       el path='' — probamos punteado que es más simple. */
+    editor.setSelfValue("communication.callsignVhf", selfRootValues.callsign);
+  }
+  /* --- Path values con wrap para paths anidados. --- */
+  for (const pv of pathValues) {
+    let toSet: any = pv.value;
+    if (pv.path === "design.length") toSet = { overall: pv.value };
+    else if (pv.path === "design.draft") toSet = { maximum: pv.value };
+    else if (pv.path === "design.aisShipType") toSet = { id: pv.value, name: _aisShipTypeCanonName(pv.value) };
+    editor.setSelfValue(pv.path, toSet);
+  }
+  /* Rev843: usar el propio módulo config.js de signalk-server (misma función
+     interna que llama admin UI). handleMessage("defaults", …) hecho desde el
+     plugin no llegaba a mover el $source defaults del bus (SK lo re-etiqueta
+     como mareas-ihm) → admin UI mostraba el valor viejo. sendBaseDeltas()
+     del server ejecuta en el contexto correcto y sí actualiza. */
+  let usedInternalHelper = false;
+  try {
+    const { createRequire } = await import("module");
+    const req = createRequire(import.meta.url);
+    /* Resolver relative al proceso SK server, no al plugin. */
+    const cfgPath = req.resolve("signalk-server/dist/config/config.js", { paths: [process.cwd(), "/usr/lib/node_modules", "/usr/local/lib/node_modules"] });
+    const skConfig: any = req(cfgPath);
+    if (typeof skConfig.sendBaseDeltas === "function") {
+      skConfig.sendBaseDeltas(app);
+      usedInternalHelper = true;
+    }
+    if (typeof skConfig.writeBaseDeltasFile === "function") {
+      try { await skConfig.writeBaseDeltasFile(app); }
+      catch { skConfig.writeBaseDeltasFile(app); /* algunos returns void */ }
+    }
+    /* Refrescar VESSEL_INFO (name/mmsi/uuid) igual que el endpoint admin. */
+    try {
+      (app as any).emit?.("serverevent", {
+        type: "VESSEL_INFO",
+        data: {
+          name: editor.getSelfValue?.("name"),
+          mmsi: editor.getSelfValue?.("mmsi"),
+          uuid: editor.getSelfValue?.("uuid"),
+        },
+      });
+    } catch { /* opcional */ }
+  } catch (e: any) {
+    app.debug(`[IHM-VBD] sk config module require failed: ${e?.message ?? e}`);
+  }
+  /* Fallbacks si el helper interno no está disponible: escribir el archivo
+     directo + reemitir deltas al bus (el segundo probablemente no mueva el
+     source defaults, pero al menos el archivo persiste). */
+  if (!usedInternalHelper) {
+    try {
+      if (typeof editor.saveSync === "function") editor.saveSync(_skBaseDeltasPath());
+      else if (typeof editor.save === "function") editor.save(_skBaseDeltasPath()).catch(() => {});
+    } catch (e: any) {
+      app.debug(`[IHM-VBD] baseDeltaEditor.save fallback failed: ${e?.message ?? e}`);
+    }
+    try {
+      const copy = JSON.parse(JSON.stringify(editor.deltas ?? []));
+      for (const delta of copy) {
+        try { app.handleMessage("defaults", delta); } catch { /* per-delta safe */ }
+      }
+    } catch (e: any) {
+      app.debug(`[IHM-VBD] re-emit defaults fallback failed: ${e?.message ?? e}`);
+    }
+  }
+}
+expressApp.post("/signalk-mareas-ihm/api/config/vessel-base", requireControlAccess, async (req: any, res: any) => {
+  const body = req?.body ?? {};
+  if (!body || typeof body !== "object") {
+    return res.status(400).json({ ok: false, error: "invalid_body" });
+  }
+  const selfRootValues: Record<string, any> = {};
+  const pathValues: Array<{ path: string; value: any }> = [];
+  const applied: string[] = [];
+  const skipped: string[] = [];
+  for (const f of _VBD_FIELDS) {
+    if (!(f.key in body)) continue;
+    let raw: any = body[f.key];
+    if (raw === "" || raw == null) { skipped.push(f.key); continue; }
+    if (f.type === "number") {
+      const n = Number(raw);
+      if (!isFinite(n)) { skipped.push(f.key); continue; }
+      raw = n;
+    } else {
+      raw = String(raw).trim();
+      if (!raw) { skipped.push(f.key); continue; }
+      /* Validación específica para MMSI: 9 dígitos. */
+      if (f.key === "mmsi" && !/^\d{9}$/.test(raw)) { skipped.push(f.key); continue; }
+    }
+    if (f.publishAs === "self-root") {
+      selfRootValues[f.key] = raw;
+    } else {
+      pathValues.push({ path: f.skPath, value: raw });
+    }
+    applied.push(f.key);
+  }
+  /* Envío 1 (runtime, inmediato): valores en la raíz self (name, mmsi). */
+  if (Object.keys(selfRootValues).length > 0) {
+    try {
+      const d: any = {
+        context: ("vessels." + app.selfId),
+        updates: [{
+          timestamp: new Date().toISOString(),
+          values: [{ path: "", value: selfRootValues }],
+        }],
+      };
+      app.handleMessage(plugin.id, d);
+    } catch (e: any) { app.debug(`[IHM-VBD] self-root delta failed: ${e?.message ?? e}`); }
+  }
+  /* Envío 2 (runtime, inmediato): valores por path (design.*, sensors.*). */
+  if (pathValues.length > 0) {
+    try {
+      const d: any = {
+        context: ("vessels." + app.selfId),
+        updates: [{
+          timestamp: new Date().toISOString(),
+          values: pathValues,
+        }],
+      };
+      app.handleMessage(plugin.id, d);
+    } catch (e: any) { app.debug(`[IHM-VBD] path delta failed: ${e?.message ?? e}`); }
+  }
+  /* Envío 3 (persistente + admin UI sin restart): actualizar el
+     baseDeltaEditor del server, persistir al archivo y reemitir defaults.
+     Ver _applyBaseDeltaEdit. */
+  if (Object.keys(selfRootValues).length > 0 || pathValues.length > 0) {
+    try {
+      await _applyBaseDeltaEdit(selfRootValues, pathValues);
+      app.debug(`[IHM-VBD] baseDelta editor + file updated (root=${Object.keys(selfRootValues).length}, paths=${pathValues.length})`);
+    } catch (e: any) {
+      app.debug(`[IHM-VBD] baseDeltaEditor apply failed: ${e?.message ?? e}`);
+    }
+  }
+  /* Si el usuario mandó MMSI, actualizar el override interno para que el
+     filtro AIS lo aplique inmediatamente (sin esperar a que SK re-emita). */
+  if (applied.includes("mmsi")) {
+    _selfMmsiOverride = String(body.mmsi).trim();
+    _invalidateSelfMmsiCache();
+    try { await ihmCache.set("selfMmsi", _selfMmsiOverride); } catch { /* ignore */ }
+    if (_selfMmsiOverride && _aisKnownDB[_selfMmsiOverride]) {
+      delete _aisKnownDB[_selfMmsiOverride];
+      _aisKnownDBDirty = true;
+    }
+  }
+  res.json({ ok: true, applied, skipped });
+});
+
 // Rev60 (4B): shelter assessment + mask editing endpoints.
 expressApp.get("/signalk-mareas-ihm/api/shelter", (_req: any, res: any) => {
   res.json({
@@ -12133,6 +12586,9 @@ expressApp.get("/signalk-mareas-ihm/api/shelter", (_req: any, res: any) => {
     } : null,
     autoDetectMs: _lastAutoDetectMs || null,
     autoDetectSource: (_lastAutoShelter as any)?.source ?? null,
+    /* Rev832: expuesto para que la UI decida si dispara auto-detect al abrir
+       la ventana (skip si el usuario editó la rosa a mano). */
+    manualEdited: _shelterManualEdited,
     sectorCount: SHELTER_SECTOR_COUNT,
     sectorLabels: ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"],
   });
@@ -12150,7 +12606,10 @@ expressApp.post("/signalk-mareas-ihm/api/shelter/mask", requireControlAccess, as
   await ihmCache.set("anchorWatch", anchorWatch).catch(() => {});
   _recomputeShelter();
   broadcastSSE("shelter");
-  res.json({ ok: true, mask: anchorWatch.shelterMask, assessment: _lastShelter });
+  /* Rev834 (feedback Carlos "flicker Detectado -> Marcado"): devolver
+     manualEdited=true en la respuesta para que el visor lo aplique al cache
+     local en el mismo tick del render, sin esperar al siguiente SSE. */
+  res.json({ ok: true, mask: anchorWatch.shelterMask, assessment: _lastShelter, manualEdited: true });
 });
 
 // Toggle a single sector. Body: { index: 0..15 } — flips that sector.
@@ -12167,7 +12626,7 @@ expressApp.post("/signalk-mareas-ihm/api/shelter/toggle", requireControlAccess, 
   await ihmCache.set("anchorWatch", anchorWatch).catch(() => {});
   _recomputeShelter();
   broadcastSSE("shelter");
-  res.json({ ok: true, mask: anchorWatch.shelterMask, assessment: _lastShelter });
+  res.json({ ok: true, mask: anchorWatch.shelterMask, assessment: _lastShelter, manualEdited: true });
 });
 
 // Rev68/Rev69/Rev70: auto-detect shelter from OSM coastline at current GPS /
@@ -13373,8 +13832,11 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
   try {
     const vessels = (app as any).getPath?.("vessels") ?? {};
     const selfId = app.selfId;
+    const selfMmsi = _getSelfMmsi(); // Rev834
     for (const [id, vessel] of Object.entries(vessels)) {
       if (id === selfId || id === "self") continue;
+      /* Rev834: filtrar por MMSI extraído del id (idem loop del evaluator). */
+      if (selfMmsi && _extractMmsi(id) === selfMmsi) continue;
       const v = vessel as any;
       const pos = v?.navigation?.position?.value;
       if (!pos?.latitude || !pos?.longitude) continue;

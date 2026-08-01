@@ -62,13 +62,20 @@ Este plugin es una ayuda a la navegación. No sustituye la vigilancia del patró
 </ul>
 
 <h4>2.2 Datos del barco</h4>
-<p>En <em>Signal K → Server → Settings → Vessel Base Data</em>, define como mínimo:</p>
+<p>Desde 2.11.2 los datos del barco se editan directamente <strong>desde el asistente</strong> del plugin — Menú ☰ → Configuración → Asistente → <em>Datos del barco</em>. El bloque es un espejo bidireccional del <em>Vessel Base Data</em> de Signal K:</p>
 <ul>
-  <li><strong>Draft (calado):</strong> calado real en condición habitual de carga. Usado por la alarma de varada y el cálculo de calado efectivo.</li>
-  <li><strong>Length / LOA (eslora):</strong> usado por la geometría del círculo de borneo.</li>
-  <li><strong>Beam (manga):</strong> opcional; mejora el dibujo del barco a escala en el mapa.</li>
+  <li>Cada campo muestra <strong>SIGNALK verde</strong> si el bus ya tiene el valor, o <strong>SIN VALOR naranja</strong> si está vacío.</li>
+  <li>Lo que escribas aquí se publica a Signal K en vivo (actualiza <code>~/.signalk/baseDeltas.json</code> + reemite defaults al bus) y aparece inmediatamente en <em>Signal K admin UI → Server → Settings → Vessel Base Data</em> sin reiniciar el servidor.</li>
+  <li>Campos cubiertos: Nombre, MMSI, Indicativo de llamada, Tipo de barco (selector con nombres AIS: Vela / Recreo / Pesquero / Pasajeros / Carga…), Calado, Eslora, Manga, Puntal, Distancia GPS a proa, Distancia GPS al centro.</li>
 </ul>
-<p>Si tienes roldana de proa por encima del agua, el visor te pide su <strong>altura sobre la línea de flotación</strong> en el panel ⚓ Calc. Fondeo. Se guarda y se reutiliza en todos los cálculos.</p>
+<p>Los valores mínimos que necesita el gestor de fondeo:</p>
+<ul>
+  <li><strong>Calado:</strong> calado real en condición habitual de carga. Usado por la alarma de varada y el cálculo de calado efectivo.</li>
+  <li><strong>Eslora:</strong> usada por la geometría del círculo de borneo.</li>
+  <li><strong>MMSI:</strong> si tu barco emite AIS, el plugin lo usa para <strong>filtrarse a sí mismo</strong> de la lista de blancos AIS (así no aparece Tunatunes en tu propia lista pidiendo ACK — ver sección 7). Se autodetecta desde el bus SK cuando existe; si no, introdúcelo a mano en el asistente.</li>
+  <li><strong>Manga:</strong> opcional; mejora el dibujo del barco a escala en el mapa.</li>
+</ul>
+<p>Si tienes roldana de proa por encima del agua, el visor te pide su <strong>altura sobre la línea de flotación</strong> en el mismo paso del asistente (bloque "Campos solo del plugin", debajo del bloque SK). Se guarda y se reutiliza en todos los cálculos.</p>
 
 <div class="callout">
 <strong>Antes de activar la alarma de varada:</strong> comprueba que calado, margen de seguridad, posición del transductor de sonda y referencia de la marea utilizan unidades y referencias compatibles.
@@ -173,8 +180,11 @@ Donde <strong>R_cadena</strong> es la proyección horizontal de la cadena lascad
 <p>Este módulo detecta blancos AIS dentro del círculo rojo de tu zona de seguridad. <strong>Es una alarma de proximidad o intrusión geométrica, no un sistema anti-colisión basado en CPA/TCPA.</strong> No predice trayectorias relativas; reacciona cuando un AIS entra en la zona.</p>
 <ul>
   <li><strong>Base de datos persistente (72 h):</strong> el plugin guarda en disco los datos estáticos de cada barco AIS visto (nombre, eslora, manga, tipo, callsign, IMO). Al reiniciar o abrir el visor desde cero, los nombres ya están disponibles sin esperar al próximo paquete estático AIS (que puede tardar hasta 6 minutos).</li>
+  <li><strong>Motor triple online (2.11.0, opt-in):</strong> además del VHF propio, tres fuentes independientes que se pueden combinar libremente para extender cobertura o para navegar sin receptor VHF: <strong>aisstream.io</strong> (WebSocket tiempo real, gratuito con registro), <strong>aishub.net</strong> (peer 1/min, credenciales gratuitas) y <strong>aisfriends.com</strong> (peer 1/min con Bearer token). Configuración en Config → AIS por internet. Cada target aceptado se republica al árbol <code>vessels.*</code> de SignalK para que Freeboard/WilhelmSK/KIP los vean junto a los del VHF.</li>
+  <li><strong>Badges multi-fuente (2.11.0):</strong> cada target de la lista muestra TODAS las fuentes que lo han visto en los últimos 120 s: 🟢 <strong>AIS propio</strong> (verde) para VHF, 🔵 AISStream / AISHub / AISFriends (azul) para online. Un mismo target puede llevar varios badges (ej. VHF + AISStream). Filtro de plausibilidad física: con antena a 3 m sobre el nivel del mar el VHF llega a ~40 km, así que cualquier target a más de 60 km pierde el badge VHF automáticamente (obviamente es otro plugin metiendo datos al bus, no tu radio).</li>
+  <li><strong>Filtro del propio barco (2.11.2):</strong> el MMSI configurado en <em>Datos del barco</em> (ver 2.2) se usa para descartar tu propio barco de la lista AIS en cualquiera de las 4 rutas de ingesta (VHF + 3 online) y de la republicación al bus SK. Sin esto, motores online como AISFriends recogían tu propio barco de la red y lo devolvían como target, disparando ACK y alarma de colisión contra ti mismo.</li>
   <li><strong>Cache fantasma (5 min):</strong> si un barco pierde recepción VHF brevemente, sigue visible en el mapa con una X discreta y un aviso "datos estimados" en su popup, junto con la antigüedad del dato.</li>
-  <li><strong>Slider de radio (0,5 a 50 km):</strong> controla cuántos barcos quieres ver en el mapa y en la lista. Se recuerda al recargar.</li>
+  <li><strong>Slider de radio (0,5 a 100 km):</strong> controla cuántos barcos quieres ver en el mapa y en la lista. Se recuerda al recargar.</li>
   <li><strong>Lista filtrable y ordenable:</strong> por distancia, nombre, favoritos primero, MMSI o tipo de barco. Caja de filtro de texto con feedback "Sin resultados".</li>
   <li><strong>Favoritos:</strong> marca cualquier AIS con la ★ amarilla. Persistido en el backend y sincronizado entre dispositivos.</li>
   <li><strong>Iconos por tipo:</strong> ⛵ velero, 🛥️ recreo, 📦 carga, 🛢️ tanque, 🛳️ pasaje, 🎣 pesca…</li>
@@ -192,6 +202,9 @@ Donde <strong>R_cadena</strong> es la proyección horizontal de la cadena lascad
 <p>Análisis automático de cuán expuesto está tu fondeo al viento previsto en las próximas 12 horas. Es un <strong>indicador geométrico de exposición</strong>, no una garantía de abrigo: no incorpora altura del terreno, fetch real, refracción, difracción ni efectos batimétricos.</p>
 <ul>
   <li><strong>Rosa de 16 sectores:</strong> autodetección de qué sectores tienen costa o estructura artificial cerca (verde = abrigado) y cuáles miran al mar abierto (rojo). Usa OpenStreetMap (línea de costa natural + escolleras / muelles).</li>
+  <li><strong>Auto-detección al abrir (2.11.2):</strong> al abrir el modal Abrigo, si la última detección tiene más de 10 min se dispara una auto-detección fresca. Si has tocado sectores a mano, la ventana respeta tu edición manual (verás "Marcados N sectores abrigados" en lugar de "Detectados N"); solo pulsando explícitamente el botón <strong>Detectar</strong> se pisan las marcas manuales y vuelve al modo auto.</li>
+  <li><strong>Reset por movimiento (2.11.2):</strong> si el barco se aleja más de 300 m del punto donde se hizo la última auto-detección, el plugin descarta cualquier edición manual y re-detecta automáticamente. La lógica: "manual solo si estamos en el mismo sitio; si nos movemos, pasa a full automático".</li>
+  <li><strong>Franja de observabilidad:</strong> arriba de la rosa se muestra <em>coord analizada · timestamp del cálculo · fuente (Overpass / caché / caché caducada)</em>, para que puedas diagnosticar máscaras raras sin adivinar.</li>
   <li><strong>Grado A–F y % de protección:</strong> A = totalmente abrigado en términos geométricos; F = expuesto a temporal. % calculado desde el viento previsto en sectores expuestos durante 12 h.</li>
   <li><strong>Strip horario 12 h:</strong> grado por hora y viento pico. Pincha una celda para ver el detalle de esa hora.</li>
   <li><strong>Historial de olas estimadas (24 h):</strong> intensidad / período / altura derivados del IMU. Una barra cada 5 minutos, eje vertical autoescalable hasta 2 m con líneas guía.</li>
@@ -237,9 +250,13 @@ profundidad_futura = profundidad_actual + (marea_actual − marea_futura)
 <p>El visor combina varias capas con control de transparencia. La disponibilidad depende de la conexión y de las condiciones de uso de cada proveedor.</p>
 <ul>
   <li>Imágenes satelitales: Esri (por defecto), Bing Hybrid, Esri Clarity, Google Satélite.</li>
-  <li>OpenStreetMap, OpenSeaMap.</li>
-  <li>Cartas oficiales IHM (WMS) y batimetría.</li>
+  <li>OpenStreetMap, OpenSeaMap señalización marítima.</li>
+  <li>Batimetría mundial.</li>
+  <li><strong>Cartas por Países (2.11.0) —</strong> panel configurable con proxy de teselas backend (CORS + caché 30 días en disco). Servicios abiertos preconfigurados un clic para activar: 🇪🇸 España IHM ENC S-52, 🇫🇷 Francia IGN Cartes littorales, 🇺🇸 EEUU NOAA ENC, 🇳🇴 Noruega Kartverket, 🇫🇮 Finlandia Traficom Merikarttasarja, 🇨🇦 Canadá CHS batimetría NONNA. Servicios restringidos (⚙ para configurar URL/clave): 🇵🇹 Portugal IH ENC (registro gratuito en el Instituto Hidrográfico portugués) y 🇫🇷 Francia SHOM RASTER MARINE (suscripción de pago + clave INSPIRE). El modal ⚙ muestra una pista por servicio explicando dónde solicitar el acceso.</li>
   <li>Cartas MBTiles offline con slider de transparencia: copia tus archivos <code>.mbtiles</code> a la carpeta de cartas de la instalación (típicamente <code>/home/pi/charts/</code> en OpenPlotter) y aparecen como checkboxes en el menú de capas.</li>
+  <li><strong>🌧 Radar de lluvia en vivo (2.11.0/2.11.1) —</strong> overlay RainViewer con timeline animada (12 frames pasados ~2 h + previsión nowcast ~30 min, botones ▶/⏸, slider por frame y botón "Ahora" para saltar al vivo). Sin API key. Al activar el radar el <em>min-zoom</em> del mapa se extiende temporalmente para poder ver un patrón de nubes a escala continental.</li>
+  <li><strong>🔍 Búsqueda mundial de puertos (2.11.0) —</strong> botón en la sidebar izquierda que abre un modal (OpenStreetMap Nominatim, prioriza marina / harbour / dock / bay). Un clic vuela al puerto encontrado y desactiva el auto-follow del barco para que la cámara no rebote de vuelta.</li>
+  <li>Cartas registradas en Signal K (charts-plugin) — aparecen como capas si están configuradas.</li>
 </ul>
 <p>Ninguna capa no oficial debe presentarse como sustituta de la cartografía náutica oficial vigente.</p>
 
