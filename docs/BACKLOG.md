@@ -1,13 +1,13 @@
-# BACKLOG — items abiertos en Rev761 / v2.9.0
+# BACKLOG — items abiertos en Rev843 / v2.11.2
 
-Estado: **2026-07-21** — reescrito desde cero tras auditoría. Los
-sprints 1-6 originales (B-01…B-22, período Rev190) están todos
+Estado: **2026-08-02** — actualizado tras la aprobación del ciclo QA de
+Carlos. Los sprints 1-6 originales (B-01…B-22, Rev190) están todos
 resueltos y archivados en
 [`archive/BACKLOG_Rev190_snapshot.md`](archive/BACKLOG_Rev190_snapshot.md).
 
 Nota: no hay estructura de sprints activa. Trabajamos por feature
-request de Carlos + bug hunt reactivo. Los "sprints" I/J/K de las
-memorias están todos completados y viven como snapshot histórico en
+request de Carlos + bug hunt reactivo. Los sprints I/J/K de las
+memorias están completados y viven como snapshot histórico en
 [`SPRINTS.md`](SPRINTS.md).
 
 ---
@@ -16,8 +16,9 @@ memorias están todos completados y viven como snapshot histórico en
 
 | Item | Prio | Ref |
 |---|---|---|
-| Smoothing filter sonda (~30 cm oscilación) | Baja | [K-01 en KNOWN_BUGS.md](KNOWN_BUGS.md#k-01) |
-| QA en agua real de features 2.7.0 → 2.9.0 (ver KNOWN_BUGS) | Media | Carlos, cuando salga a navegar |
+| **Audio Pi intermitente (probable stack VPN)** | Alta | [K-03 en KNOWN_BUGS.md](KNOWN_BUGS.md#k-03--audio-pi-intermitente-probable-stack-vpn) |
+| **UTF-8 doble-codificación (Moaña → MoaÃ±a)** | Media | [K-02 en KNOWN_BUGS.md](KNOWN_BUGS.md#k-02--utf-8-doble-codificación-en-textos-con-acentos) |
+| **Llamada de teléfono por Telegram** (nueva idea Carlos 2026-08-02) | Media | Ver sección "Ideas en incubación" abajo |
 
 ---
 
@@ -25,11 +26,40 @@ memorias están todos completados y viven como snapshot histórico en
 
 | Item | Razón pausa |
 |---|---|
-| Telegram bot UI ampliada (bot commands, chat groups) | Q-C: token/chat_id ya guardables desde wizard; el resto en pausa. |
-| Compartir/exportar fondeo (coords+radio por Telegram/email/QR) | Q-AP: baja demanda. |
-| **NOAA NCDS chart layer** (US) | Endpoint base `https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer` — gratis, sin API key. Candidatos futuros: CHS Canadá, LINZ NZ, Traficom Finlandia, Kartverket Noruega. UKHO/SHOM son comerciales, no se incluyen. |
-| **AIS Friends forwarder embebido (Fase 2)** | El plugin actúa como AIS Dispatcher: lee NMEA `!AIVDM` del bus SK y lo reenvía por UDP a `ais.aisfriends.com:<port>`. Elimina la necesidad de instalar AIS Catcher/SDRAngel. Mismo mecanismo serviría para aishub cuando quisieran. Ver [aisfriends card en wizard](../public/mobile.html) para contexto de por qué está pausado. |
-| **AIS Hub forwarder embebido (Fase 2)** | Análogo al de AIS Friends. |
+| **AIS Friends forwarder embebido (Fase 2)** | El plugin actúa como AIS Dispatcher: lee NMEA `!AIVDM` del bus SK y lo reenvía por UDP a `ais.aisfriends.com:<port>`. Elimina la necesidad de instalar AIS Catcher/SDRAngel externo. Mismo mecanismo serviría para aishub. Complejidad media, pendiente feature de Carlos. |
+| **AIS Hub forwarder embebido (Fase 2)** | Análogo al de AIS Friends. Se hace conjunto con el anterior. |
+| **Unificar motores IMU v1 (fondeo) + v2 (nav)** | v1 lee SK deltas, v2 socket TCP pypilot. En modo "solo IMU" de OpenPlotter, v2 muestra 0 samples (bug Pablo). Plan: canalizar todo por un canal SK común. Memoria `project_imu_dual_engine_v1_v2`. |
+
+---
+
+## Ideas en incubación (exploración pendiente)
+
+### Llamada de teléfono por Telegram (Carlos 2026-08-02)
+En vez de solo mensaje Telegram, hacer una **llamada real** (Telegram
+Voice Call) al chat del usuario cuando salta una alarma crítica
+(garreo, colisión AIS, varada). Argumento de Carlos: *"es mucho más
+incisivo que un mensaje — el teléfono suena y no puedes ignorarlo,
+un mensaje puede perderse entre notificaciones"*.
+
+**A explorar antes de planificar**:
+- ¿La Bot API oficial de Telegram permite iniciar llamadas de voz?
+  Actualmente `sendVoice` envía un audio, pero **iniciar una llamada
+  VoIP a un chat** no está expuesto en la Bot API pública.
+- Alternativas:
+  - **MTProto** (biblioteca `mtcute`, `gramjs`) — permite llamadas
+    pero requiere credenciales de usuario, no de bot, así que hay que
+    autenticar la sesión como usuario.
+  - **Telegram Calls via webhook + tercer servicio** (Twilio, etc.) —
+    fuera del ecosistema Telegram puro, coste asociado.
+  - **Push notification silenciosa + app dedicada** — menor fricción,
+    pero requiere app instalada.
+- Escenario mínimo viable: en la alarma de garreo/colisión/varada,
+  además del mensaje ya existente, disparar un audio-mensaje corto
+  con `sendVoice` (ya en Bot API) y ver si eso es suficientemente
+  incisivo antes de meterse en MTProto.
+
+**Estado**: exploración de viabilidad pendiente. No arrancar código
+hasta decidir la vía (MTProto vs alternativa).
 
 ---
 
@@ -37,6 +67,10 @@ memorias están todos completados y viven como snapshot histórico en
 
 | Item | Decisión |
 |---|---|
+| Telegram bot UI ampliada (bot commands, chat groups) | Q-C: token/chat_id ya guardables desde wizard; el resto en pausa (2026-07-21). Carlos 2026-08-02: quitado del paused, no interesa. |
+| Compartir/exportar fondeo (coords+radio por Telegram/email/QR) | Q-AP: baja demanda. Carlos 2026-08-02: descartado. |
+| NOAA NCDS chart layer (US) | Sustituido por NOAA ENC en el bloque Cartas por Países (2.11.0). |
+| Cartas hidrográficas de otros países como layers hardcoded | Sustituido por el sistema Cartas por Países configurable (2.11.0). |
 | Desktop landscape font scaling | Q-I |
 | Cálc Varada = Cálc Sonda (era confusión) | Q-D |
 | Voces TTS hombre/mujer | Q-AR |
@@ -73,3 +107,5 @@ memorias están todos completados y viven como snapshot histórico en
 - No re-abrir Q-R / B-03 / AIS engine (memoria `project_ais_engine_resolved`).
 - No mencionar "Hoekens" en changelogs/README/PRs (memoria
   `feedback_no_hoekens_reference`).
+- Publish incluye deploy al Pi (memoria
+  `feedback_publish_also_deploys_pi`).
