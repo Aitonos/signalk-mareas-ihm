@@ -3469,6 +3469,16 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
         <button class="btn" style="background:rgba(102,255,170,.18);border:1.5px solid var(--grn);color:var(--grn);font-size:17px;font-weight:800;padding:10px 18px;white-space:nowrap;border-radius:10px;min-height:56px" onclick="testPiAudio()">🔉 <span data-i18n="probar">Probar</span></button>
       </div>
       <div id="pi-audio-status" style="font-size:14px;color:#9aa;margin-top:8px;text-align:center"></div>
+      <!-- Rev853 (K-03 Fase 2 badge): mini-panel de salud del audio Pi.
+           Auto-refresh cada 15 s mientras Config esté abierto. Rojo si
+           consecutiveFailures > 0. Ver /api/audio-health. -->
+      <div id="audio-health-panel" style="margin-top:14px;padding:12px 14px;background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.10);border-radius:10px;font-size:14px;color:#cfd8dc">
+        <div id="audio-health-summary" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <span>🎵 <b data-i18n="audio_health_title">Salud audio Pi</b> · <span id="audio-health-status" style="color:#9aa">cargando…</span></span>
+          <button onclick="_audioHealthToggle()" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.20);color:#cfd8dc;font-size:13px;padding:5px 10px;border-radius:6px;cursor:pointer" id="audio-health-toggle-btn">▾ Detalle</button>
+        </div>
+        <div id="audio-health-detail" style="display:none;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;color:#c8d6e0"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -4037,6 +4047,8 @@ function m_openConfig(){
      al wizard. Antes se cargaba m_cfgAdvancedLoad aquí. */
   /* Rev619: pins y sesiones vive en su modal propio (m-user-control-pop),
      ya no cargamos aquí. */
+  /* Rev855 (K-03 fix badge): el polling de audio-health se movió a
+     toggleAlarmPanel() porque el badge vive en #alarm-panel-pop, no aquí. */
   try{ if(typeof translateAll === 'function') translateAll(); }catch(_){}
 }
 
@@ -6216,6 +6228,7 @@ var _i18n={
   cerrar:{es:'Cerrar',en:'Close'},
   audio_pi:{es:'Salida audio Pi',en:'Pi audio output'},
   vol_alarmas:{es:'🔊 Volumen alarmas',en:'🔊 Alarm volume'},
+  audio_health_title:{es:'Salud audio Pi',en:'Pi audio health'},
   vol_alarmas_hint:{es:'50–100% normal · 100–250% amplificación con limitador (sin chasquidos)',en:'50–100% normal · 100–250% boost with limiter (no clipping)'},
   probar:{es:'Probar',en:'Test'},
   audio_no_disponible:{es:'PulseAudio no disponible (run loginctl enable-linger pi)',en:'PulseAudio not available (run loginctl enable-linger pi)'},
@@ -12643,6 +12656,11 @@ function m_aisToggleCollapse(){
 var _origClosePopup=closePopup;
 closePopup=function(id){
   _origClosePopup(id);
+  /* Rev855 (K-03 Fase 2 badge): parar el polling del audio-health al
+     cerrar el panel de Alarmas (donde vive el badge). */
+  if(id==='alarm-panel-pop'){
+    try{ if(typeof _audioHealthStop === 'function') _audioHealthStop(); }catch(_){}
+  }
   if(id==='ais-pop'){
     /* If closing a popup whose target is DISAPPEARED and not yet ACKed,
        propagate dismissal across windows by silently ACK'ing it.
@@ -12984,6 +13002,10 @@ function toggleAlarmPanel(){
   if(drag&&_alarmGarreoEnabled)actList.innerHTML+='<div style="padding:4px 8px;background:rgba(231,76,60,.15);border-radius:4px;margin:2px 0;font-size:13px;color:var(--red)">⚠ ¡GARREO detectado!</div>';
   /* Bug 8 (Deploy 3a): load Pi audio outputs when panel opens */
   loadPiAudioOutputs();
+  /* Rev855 (K-03 Fase 2 badge fix): el badge de audio-health vive en este
+     modal (junto al selector de sink), NO en Config como pensé por error.
+     Arrancar polling aquí y parar al cerrar. */
+  try{ if(typeof _audioHealthStart === 'function') _audioHealthStart(); }catch(_){}
   openPopup('alarm-panel-pop');
 }
 /* Bug 8 (Deploy 3a): Pi audio output management */
@@ -13057,6 +13079,87 @@ function setPiAudioOutput(id){
   }).catch(function(e){
     if(status)status.textContent='Error: '+String(e);
   });
+}
+/* Rev853 (K-03 Fase 2 badge visible): panel de salud del audio Pi.
+   Polling cada 15 s SOLO mientras Config esté abierto (evita ruido en el
+   endpoint pasivo). Se auto-inicia al abrir Config → Audio y se para al
+   cerrarlo. */
+var _audioHealthTimer=null;
+var _audioHealthDetailOpen=false;
+function _audioHealthToggle(){
+  var det=document.getElementById('audio-health-detail');
+  var btn=document.getElementById('audio-health-toggle-btn');
+  if(!det||!btn)return;
+  _audioHealthDetailOpen=!_audioHealthDetailOpen;
+  det.style.display=_audioHealthDetailOpen?'block':'none';
+  btn.textContent=_audioHealthDetailOpen?'▴ Ocultar':'▾ Detalle';
+  if(_audioHealthDetailOpen) _audioHealthRefresh();
+}
+function _audioHealthRefresh(){
+  var panel=document.getElementById('audio-health-panel');
+  if(!panel) return;
+  fetch(A+'/audio-health',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(d){
+    if(!d)return;
+    panel.style.display='';
+    var st=document.getElementById('audio-health-status');
+    var det=document.getElementById('audio-health-detail');
+    var failures=d.consecutiveFailures|0;
+    var last=d.lastSuccessMs?_msToRelative(d.lastSuccessMs):'nunca';
+    var hist=Array.isArray(d.history)?d.history:[];
+    var okCount=hist.filter(function(h){return h.outcome==='ok';}).length;
+    var failCount=hist.filter(function(h){return h.outcome!=='ok'&&h.outcome!=='cancelled';}).length;
+    var cancelCount=hist.filter(function(h){return h.outcome==='cancelled';}).length;
+    /* Color del badge según estado */
+    var color=failures>0?'#e53935':(hist.length===0?'#9aa':'#3aa856');
+    panel.style.borderColor=failures>0?'rgba(229,57,53,.55)':'rgba(255,255,255,.10)';
+    var sinkShort=d.currentBackendSink?d.currentBackendSink.replace(/^alsa_output\.(usb-|platform-)/,'').substring(0,32):'—';
+    var svcOK=d.userServices&&d.userServices.pipewire&&d.userServices.pipewirePulse&&d.userServices.wireplumber;
+    if(st){
+      var badge=failures>0
+        ? '<b style="color:'+color+'">⚠ '+failures+' fallos consecutivos</b>'
+        : (hist.length>0?'<b style="color:'+color+'">OK</b>':'<b style="color:'+color+'">sin actividad</b>');
+      st.innerHTML=badge+' · sink: <code style="font-size:12px;color:#9ad">'+sinkShort+'</code> · último OK: '+last;
+    }
+    if(det){
+      var lines=[];
+      lines.push('<b>Sink:</b> '+(d.currentBackendSink||'—'));
+      lines.push('<b>Default SK:</b> '+(d.defaultSink||'—'));
+      lines.push('<b>Disponibles:</b> '+(d.availableSinks||[]).length);
+      lines.push('<b>Servicios:</b> pw='+(d.userServices.pipewire?'✓':'✗')+' pw-pulse='+(d.userServices.pipewirePulse?'✓':'✗')+' wp='+(d.userServices.wireplumber?'✓':'✗')+' · linger='+(d.lingerActive?'✓':'✗')+' · socket='+(d.pulseSocketExists?'✓':'✗'));
+      lines.push('<b>Event loop p99:</b> '+(d.eventLoopP99Ms==null?'—':d.eventLoopP99Ms+' ms')+' · mean '+(d.eventLoopMeanMs==null?'—':d.eventLoopMeanMs+' ms'));
+      lines.push('<b>Historial (últimos '+hist.length+'):</b> '+okCount+' ok · '+cancelCount+' cancel · <span style="color:'+(failCount>0?'#e53935':'inherit')+'">'+failCount+' fail</span>');
+      if(hist.length){
+        lines.push('<div style="margin-top:6px;font-size:12px;color:#9ad">');
+        hist.slice(0,8).forEach(function(h){
+          var ts=new Date(h.tsMs);
+          var hh=('0'+ts.getHours()).slice(-2)+':'+('0'+ts.getMinutes()).slice(-2)+':'+('0'+ts.getSeconds()).slice(-2);
+          var oc=h.outcome==='ok'?'✓':h.outcome==='cancelled'?'○':'✗';
+          var ocColor=h.outcome==='ok'?'#3aa856':h.outcome==='cancelled'?'#9aa':'#e53935';
+          lines.push('&nbsp;&nbsp;'+hh+' <span style="color:'+ocColor+'">'+oc+'</span> '+h.kind+' ('+h.elapsedMs+'ms)'+(h.retryCount?' <span style="color:#ffb23f">retry#'+h.retryCount+'</span>':'')+(h.errorMsg?' <span style="color:#e53935">'+String(h.errorMsg).substring(0,50)+'</span>':''));
+        });
+        lines.push('</div>');
+      }
+      if(!svcOK||!d.pulseSocketExists){
+        lines.push('<div style="margin-top:6px;padding:6px 10px;background:rgba(229,57,53,.15);border-left:3px solid #e53935;color:#ff8a80">⚠ Pipeline degradado — revisa services / socket</div>');
+      }
+      det.innerHTML=lines.join('<br>');
+    }
+  }).catch(function(){});
+}
+function _msToRelative(ms){
+  var delta=Date.now()-ms;
+  if(delta<60000)return 'hace '+Math.round(delta/1000)+'s';
+  if(delta<3600000)return 'hace '+Math.round(delta/60000)+'m';
+  if(delta<86400000)return 'hace '+Math.round(delta/3600000)+'h';
+  return 'hace '+Math.round(delta/86400000)+'d';
+}
+function _audioHealthStart(){
+  _audioHealthRefresh();
+  if(_audioHealthTimer) clearInterval(_audioHealthTimer);
+  _audioHealthTimer=setInterval(_audioHealthRefresh,15000);
+}
+function _audioHealthStop(){
+  if(_audioHealthTimer){ clearInterval(_audioHealthTimer); _audioHealthTimer=null; }
 }
 function testPiAudio(){
   var status=document.getElementById('pi-audio-status');
