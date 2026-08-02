@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev843";
+const PLUGIN_REVISION = "Rev848";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -12794,9 +12794,52 @@ const _PA_ENV = (): NodeJS.ProcessEnv => {
   if (_backendSinkName) env.PULSE_SINK = _backendSinkName;
   return env;
 };
+/* Rev844 (K-03 Fase 1.5): env sin PULSE_SINK — usado por el retry real
+   cuando el sink cacheado obsoleto puede estar contaminando la ruta. Se
+   añade en Fase 1.5 pero el helper se declara aquí para reutilizarlo. */
+const _PA_ENV_UNPINNED = (): NodeJS.ProcessEnv => {
+  // Extraer PULSE_SINK explícitamente sin dejar restos en el env resultante.
+  const { PULSE_SINK: _unused, ...rest } = process.env;
+  const env: NodeJS.ProcessEnv = {
+    ...rest,
+    XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || "/run/user/1000",
+  };
+  void _unused;
+  return env;
+};
+/* Rev844 (K-03 Fase 1.1): helper unificado de spawn para tooling de audio.
+   Aplica LC_ALL=C a los comandos cuyo stdout parseamos (pactl) porque el
+   Pi corre con locale es_ES sin UTF-8 confirmado (K-02) — sin C-locale,
+   pactl devuelve mensajes traducidos + encoding roto que rompen el
+   parsing por match de patrón. Se aplica de forma opt-in (opts.forceCLocale)
+   para no cambiar el comportamiento de paplay/espeak/ffmpeg, cuyo stdout
+   no parseamos.  */
+interface _SpawnAudioOpts {
+  env?: NodeJS.ProcessEnv;
+  timeout?: number;
+  forceCLocale?: boolean;   // aplicar LC_ALL=C (para pactl y similares)
+}
+function _spawnAudio(
+  cmd: string,
+  args: string[],
+  opts: _SpawnAudioOpts,
+  cb: (err: Error | null, stdout: string, stderr: string) => void,
+): import("child_process").ChildProcess {
+  const baseEnv = opts.env ?? _PA_ENV();
+  const env: NodeJS.ProcessEnv = opts.forceCLocale
+    ? { ...baseEnv, LC_ALL: "C", LANG: "C" }
+    : baseEnv;
+  return execFile(cmd, args, { env, timeout: opts.timeout ?? 5000 }, (err, stdout, stderr) => {
+    cb(err as Error | null, String(stdout || ""), String(stderr || ""));
+  });
+}
 function _runPactl(args: string[], cb: (err: Error | null, stdout: string) => void) {
-  execFile("pactl", args, { env: _PA_ENV(), timeout: 5000 }, (err, stdout) => {
-    cb(err as Error | null, String(stdout || ""));
+  /* Rev844 (K-03 Fase 1.1): migrado a _spawnAudio con forceCLocale para
+     que el parsing por regex de `pactl list sinks short` sea inmune al
+     locale del sistema (K-02 double-encoding). Antes: mensajes en
+     castellano potencialmente corruptos → match fallaba silencioso. */
+  _spawnAudio("pactl", args, { env: _PA_ENV(), timeout: 5000, forceCLocale: true }, (err, stdout) => {
+    cb(err, stdout);
   });
 }
 async function _probeBackendSink() {
@@ -12824,6 +12867,72 @@ async function _probeBackendSink() {
     _backendSinkName = usb || analog || hdmi || sinks[0] || null;
     app.debug(`[IHM-PI-AUDIO] backend sink auto-probed: ${_backendSinkName} (priority USB→analog→HDMI; ${sinks.length} sinks total)`);
   });
+}
+/* Rev847 (K-03 Fase 1.5): probe fresco de sinks vía pactl. Se usa en cada
+   disparo de alarma para tener la lista real y no depender del sink
+   cacheado que podría estar obsoleto (aunque en la Fase 0 vimos que en
+   este Pi el nombre es estable, en otros sistemas la re-enumeración USB
+   puede añadir sufijos). Devuelve la lista de node.name de cada sink. */
+function _probeSinksList(): Promise<string[]> {
+  return new Promise((resolve) => {
+    _runPactl(["list", "short", "sinks"], (err, out) => {
+      if (err) { resolve([]); return; }
+      const sinks = out.trim().split("\n").filter(Boolean).map(line => {
+        const cols = line.split("\t");
+        return cols[1] || cols[0];   // col 1 = node.name, col 0 = id numérico
+      }).filter(Boolean);
+      resolve(sinks);
+    });
+  });
+}
+/* Rev847 (K-03 Fase 1.5, modelo B aprobado por Carlos): resuelve el sink
+   preferido + lista de fallbacks para reintento secuencial. Prioridad:
+   1) Preferencia guardada del usuario en ihmCache "preferredSinkName" si
+      sigue existiendo en la lista actual.
+   2) Heurística USB > analog > HDMI > cualquiera.
+   NUNCA cae al default de PipeWire ciego — en el Pi de Carlos el default
+   es HDMI muerto (gap crítico Fable5 confirmado en Fase 0). */
+interface _SinkResolution {
+  primary: string | null;         // sink a usar en el primer intento
+  fallbacks: string[];            // sinks a probar si el primary falla
+  source: "preference" | "preference-missing" | "heuristic" | "empty";
+  available: string[];            // lista completa de sinks vistos por pactl
+}
+async function _resolveSinkForPlayback(): Promise<_SinkResolution> {
+  const available = await _probeSinksList();
+  if (available.length === 0) {
+    return { primary: null, fallbacks: [], source: "empty", available };
+  }
+  // 1. Preferencia del usuario (Fase 2 la expondremos en la UI; ya se
+  //    respeta si el usuario la escribe en la cache manualmente).
+  let preferredName: string | null = null;
+  try {
+    const saved = await ihmCache.get("preferredSinkName");
+    if (typeof saved === "string" && saved.trim()) preferredName = saved.trim();
+  } catch { /* ignore */ }
+  if (preferredName) {
+    if (available.includes(preferredName)) {
+      const fallbacks = available.filter(s => s !== preferredName);
+      return { primary: preferredName, fallbacks, source: "preference", available };
+    }
+    // Preferencia desapareció — notificamos y caemos a heurística.
+    app.debug(`[IHM-PI-AUDIO] preferredSinkName '${preferredName}' NOT in current sinks (${available.join(",")}), falling back to heuristic`);
+  }
+  // 2. Heurística. Mismo orden USB > analog > HDMI > any que hasta ahora.
+  const usb = available.find(s => /alsa_output\.usb/i.test(s));
+  const analog = available.find(s =>
+    /alsa_output\.platform.*bcm2835/i.test(s) ||
+    /alsa_output\.platform.*headphones/i.test(s) ||
+    /analog-stereo/i.test(s));
+  const hdmi = available.find(s => /hdmi/i.test(s));
+  const primary = usb || analog || hdmi || available[0] || null;
+  const fallbacks = available.filter(s => s !== primary);
+  return {
+    primary,
+    fallbacks,
+    source: preferredName ? "preference-missing" : "heuristic",
+    available,
+  };
 }
 
 // === Backend-side audio alarm engine (Deploy 3a v6, 2026-05-09 / Rev42) ===
@@ -13275,30 +13384,122 @@ function _piPlayVoiceForKindWithCallback(kind: string, lang: string, onDone: () 
     const sinkInfo = _backendSinkName ? `sink=${_backendSinkName}` : "sink=default";
     const playFile = await _ensureGainedAudio(ogg);
     console.error(`[IHM-AUDIO] voice OGG → paplay ${playFile} (${sinkInfo}, vol=${_alarmVolumePct}%) [dur=${durSec.toFixed(1)}s timeout=${timeoutMs}ms]`);
-    // Rev164: trackeamos el proceso paplay para poder matarlo si el
-    // usuario leva ancla a mitad de la voz.
-    const proc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: timeoutMs }, (err) => {
-      if (err) {
-        // SIGTERM por user-stop NO es un error real — lo logueamos suave.
-        const sigKilled = (err as any)?.signal === "SIGTERM";
-        if (sigKilled) {
-          console.error(`[IHM-AUDIO] paplay OGG ${playFile} killed (user stop)`);
+    /* Rev844 (K-03 Fase 1.2/1.3): capturar la generación ANTES del spawn.
+       Si al llegar el callback la generación cambió → cancelamos nosotros
+       (kill-all o kill del kind) — nunca disparar retry ni onDone. */
+    const genAtSpawn = _piCurrentGen(kind);
+    const startMs = performance.now();
+    const proc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: timeoutMs }, (err, _stdout, stderr) => {
+      const outcome = _classifyAudioOutcome(err as any, genAtSpawn, _piCurrentGen(kind), String(stderr || ""), startMs);
+      if (outcome.kind === "cancelled") {
+        console.error(`[IHM-AUDIO] paplay OGG ${playFile} cancelled (gen changed ${genAtSpawn}→${_piCurrentGen(kind)}, ${outcome.elapsedMs}ms)`);
+        /* Bug C fixed: NO llamar onDone, NO retry. La máquina ya avanzó
+           de estado en el _piAlarmStopImmediate/_piKillActive. */
+        return;
+      }
+      if (outcome.kind === "ok") {
+        console.error(`[IHM-AUDIO] paplay OGG ${playFile} OK (${outcome.elapsedMs}ms)`);
+        setTimeout(onDone, POST_DRAIN_MS);
+        return;
+      }
+      /* timeout / spawn_error / exit_error — todos son FALLOS reales.
+         Bug B fixed: el timeout de execFile ya NO se computa como éxito. */
+      const reason = outcome.kind === "timeout"
+        ? `timeout ${outcome.elapsedMs}ms`
+        : (outcome.kind === "spawn_error" ? `spawn_error ${outcome.err.message}` : `exit_error ${(outcome as any).err?.message ?? "?"}`);
+      console.error(`[IHM-AUDIO] paplay OGG ${playFile} FAILED on primary sink (${reason}). Trying fallback sinks...`);
+      /* Rev847 (K-03 Fase 1.5, modelo B): fallback SECUENCIAL sobre los
+         sinks disponibles resueltos por _resolveSinkForPlayback (fresh
+         probe con pactl). Antes: retry sin --device caía al default de
+         PipeWire → en el Pi de Carlos = HDMI muerto → paplay retornaba
+         OK pero corneta muda (bug A + gap crítico Fable5). Ahora: cada
+         intento va con --device explícito a un sink concreto validado
+         por pactl. Si TODOS fallan → notification degradada + onDone
+         (para no colgar la máquina de estados en fase voice). */
+      _resolveSinkForPlayback().then((resolution) => {
+        // Excluir el sink que ya falló del primer intento (era el _backendSinkName)
+        const remaining = [resolution.primary, ...resolution.fallbacks]
+          .filter((s): s is string => !!s)
+          .filter(s => s !== _backendSinkName);
+        if (remaining.length === 0) {
+          console.error(`[IHM-AUDIO] paplay OGG ${playFile} no fallback sinks available. Available: [${resolution.available.join(",")}]. Skipping voice.`);
+          try {
+            app.handleMessage(plugin.id, {
+              context: ("vessels." + app.selfId) as Context,
+              updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
+                path: "notifications.security.audioPipelineDegraded" as any,
+                value: {
+                  state: "warn",
+                  method: ["visual"],
+                  message: `[IHM-AUDIO] All Pi audio sinks failed. Primary: ${_backendSinkName ?? "?"}. Available: ${resolution.available.join(", ") || "none"}`,
+                },
+              }]}],
+            });
+          } catch { /* non-critical */ }
           setTimeout(onDone, POST_DRAIN_MS);
           return;
         }
-        console.error(`[IHM-AUDIO] paplay OGG ${playFile} FAILED: ${err.message}. Retrying sin --device...`);
-        const retryProc = execFile("paplay", [playFile], { env: _PA_ENV(), timeout: timeoutMs }, (err2: Error | null) => {
-          if (err2) console.error(`[IHM-AUDIO] paplay OGG retry ${playFile} FAILED: ${err2.message}`);
-          else console.error(`[IHM-AUDIO] paplay OGG retry ${playFile} OK`);
-          setTimeout(onDone, POST_DRAIN_MS);
-        });
-        _piTrackProc(kind, retryProc);
-        return;
-      }
-      console.error(`[IHM-AUDIO] paplay OGG ${playFile} OK`);
-      setTimeout(onDone, POST_DRAIN_MS);
+        const trySink = (idx: number): void => {
+          if (idx >= remaining.length) {
+            console.error(`[IHM-AUDIO] paplay OGG ${playFile} FAILED on ALL ${remaining.length + 1} sinks. Skipping voice.`);
+            try {
+              app.handleMessage(plugin.id, {
+                context: ("vessels." + app.selfId) as Context,
+                updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
+                  path: "notifications.security.audioPipelineDegraded" as any,
+                  value: {
+                    state: "warn",
+                    method: ["visual"],
+                    message: `[IHM-AUDIO] All Pi audio sinks failed. Tried: ${_backendSinkName ?? "?"} + [${remaining.join(", ")}]`,
+                  },
+                }]}],
+              });
+            } catch { /* non-critical */ }
+            setTimeout(onDone, POST_DRAIN_MS);
+            return;
+          }
+          const sink = remaining[idx];
+          const retryGenAtSpawn = _piCurrentGen(kind);
+          const retryStartMs = performance.now();
+          console.error(`[IHM-AUDIO] paplay OGG ${playFile} → fallback attempt ${idx + 1}/${remaining.length} on sink ${sink}`);
+          const retryProc = execFile("paplay", ["--device", sink, playFile], { env: _PA_ENV_UNPINNED(), timeout: timeoutMs }, (err2: any, _stdout2, stderr2) => {
+            const retryOutcome = _classifyAudioOutcome(err2, retryGenAtSpawn, _piCurrentGen(kind), String(stderr2 || ""), retryStartMs);
+            if (retryOutcome.kind === "cancelled") {
+              console.error(`[IHM-AUDIO] paplay OGG retry ${playFile} cancelled`);
+              return;   // NO seguir con más sinks — el usuario canceló
+            }
+            if (retryOutcome.kind === "ok") {
+              console.error(`[IHM-AUDIO] paplay OGG retry ${playFile} OK on ${sink} (${retryOutcome.elapsedMs}ms)`);
+              /* Rev847: promocionar este sink como nuevo _backendSinkName
+                 para el próximo tick — así evitamos volver a probar el que
+                 falla primero.  El auto-probe seguirá corriendo al arranque
+                 pero en runtime esto es el aprendizaje rápido. */
+              _backendSinkName = sink;
+              setTimeout(onDone, POST_DRAIN_MS);
+              return;
+            }
+            console.error(`[IHM-AUDIO] paplay OGG retry ${playFile} FAILED on ${sink} (${retryOutcome.kind}). Trying next...`);
+            trySink(idx + 1);
+          });
+          _piTrackProc(kind, retryProc);
+        };
+        trySink(0);
+      }).catch((e) => {
+        console.error(`[IHM-AUDIO] paplay OGG ${playFile} sink resolution failed: ${e?.message ?? e}. Skipping voice.`);
+        setTimeout(onDone, POST_DRAIN_MS);
+      });
     });
     _piTrackProc(kind, proc);
+  }).catch((e) => {
+    /* Rev848 (K-03 Fase 1.6, bug D fix): red de seguridad para el outer
+       .then(). Si _probeOggDuration se rompe por algo no anticipado, o si
+       el handler async posterior (por ejemplo _ensureGainedAudio) lanza
+       una excepción no capturada, la promise queda unhandled y la máquina
+       de estados se cuelga PERMANENTEMENTE en fase `voice` hasta reboot.
+       El .catch garantiza que SIEMPRE se llame onDone tras 4s de margen —
+       el ciclo puede continuar aunque este step haya fallado. */
+    console.error(`[IHM-AUDIO] voice OGG unhandled error for ${kind}: ${e?.message ?? e}. Fase voice se saltará (onDone en 4s).`);
+    setTimeout(onDone, 4000);
   });
 }
 // Variante "fire-and-forget" mantenida para _piAnchorDropConfirm y otros
@@ -13321,20 +13522,27 @@ function _piPlaySirenBurst(kind: string) {
   // 3 paplays consecutivos → cacheamos UNA vez al inicio del burst.
   _ensureGainedAudio(file).then((playFile) => {
     if (kind === "ais") {
-      const proc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: 3000 }, (err) => {
-        if (err && (err as any)?.signal !== "SIGTERM") {
-          console.error(`[IHM-AUDIO] paplay siren ais FAILED: ${err.message}`);
-        }
+      /* Rev844: token + discriminante. Cancelación (kill-all) NO se loguea
+         como FAILED — es esperada; el bug era que "SIGTERM ≠ SIGTERM" se
+         confundía con timeout de Node. */
+      const genAtSpawn = _piCurrentGen(kind);
+      const startMs = performance.now();
+      const proc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: 3000 }, (err, _stdout, stderr) => {
+        const outcome = _classifyAudioOutcome(err as any, genAtSpawn, _piCurrentGen(kind), String(stderr || ""), startMs);
+        if (outcome.kind === "cancelled" || outcome.kind === "ok") return;
+        console.error(`[IHM-AUDIO] paplay siren ais FAILED (${outcome.kind}${outcome.kind === "exit_error" || outcome.kind === "spawn_error" ? `: ${(outcome as any).err?.message ?? "?"}` : ""})`);
       });
       _piTrackProc(kind, proc);
       return;
     }
     for (let i = 0; i < 3; i++) {
       const t = setTimeout(() => {
-        const burstProc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: 1500 }, (err) => {
-          if (err && (err as any)?.signal !== "SIGTERM") {
-            console.error(`[IHM-AUDIO] paplay siren ${kind} burst${i} FAILED: ${err.message}`);
-          }
+        const genAtSpawn = _piCurrentGen(kind);
+        const startMs = performance.now();
+        const burstProc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: 1500 }, (err, _stdout, stderr) => {
+          const outcome = _classifyAudioOutcome(err as any, genAtSpawn, _piCurrentGen(kind), String(stderr || ""), startMs);
+          if (outcome.kind === "cancelled" || outcome.kind === "ok") return;
+          console.error(`[IHM-AUDIO] paplay siren ${kind} burst${i} FAILED (${outcome.kind})`);
         });
         _piTrackProc(kind, burstProc);
       }, i * 1200);
@@ -13434,6 +13642,74 @@ const _piActivePlay: Record<string, ChildProcess[]> = {};
 // Si matamos los procesos pero NO cancelamos estos timeouts, los siguientes
 // bursts dispararían paplay nuevos. Almacenamos y los limpiamos juntos.
 const _piBurstTimers: Record<string, NodeJS.Timeout[]> = {};
+/* Rev844 (K-03 Fase 1.2/1.3): token de generación por kind. Se incrementa
+   al cancelar/matar el audio activo. Los callbacks de paplay/espeak capturan
+   la generación en el momento del spawn; si al llegar el callback la
+   generación ha cambiado, sabemos que fuimos NOSOTROS quien mató el proceso
+   (cancelación) — y no debemos disparar retry, ni avanzar fase, ni llamar
+   onDone. Resuelve el bug crítico "SIGKILL cancela pero levanta retry que
+   reanuda audio" (identificado por GPT-5). También distingue timeout de
+   execFile (SIGTERM automático) de nuestro SIGTERM/SIGKILL manual: si el
+   generation coincide en el callback → fue Node el que envió SIGTERM por
+   timeout, es un FALLO, no un éxito silencioso (bug B). */
+const _piAudioGeneration: Record<string, number> = {};
+function _piCurrentGen(kind: string): number {
+  return _piAudioGeneration[kind] ?? 0;
+}
+function _piBumpGen(kind: string): number {
+  const next = _piCurrentGen(kind) + 1;
+  _piAudioGeneration[kind] = next;
+  return next;
+}
+/* Discriminante tipado del resultado de un spawn de audio.
+   'cancelled'   → cancelamos NOSOTROS (kill-all o kill del kind) antes de
+                   que el proceso terminara. NO retry, NO onDone.
+   'timeout'     → Node mató el proceso por opts.timeout. Fallo real.
+   'spawn_error' → El binario no arrancó (ENOENT, EACCES). Fallo.
+   'exit_error'  → El proceso arrancó y salió con exit code != 0. Fallo.
+   'ok'          → Éxito real. */
+type _AudioOutcome =
+  | { kind: "cancelled"; elapsedMs: number }
+  | { kind: "timeout"; elapsedMs: number }
+  | { kind: "spawn_error"; err: Error; elapsedMs: number }
+  | { kind: "exit_error"; err: Error; exitCode: number | null; stderr: string; elapsedMs: number }
+  | { kind: "ok"; elapsedMs: number };
+/* Clasificador. Recibe:
+   - err: primer arg del callback de execFile.
+   - genAtSpawn: generación capturada ANTES del spawn.
+   - genNow: generación en el momento del callback.
+   - stderr: opcional, para incluir en exit_error.
+   - startMs: performance.now() del spawn.
+
+   Distinción crítica que resuelve bugs B y C:
+   1. Si genNow !== genAtSpawn → fue una cancelación nuestra
+      (tanto SIGTERM manual como SIGKILL de rescate). NUNCA fallo.
+   2. Si err.killed y signal === SIGTERM y generation coincide → timeout
+      de execFile. FALLO (nunca éxito). */
+function _classifyAudioOutcome(
+  err: (Error & { killed?: boolean; signal?: NodeJS.Signals | null; code?: string | number | null }) | null,
+  genAtSpawn: number,
+  genNow: number,
+  stderr: string,
+  startMs: number,
+): _AudioOutcome {
+  const elapsedMs = Math.max(0, Math.round(performance.now() - startMs));
+  if (genNow !== genAtSpawn) return { kind: "cancelled", elapsedMs };
+  if (!err) return { kind: "ok", elapsedMs };
+  // Node fija err.killed=true cuando execFile mata por timeout (SIGTERM por
+  // defecto). Si no cancelamos nosotros y el signal es SIGTERM/SIGKILL, es
+  // timeout de Node. Cubre bug B.
+  if (err.killed && (err.signal === "SIGTERM" || err.signal === "SIGKILL")) {
+    return { kind: "timeout", elapsedMs };
+  }
+  // ENOENT/EACCES → binario no encontrado o sin permisos.
+  if (typeof err.code === "string" && (err.code === "ENOENT" || err.code === "EACCES")) {
+    return { kind: "spawn_error", err, elapsedMs };
+  }
+  // Cualquier otro caso: el proceso salió con exit code != 0.
+  const exitCode = typeof err.code === "number" ? err.code : null;
+  return { kind: "exit_error", err, exitCode, stderr, elapsedMs };
+}
 function _piTrackProc(kind: string, proc: ChildProcess) {
   if (!_piActivePlay[kind]) _piActivePlay[kind] = [];
   _piActivePlay[kind].push(proc);
@@ -13448,28 +13724,57 @@ function _piTrackBurstTimer(kind: string, t: NodeJS.Timeout) {
   if (!_piBurstTimers[kind]) _piBurstTimers[kind] = [];
   _piBurstTimers[kind].push(t);
 }
+/* Rev846 (K-03 Fase 1.4, feedback Fable5): kill graceful con SIGTERM +
+   200 ms → SIGKILL de rescate. Con las 3 correcciones de Fable5 sobre el
+   patrón que propuso Gemini:
+   1. Escuchar evento `exit` para cancelar el timer del rescate (no confiar
+      en `proc.killed` que no significa "ha muerto").
+   2. Tracking manual del estado con variable local `hasExited`.
+   3. `unref()` sobre el TIMER, no sobre proc (así el proceso de Node no
+      se queda esperando a que dispare).
+
+   Motivación: SIGKILL directo corta abruptamente el stream y (según Gemini,
+   parcialmente refutado por Fable5) puede dejar sockets en estado
+   inconsistente en PipeWire durante ~ms; el graceful evita el corte brusco
+   sin sacrificar la inmediatez ante procesos que ignoran SIGTERM. */
+function _safeKillProc(proc: import("child_process").ChildProcess): void {
+  if (!proc || proc.pid == null) return;
+  let hasExited = false;
+  // Fable5 fix #2: tracking manual, NO usar proc.killed.
+  const onExit = () => { hasExited = true; };
+  try { proc.once("exit", onExit); } catch { /* proc puede estar en estado no-listenable */ }
+  try { proc.kill("SIGTERM"); } catch { /* ignore */ }
+  // Fable5 fix #1: escuchar exit para cancelar el timer del rescate.
+  // Fable5 fix #3: unref() sobre el TIMER (no sobre proc), así Node no
+  // queda esperando el timeout si el proceso ya terminó.
+  const rescueTimer = setTimeout(() => {
+    if (hasExited) return;
+    try { proc.kill("SIGKILL"); } catch { /* ignore */ }
+  }, 200);
+  try { (rescueTimer as any).unref?.(); } catch { /* ignore */ }
+}
 function _piKillActive(kind: string) {
+  /* Rev844 (K-03 Fase 1.3): incrementar generation PRIMERO. Cualquier
+     callback que llegue después (por el propio kill o por el callback
+     nativo del proceso muerto) verá genNow != genAtSpawn y devolverá
+     `cancelled`. Esto elimina el bug crítico C (SIGKILL → callback recibe
+     error → retry → onDone → siren2). */
+  _piBumpGen(kind);
   // Cancela los timers de burst pendientes (sirenas que aún no han disparado)
   const timers = _piBurstTimers[kind];
   if (timers && timers.length > 0) {
     for (const t of timers) { try { clearTimeout(t); } catch { /* ignore */ } }
     _piBurstTimers[kind] = [];
   }
-  // Rev204 (B-01 follow-up): SIGKILL para corte inmediato. paplay con buffers
-  // PulseAudio puede tardar 1-2s en responder a SIGTERM (especialmente si
-  // está reproduciendo un OGG largo de voz). SIGKILL es unblockable y el
-  // kernel reapea el proceso al instante. Antes esto causaba el riesgo de
-  // alarma atascada porque dejaba zombies cuyos deltas SK seguían con
-  // "sound" — en Rev203 filtramos "sound" del method array, así que aunque
-  // el sonido tarde algunos ms en cortarse físicamente, los clientes
-  // externos (KIP, OP Notif) no se reactivan.
+  /* Rev846 (K-03 Fase 1.4): SIGTERM + 200 ms → SIGKILL de rescate en vez
+     de SIGKILL directo. Ver _safeKillProc. Menos brusco para PipeWire sin
+     sacrificar la inmediatez del silencio: 200 ms es imperceptible como
+     retardo pero suficiente para que paplay libere su stream. */
   const arr = _piActivePlay[kind];
   if (!arr || arr.length === 0) return;
-  for (const proc of arr) {
-    try { proc.kill("SIGKILL"); } catch { /* ignore */ }
-  }
+  for (const proc of arr) _safeKillProc(proc);
   _piActivePlay[kind] = [];
-  console.error(`[IHM-AUDIO] killed active playback procs + pending bursts for ${kind}`);
+  console.error(`[IHM-AUDIO] killed active playback procs + pending bursts for ${kind} (gen ${_piCurrentGen(kind)})`);
 }
 
 // Rev156: stop-debounce. Cuando llega un _piAlarmStop por flapping del
@@ -13534,7 +13839,13 @@ _piAlarmStopAll = function () {
     ...Object.keys(_piAlarmTimers),
     ...Object.keys(_piActivePlay),
     ...Object.keys(_piBurstTimers),
+    ...Object.keys(_piAudioGeneration),
   ]);
+  /* Rev844 (K-03 Fase 1.3, feedback Fable5): kill-all debe bumpear la
+     generación de TODOS los kinds ANTES de matar los procesos individuales.
+     Si sirena y voz tienen tokens independientes y solo se bumpease uno,
+     el bug C podría reaparecer por la puerta trasera en el otro kind. */
+  for (const kind of kinds) _piBumpGen(kind);
   kinds.forEach(_piAlarmStopImmediate);
 };
 
