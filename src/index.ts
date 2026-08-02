@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev848";
+const PLUGIN_REVISION = "Rev852";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -3055,6 +3055,53 @@ try {
           action: freeMB > 500 ? undefined : "Considera cerrar otros servicios para dejar respirar a SK.",
         });
       } catch { /* ignore */ }
+      /* Rev851 (K-03 Fase 2.11, feedback Fable5): check de linger + user
+         PipeWire services. Sin linger, /run/user/1000 puede no existir tras
+         un reboot sin sesión gráfica → paplay/pactl fallan silenciosos. En
+         el Pi de Carlos linger ya está activo (Fase 0), pero este check
+         cubre a otros usuarios que instalen desde el App Store. */
+      try {
+        const lingerOut = cp.execSync("loginctl show-user pi -p Linger 2>/dev/null", { timeout: 2000, encoding: "utf-8" }).toString().trim();
+        const lingerActive = lingerOut.includes("Linger=yes");
+        checks.push({
+          id: "linger-pi",
+          label: "Persistencia de sesión de usuario 'pi' (necesaria para audio Pi)",
+          technical: "loginctl linger",
+          status: lingerActive ? "ok" : "warn",
+          message: lingerActive
+            ? "Activo — audio del Pi disponible incluso sin sesión gráfica abierta."
+            : "Inactivo — si el Pi arranca sin sesión gráfica, /run/user/1000 puede no existir y las alarmas de voz del Pi fallarán en silencio.",
+          action: lingerActive ? undefined : "sudo loginctl enable-linger pi",
+        });
+      } catch { /* ignore — loginctl not available */ }
+      try {
+        /* systemctl --user necesita DBUS_SESSION_BUS_ADDRESS + XDG_RUNTIME_DIR.
+           Cuando SK corre como servicio de sistema esos env vars no vienen
+           heredados — los inyectamos explícitamente. Ver Fase 0 verificación:
+           desde SSH con esos vars pasa; desde plugin sin ellos falla silencioso. */
+        const svcEnv = {
+          ...process.env,
+          XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || "/run/user/1000",
+          DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS || "unix:path=/run/user/1000/bus",
+        };
+        const svcOut = cp.execSync("systemctl --user is-active pipewire pipewire-pulse wireplumber 2>&1",
+          { timeout: 3000, encoding: "utf-8", env: svcEnv }).toString().trim();
+        const lines = svcOut.split("\n");
+        const allActive = lines.length >= 3 && lines.every(l => l.trim() === "active");
+        checks.push({
+          id: "pipewire-user-services",
+          label: "Servicios de audio del usuario 'pi' (PipeWire + PulseAudio compat + WirePlumber)",
+          technical: "systemctl --user pipewire",
+          status: allActive ? "ok" : "warn",
+          message: allActive
+            ? "Los 3 servicios están activos — el pipeline de audio del Pi está listo."
+            : `Estado: pipewire=${lines[0] ?? "?"}, pipewire-pulse=${lines[1] ?? "?"}, wireplumber=${lines[2] ?? "?"} — si alguno está inactivo, el audio del Pi puede fallar.`,
+          action: allActive ? undefined : "systemctl --user restart pipewire pipewire-pulse wireplumber",
+        });
+      } catch (e: any) {
+        /* Al menos dejar constancia en logs para no diagnosticar a ciegas. */
+        app.debug(`[IHM-WIZARD] pipewire-user-services check failed: ${e?.message ?? e}`);
+      }
       res.json({ checks });
     });
 
@@ -12910,13 +12957,23 @@ async function _resolveSinkForPlayback(): Promise<_SinkResolution> {
     const saved = await ihmCache.get("preferredSinkName");
     if (typeof saved === "string" && saved.trim()) preferredName = saved.trim();
   } catch { /* ignore */ }
-  if (preferredName) {
-    if (available.includes(preferredName)) {
-      const fallbacks = available.filter(s => s !== preferredName);
-      return { primary: preferredName, fallbacks, source: "preference", available };
+  /* Rev850: unificado con la key existente "backendSinkName" que la UI ya
+     escribe desde el selector Config → Salida audio Pi (POST /api/audio/output).
+     Mantengo también "preferredSinkName" por compatibilidad con setups que
+     hayan usado el endpoint nuevo, pero backendSinkName gana. */
+  let backendName: string | null = null;
+  try {
+    const saved = await ihmCache.get("backendSinkName");
+    if (typeof saved === "string" && saved.trim()) backendName = saved.trim();
+  } catch { /* ignore */ }
+  const effectivePref = backendName || preferredName;
+  if (effectivePref) {
+    if (available.includes(effectivePref)) {
+      const fallbacks = available.filter(s => s !== effectivePref);
+      return { primary: effectivePref, fallbacks, source: "preference", available };
     }
     // Preferencia desapareció — notificamos y caemos a heurística.
-    app.debug(`[IHM-PI-AUDIO] preferredSinkName '${preferredName}' NOT in current sinks (${available.join(",")}), falling back to heuristic`);
+    app.debug(`[IHM-PI-AUDIO] user-preferred sink '${effectivePref}' NOT in current sinks (${available.join(",")}), falling back to heuristic`);
   }
   // 2. Heurística. Mismo orden USB > analog > HDMI > any que hasta ahora.
   const usb = available.find(s => /alsa_output\.usb/i.test(s));
@@ -13391,6 +13448,13 @@ function _piPlayVoiceForKindWithCallback(kind: string, lang: string, onDone: () 
     const startMs = performance.now();
     const proc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: timeoutMs }, (err, _stdout, stderr) => {
       const outcome = _classifyAudioOutcome(err as any, genAtSpawn, _piCurrentGen(kind), String(stderr || ""), startMs);
+      /* Rev849: registrar todos los outcomes (excepto cancelled que sí lo
+         registramos para observabilidad, pero no cuenta como failure). */
+      _recordAudioAttempt({
+        kind, sink: _backendSinkName, outcome: outcome.kind,
+        elapsedMs: outcome.elapsedMs, generation: genAtSpawn, retryCount: 0,
+        errorMsg: (outcome.kind === "exit_error" || outcome.kind === "spawn_error") ? (outcome as any).err?.message : undefined,
+      });
       if (outcome.kind === "cancelled") {
         console.error(`[IHM-AUDIO] paplay OGG ${playFile} cancelled (gen changed ${genAtSpawn}→${_piCurrentGen(kind)}, ${outcome.elapsedMs}ms)`);
         /* Bug C fixed: NO llamar onDone, NO retry. La máquina ya avanzó
@@ -13464,6 +13528,11 @@ function _piPlayVoiceForKindWithCallback(kind: string, lang: string, onDone: () 
           console.error(`[IHM-AUDIO] paplay OGG ${playFile} → fallback attempt ${idx + 1}/${remaining.length} on sink ${sink}`);
           const retryProc = execFile("paplay", ["--device", sink, playFile], { env: _PA_ENV_UNPINNED(), timeout: timeoutMs }, (err2: any, _stdout2, stderr2) => {
             const retryOutcome = _classifyAudioOutcome(err2, retryGenAtSpawn, _piCurrentGen(kind), String(stderr2 || ""), retryStartMs);
+            _recordAudioAttempt({
+              kind, sink, outcome: retryOutcome.kind,
+              elapsedMs: retryOutcome.elapsedMs, generation: retryGenAtSpawn, retryCount: idx + 1,
+              errorMsg: (retryOutcome.kind === "exit_error" || retryOutcome.kind === "spawn_error") ? (retryOutcome as any).err?.message : undefined,
+            });
             if (retryOutcome.kind === "cancelled") {
               console.error(`[IHM-AUDIO] paplay OGG retry ${playFile} cancelled`);
               return;   // NO seguir con más sinks — el usuario canceló
@@ -13529,6 +13598,11 @@ function _piPlaySirenBurst(kind: string) {
       const startMs = performance.now();
       const proc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: 3000 }, (err, _stdout, stderr) => {
         const outcome = _classifyAudioOutcome(err as any, genAtSpawn, _piCurrentGen(kind), String(stderr || ""), startMs);
+        _recordAudioAttempt({
+          kind: `${kind}:siren`, sink: _backendSinkName, outcome: outcome.kind,
+          elapsedMs: outcome.elapsedMs, generation: genAtSpawn, retryCount: 0,
+          errorMsg: (outcome.kind === "exit_error" || outcome.kind === "spawn_error") ? (outcome as any).err?.message : undefined,
+        });
         if (outcome.kind === "cancelled" || outcome.kind === "ok") return;
         console.error(`[IHM-AUDIO] paplay siren ais FAILED (${outcome.kind}${outcome.kind === "exit_error" || outcome.kind === "spawn_error" ? `: ${(outcome as any).err?.message ?? "?"}` : ""})`);
       });
@@ -13541,6 +13615,11 @@ function _piPlaySirenBurst(kind: string) {
         const startMs = performance.now();
         const burstProc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: 1500 }, (err, _stdout, stderr) => {
           const outcome = _classifyAudioOutcome(err as any, genAtSpawn, _piCurrentGen(kind), String(stderr || ""), startMs);
+          _recordAudioAttempt({
+            kind: `${kind}:siren${i}`, sink: _backendSinkName, outcome: outcome.kind,
+            elapsedMs: outcome.elapsedMs, generation: genAtSpawn, retryCount: 0,
+            errorMsg: (outcome.kind === "exit_error" || outcome.kind === "spawn_error") ? (outcome as any).err?.message : undefined,
+          });
           if (outcome.kind === "cancelled" || outcome.kind === "ok") return;
           console.error(`[IHM-AUDIO] paplay siren ${kind} burst${i} FAILED (${outcome.kind})`);
         });
@@ -13642,6 +13721,48 @@ const _piActivePlay: Record<string, ChildProcess[]> = {};
 // Si matamos los procesos pero NO cancelamos estos timeouts, los siguientes
 // bursts dispararían paplay nuevos. Almacenamos y los limpiamos juntos.
 const _piBurstTimers: Record<string, NodeJS.Timeout[]> = {};
+/* Rev849 (K-03 Fase 2.9): observabilidad. Anillo de últimos N intentos de
+   audio para diagnóstico en producción sin necesidad de journalctl. Alimenta
+   `GET /api/audio-health`. Cada entry se genera al terminar el callback de
+   un paplay (éxito, cancelado o fallo). */
+interface _AudioAttemptEntry {
+  tsMs: number;
+  kind: string;
+  sink: string | null;             // sink usado (null si no llegó a arrancar)
+  outcome: "ok" | "cancelled" | "timeout" | "spawn_error" | "exit_error";
+  elapsedMs: number;
+  generation: number;              // genAtSpawn
+  retryCount: number;              // 0 = intento primario, 1 = 1er fallback, ...
+  errorMsg?: string;
+}
+const _AUDIO_HISTORY_MAX = 20;
+const _audioAttemptHistory: _AudioAttemptEntry[] = [];
+let _audioConsecutiveFailures = 0;
+let _audioLastSuccessMs: number | null = null;
+let _audioLastFailureMs: number | null = null;
+function _recordAudioAttempt(entry: Omit<_AudioAttemptEntry, "tsMs">) {
+  const now = Date.now();
+  const rec: _AudioAttemptEntry = { tsMs: now, ...entry };
+  _audioAttemptHistory.unshift(rec);
+  if (_audioAttemptHistory.length > _AUDIO_HISTORY_MAX) _audioAttemptHistory.length = _AUDIO_HISTORY_MAX;
+  if (entry.outcome === "ok") {
+    _audioConsecutiveFailures = 0;
+    _audioLastSuccessMs = now;
+  } else if (entry.outcome !== "cancelled") {
+    _audioConsecutiveFailures++;
+    _audioLastFailureMs = now;
+  }
+}
+/* Rev849: event loop lag histogram. Coste ~cero. Se lee al servir
+   /api/audio-health. Alto p99 = evaluator/geocoding/… bloqueando el thread
+   → alarma llega tarde. */
+let _eventLoopHistogram: import("perf_hooks").IntervalHistogram | null = null;
+try {
+  const { monitorEventLoopDelay } = require("perf_hooks");
+  const h = monitorEventLoopDelay({ resolution: 20 });
+  h.enable();
+  _eventLoopHistogram = h;
+} catch { /* ignore — node antiguo */ }
 /* Rev844 (K-03 Fase 1.2/1.3): token de generación por kind. Se incrementa
    al cancelar/matar el audio activo. Los callbacks de paplay/espeak capturan
    la generación en el momento del spawn; si al llegar el callback la
@@ -14054,6 +14175,134 @@ const TEST_FALLBACK_SOUNDS = [
   "/usr/share/sounds/freedesktop/stereo/complete.oga",
   "/usr/share/sounds/alsa/Front_Center.wav",
 ];
+/* Rev850 (K-03 Fase 2.10): endpoint POST para probar audio en un sink
+   específico (o el preferido si body vacío). Reproduce la voz garreo_es.ogg
+   completa (~10s) usando la MISMA pipe real que las alarmas (para que el
+   test valide todo el pipeline, no una versión paralela). Retorna
+   inmediatamente — el audio se reproduce en background.
+   Fase 2.8 (guardar preferencia) NO añade endpoint nuevo: la UI ya usa
+   POST /api/audio/output que persiste en ihmCache "backendSinkName", y
+   _resolveSinkForPlayback lo lee correctamente. */
+expressApp.post("/signalk-mareas-ihm/api/audio/test-sink", requireControlAccess, async (req: any, res: any) => {
+  const sinkOverride = (req?.body?.sinkName != null && String(req.body.sinkName).trim())
+    ? String(req.body.sinkName).trim() : null;
+  const lang = _currentLang === "en" ? "en" : "es";
+  const ogg = _piVoiceOggFile("garreo", lang);
+  if (!ogg) return res.status(500).json({ ok: false, error: "no_test_ogg" });
+  const playFile = await _ensureGainedAudio(ogg);
+  /* Si el usuario pide un sink específico, temporalmente lo usamos como
+     _backendSinkName. Si no, usamos el actual. */
+  const originalSink = _backendSinkName;
+  if (sinkOverride) _backendSinkName = sinkOverride;
+  const startMs = performance.now();
+  const genAtSpawn = _piCurrentGen("test");
+  const proc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: 15000 }, (err, _stdout, stderr) => {
+    const outcome = _classifyAudioOutcome(err as any, genAtSpawn, _piCurrentGen("test"), String(stderr || ""), startMs);
+    _recordAudioAttempt({
+      kind: "test-sink", sink: sinkOverride ?? originalSink, outcome: outcome.kind,
+      elapsedMs: outcome.elapsedMs, generation: genAtSpawn, retryCount: 0,
+      errorMsg: (outcome.kind === "exit_error" || outcome.kind === "spawn_error") ? (outcome as any).err?.message : undefined,
+    });
+    console.error(`[IHM-AUDIO] test-sink → paplay ${playFile} on sink ${sinkOverride ?? originalSink}: ${outcome.kind} (${outcome.elapsedMs}ms)`);
+    /* Restaurar sink original después del test si lo cambiamos. */
+    if (sinkOverride) _backendSinkName = originalSink;
+  });
+  _piTrackProc("test", proc);
+  res.json({ ok: true, sink: sinkOverride ?? originalSink, playFile });
+});
+/* Rev849 (K-03 Fase 2.9): endpoint pasivo de salud del audio Pi.
+   Devuelve snapshot + ring buffer de últimos 20 intentos + event loop lag.
+   Cache 5s para que llamadas frecuentes desde el visor no saturen ni la
+   CPU ni el bus de pactl. NO reproduce audio (health check pasivo). Ver
+   plan v3.1 Fase 2.9. */
+let _audioHealthCache: { ts: number; body: any } | null = null;
+const _AUDIO_HEALTH_CACHE_MS = 5000;
+expressApp.get("/signalk-mareas-ihm/api/audio-health", async (_req: any, res: any) => {
+  const now = Date.now();
+  if (_audioHealthCache && (now - _audioHealthCache.ts) < _AUDIO_HEALTH_CACHE_MS) {
+    return res.json({ ..._audioHealthCache.body, cachedAgeMs: now - _audioHealthCache.ts });
+  }
+  const [sinks, preferredSinkName, defaultSink, servicesActive, socketExists, lingerActive] = await Promise.all([
+    _probeSinksList(),
+    (async () => {
+      /* Rev850: unificado — la UI escribe en "backendSinkName" via
+         POST /api/audio/output. Mostramos ese valor como preferencia
+         efectiva. */
+      try {
+        const bk = await ihmCache.get("backendSinkName");
+        if (typeof bk === "string" && bk.trim()) return bk.trim();
+        const pref = await ihmCache.get("preferredSinkName");
+        return (typeof pref === "string" && pref.trim()) ? pref.trim() : null;
+      } catch { return null; }
+    })(),
+    new Promise<string | null>((resolve) => {
+      _runPactl(["get-default-sink"], (err, out) => {
+        if (err) return resolve(null);
+        resolve(out.trim() || null);
+      });
+    }),
+    new Promise<{ pipewire: boolean; pipewirePulse: boolean; wireplumber: boolean }>((resolve) => {
+      /* systemctl --user is-active <unit> devuelve 0 y "active" si activo,
+         3 y "inactive"/"failed" si no. Combinamos 3 checks en un solo spawn. */
+      _spawnAudio("systemctl", ["--user", "is-active", "pipewire", "pipewire-pulse", "wireplumber"],
+        { env: _PA_ENV(), timeout: 3000, forceCLocale: true },
+        (_err, stdout) => {
+          const lines = String(stdout || "").trim().split("\n");
+          resolve({
+            pipewire: (lines[0] || "").trim() === "active",
+            pipewirePulse: (lines[1] || "").trim() === "active",
+            wireplumber: (lines[2] || "").trim() === "active",
+          });
+        },
+      );
+    }),
+    new Promise<boolean>((resolve) => {
+      try { resolve(fs.existsSync("/run/user/1000/pulse/native")); }
+      catch { resolve(false); }
+    }),
+    new Promise<boolean>((resolve) => {
+      _spawnAudio("loginctl", ["show-user", "pi", "-p", "Linger"],
+        { env: process.env, timeout: 2000, forceCLocale: true },
+        (_err, stdout) => resolve(String(stdout || "").includes("Linger=yes")),
+      );
+    }),
+  ]);
+  /* Event loop histogram — nanosegundos en el objeto, convertimos a ms.
+     Reset después de leer para tener ventana móvil. */
+  let eventLoopP99Ms: number | null = null;
+  let eventLoopMeanMs: number | null = null;
+  try {
+    const hist = _eventLoopHistogram;
+    if (hist) {
+      const p99Ns = hist.percentile(99);
+      const meanNs = hist.mean;
+      eventLoopP99Ms = Number.isFinite(p99Ns) ? +(p99Ns / 1e6).toFixed(2) : null;
+      eventLoopMeanMs = Number.isFinite(meanNs) ? +(meanNs / 1e6).toFixed(2) : null;
+      hist.reset();
+    }
+  } catch { /* ignore */ }
+  const body = {
+    revision: PLUGIN_REVISION,
+    ts: now,
+    currentBackendSink: _backendSinkName,
+    preferredSinkName,
+    defaultSink,
+    availableSinks: sinks,
+    userServices: servicesActive,
+    pulseSocketExists: socketExists,
+    lingerActive,
+    alarmVolumePct: _alarmVolumePct,
+    audioEnabled: anchorWatch.audioEnabled !== false,
+    history: _audioAttemptHistory.slice(),
+    consecutiveFailures: _audioConsecutiveFailures,
+    lastSuccessMs: _audioLastSuccessMs,
+    lastFailureMs: _audioLastFailureMs,
+    eventLoopP99Ms,
+    eventLoopMeanMs,
+  };
+  _audioHealthCache = { ts: now, body };
+  res.json({ ...body, cachedAgeMs: 0 });
+});
 expressApp.post("/signalk-mareas-ihm/api/audio/test", requireControlAccess, async (_req: any, res: any) => {
   const lang = _currentLang === "en" ? "en" : "es";
   let file: string | null = _piVoiceOggFile("garreo", lang);
