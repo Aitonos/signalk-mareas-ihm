@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev856";
+const PLUGIN_REVISION = "Rev857";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -13302,6 +13302,84 @@ function _paplayArgs(file: string): string[] {
   return [file];
 }
 
+/* Rev857 (K-03 Fase 3.12, propuesta Fable5): sirena pre-renderizada como
+   UN solo archivo WAV que contiene:
+     - 250 ms de silencio INICIAL (DAC wakeup padding — resuelve la pérdida
+       de los primeros ms de la primera alarma tras suspend del sink).
+     - 3 copias de la sirena original con gaps de 200 ms entre ellas.
+   Efecto:
+     - UN solo paplay en vez de 3 setTimeout+execFile → menos susceptible a
+       event loop lag, más limpio de matar en el cancel.
+     - Amplificación de volumen aplicada en el mismo pipeline ffmpeg (no
+       necesita paso extra por _ensureGainedAudio).
+     - Elimina H7 de Gemini (ráfagas rápidas de proceso saturan DAC Jieli).
+   Cachea por (archivo, volumen). Si ffmpeg falla o el archivo no se puede
+   generar, devuelve null y _piPlaySirenBurst cae al patrón antiguo. */
+const _sirenSequenceCache: Record<string, string> = {}; // "orig|pct" -> /tmp/...
+async function _prerenderSirenSequence(sirenFile: string): Promise<string | null> {
+  const vol = _alarmVolumePct;
+  const key = `${sirenFile}|${vol}`;
+  const cached = _sirenSequenceCache[key];
+  if (cached) {
+    try { if (fs.existsSync(cached)) return cached; } catch { /* re-render */ }
+  }
+  const PAD_START_MS = 250;   // Fable5: DAC wakeup padding
+  const GAP_MS = 200;          // entre bursts (antes eran 1200ms setTimeout - dur siren)
+  let durMs: number;
+  try {
+    const durSec = await _probeOggDuration(sirenFile);
+    if (!Number.isFinite(durSec) || durSec <= 0) return null;
+    durMs = Math.round(durSec * 1000);
+  } catch { return null; }
+  const delay1 = PAD_START_MS;
+  const delay2 = PAD_START_MS + durMs + GAP_MS;
+  const delay3 = delay2 + durMs + GAP_MS;
+  const totalMs = delay3 + durMs + 100;   // +100ms trailing safe
+  const factor = (vol / 100).toFixed(2);
+  const volFilter = vol !== 100 ? `,volume=${factor}` : "";
+  const base = path.basename(sirenFile, path.extname(sirenFile)).replace(/[^a-zA-Z0-9_-]/g, "_");
+  const out = path.join(os.tmpdir(), `ihm-siren-seq-vol${vol}-${base}.wav`);
+  /* Filtro: 3 copias de la sirena con adelay diferentes, mezcladas.
+     Como los adelays no se solapan (siempre delayN > delayN-1 + durMs),
+     amix suena las 3 secuencialmente. normalize=0 preserva volumen. */
+  const filterComplex =
+    `[0:a]adelay=${delay1}|${delay1}${volFilter}[b1];` +
+    `[0:a]adelay=${delay2}|${delay2}${volFilter}[b2];` +
+    `[0:a]adelay=${delay3}|${delay3}${volFilter}[b3];` +
+    `[b1][b2][b3]amix=inputs=3:duration=longest:normalize=0[out]`;
+  return new Promise((resolve) => {
+    execFile("ffmpeg", [
+      "-y", "-hide_banner", "-loglevel", "error",
+      "-i", sirenFile,
+      "-filter_complex", filterComplex,
+      "-map", "[out]",
+      "-c:a", "pcm_s16le",
+      out,
+    ], { timeout: 8000 }, (err) => {
+      if (err) {
+        app.debug(`[IHM-AUDIO] pre-render siren sequence FAILED: ${err.message} (fallback al patrón 3 execFile)`);
+        resolve(null);
+        return;
+      }
+      /* Verificar que el artefacto se generó y tiene tamaño razonable
+         (Fable5: fallback obligatorio si render falla). */
+      try {
+        const stat = fs.statSync(out);
+        if (stat.size < 1000) {   // umbral defensivo: < 1KB es sospechoso
+          app.debug(`[IHM-AUDIO] pre-render siren artefact too small (${stat.size} bytes), fallback`);
+          resolve(null);
+          return;
+        }
+      } catch {
+        resolve(null);
+        return;
+      }
+      _sirenSequenceCache[key] = out;
+      app.debug(`[IHM-AUDIO] pre-rendered siren sequence: ${out} (total ~${totalMs}ms, 250ms padding + 3x${durMs}ms bursts)`);
+      resolve(out);
+    });
+  });
+}
 // Cache de archivos pre-amplificados. La clave incluye volumen actual; cuando
 // el usuario mueve el slider invalidamos la cache para forzar re-encoding.
 // El re-encoding tarda ~200-500ms por OGG en un Pi 4 — se hace una sola vez
@@ -13354,6 +13432,46 @@ function _invalidateGainCache() {
     try { fs.unlinkSync(_gainedAudioCache[k]); } catch { /* ignore */ }
     delete _gainedAudioCache[k];
   }
+}
+/* Rev857 (K-03 Fase 3.12): invalidar la cache de sirenas pre-renderizadas
+   cuando cambia el volumen. */
+function _invalidateSirenSequenceCache() {
+  for (const k of Object.keys(_sirenSequenceCache)) {
+    try { fs.unlinkSync(_sirenSequenceCache[k]); } catch { /* ignore */ }
+    delete _sirenSequenceCache[k];
+  }
+}
+/* Rev857 (K-03 Fase 3.13, feedback GPT+Fable5): pre-computar TODOS los
+   artefactos de audio en background para que el primer disparo de alarma
+   no tenga que esperar ~200-500ms de ffmpeg. Se llama:
+   - Al arranque del plugin (tras cargar _alarmVolumePct).
+   - Al cambio de volumen (invalida cache y re-computa).
+   Fire-and-forget: los errores se loguean como debug pero no rompen el
+   arranque del plugin. Ver también _prerenderSirenSequence. */
+function _precomputeAudioAssets(): void {
+  (async () => {
+    const langs: Array<"es" | "en"> = ["es", "en"];
+    const voiceKinds = ["garreo", "ais", "grounding", "anchor_down"];
+    const tasks: Promise<void>[] = [];
+    /* 1. Voice OGG amplificados por (kind × lang). */
+    for (const lang of langs) {
+      for (const kind of voiceKinds) {
+        const ogg = _piVoiceOggFile(kind, lang);
+        if (ogg) tasks.push(_ensureGainedAudio(ogg).then(() => { /* ignore returned path */ }));
+      }
+    }
+    /* 2. Siren + beep synth amplificados. */
+    const siren = _ensureSynthSiren();
+    if (siren) tasks.push(_ensureGainedAudio(siren).then(() => {}));
+    const beep = _ensureSynthBeep();
+    if (beep) tasks.push(_ensureGainedAudio(beep).then(() => {}));
+    /* 3. Sirena pre-renderizada como secuencia (garreo/grounding). */
+    if (siren) tasks.push(_prerenderSirenSequence(siren).then(() => {}));
+    /* Esperamos con Promise.allSettled — nunca rechaza; los fallos van
+       a debug log via los propios helpers. */
+    await Promise.allSettled(tasks);
+    app.debug(`[IHM-AUDIO] pre-computed ${tasks.length} audio assets at vol=${_alarmVolumePct}%`);
+  })().catch(() => { /* defensive — nunca romper el arranque */ });
 }
 
 // Rev165: medición de volumen real con `ffmpeg -af volumedetect`. Devuelve
@@ -13589,11 +13707,13 @@ function _piPlaySirenBurst(kind: string) {
   // volumen) tarda ~200ms — el AIS es 1.8s así que no se nota. Las
   // siguientes son instantáneas (cache hit). Para garreo el patrón es
   // 3 paplays consecutivos → cacheamos UNA vez al inicio del burst.
-  _ensureGainedAudio(file).then((playFile) => {
-    if (kind === "ais") {
-      /* Rev844: token + discriminante. Cancelación (kill-all) NO se loguea
-         como FAILED — es esperada; el bug era que "SIGTERM ≠ SIGTERM" se
-         confundía con timeout de Node. */
+  /* Rev857 (K-03 Fase 3.12): AIS sigue con patrón simple (1 tono ya).
+     Garreo/grounding intentan primero la sirena pre-renderizada (1 paplay);
+     si el pre-render falla, caen al patrón antiguo de 3 execFile con
+     _ensureGainedAudio para no dejar al barco sin sirena por un bug de
+     ffmpeg (Fable5: fallback obligatorio). */
+  if (kind === "ais") {
+    _ensureGainedAudio(file).then((playFile) => {
       const genAtSpawn = _piCurrentGen(kind);
       const startMs = performance.now();
       const proc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: 3000 }, (err, _stdout, stderr) => {
@@ -13607,26 +13727,54 @@ function _piPlaySirenBurst(kind: string) {
         console.error(`[IHM-AUDIO] paplay siren ais FAILED (${outcome.kind}${outcome.kind === "exit_error" || outcome.kind === "spawn_error" ? `: ${(outcome as any).err?.message ?? "?"}` : ""})`);
       });
       _piTrackProc(kind, proc);
+    });
+    return;
+  }
+  /* garreo / grounding: pre-render sirena secuencial con padding, o
+     fallback al patrón antiguo de 3 execFile. */
+  _prerenderSirenSequence(file).then((preRendered) => {
+    if (preRendered) {
+      /* Path elegante: 1 paplay con la secuencia completa (250ms padding +
+         3 x siren + 2 x gap 200ms). Timeout 6s cubre ~3.5s reales + margen. */
+      const genAtSpawn = _piCurrentGen(kind);
+      const startMs = performance.now();
+      const proc = execFile("paplay", _paplayArgs(preRendered), { env: _PA_ENV(), timeout: 6000 }, (err, _stdout, stderr) => {
+        const outcome = _classifyAudioOutcome(err as any, genAtSpawn, _piCurrentGen(kind), String(stderr || ""), startMs);
+        _recordAudioAttempt({
+          kind: `${kind}:seq`, sink: _backendSinkName, outcome: outcome.kind,
+          elapsedMs: outcome.elapsedMs, generation: genAtSpawn, retryCount: 0,
+          errorMsg: (outcome.kind === "exit_error" || outcome.kind === "spawn_error") ? (outcome as any).err?.message : undefined,
+        });
+        if (outcome.kind === "cancelled" || outcome.kind === "ok") return;
+        console.error(`[IHM-AUDIO] paplay siren seq ${kind} FAILED (${outcome.kind})`);
+      });
+      _piTrackProc(kind, proc);
       return;
     }
-    for (let i = 0; i < 3; i++) {
-      const t = setTimeout(() => {
-        const genAtSpawn = _piCurrentGen(kind);
-        const startMs = performance.now();
-        const burstProc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: 1500 }, (err, _stdout, stderr) => {
-          const outcome = _classifyAudioOutcome(err as any, genAtSpawn, _piCurrentGen(kind), String(stderr || ""), startMs);
-          _recordAudioAttempt({
-            kind: `${kind}:siren${i}`, sink: _backendSinkName, outcome: outcome.kind,
-            elapsedMs: outcome.elapsedMs, generation: genAtSpawn, retryCount: 0,
-            errorMsg: (outcome.kind === "exit_error" || outcome.kind === "spawn_error") ? (outcome as any).err?.message : undefined,
+    /* Fallback obligatorio Fable5: si el pre-render no está disponible por
+       cualquier razón (ffmpeg falla, archivo corrupto), caemos al patrón
+       antiguo de 3 execFile con _ensureGainedAudio. Un fallo de render
+       NO puede dejar al barco sin sirena. */
+    _ensureGainedAudio(file).then((playFile) => {
+      for (let i = 0; i < 3; i++) {
+        const t = setTimeout(() => {
+          const genAtSpawn = _piCurrentGen(kind);
+          const startMs = performance.now();
+          const burstProc = execFile("paplay", _paplayArgs(playFile), { env: _PA_ENV(), timeout: 1500 }, (err, _stdout, stderr) => {
+            const outcome = _classifyAudioOutcome(err as any, genAtSpawn, _piCurrentGen(kind), String(stderr || ""), startMs);
+            _recordAudioAttempt({
+              kind: `${kind}:siren${i}`, sink: _backendSinkName, outcome: outcome.kind,
+              elapsedMs: outcome.elapsedMs, generation: genAtSpawn, retryCount: 0,
+              errorMsg: (outcome.kind === "exit_error" || outcome.kind === "spawn_error") ? (outcome as any).err?.message : undefined,
+            });
+            if (outcome.kind === "cancelled" || outcome.kind === "ok") return;
+            console.error(`[IHM-AUDIO] paplay siren ${kind} burst${i} FAILED (${outcome.kind})`);
           });
-          if (outcome.kind === "cancelled" || outcome.kind === "ok") return;
-          console.error(`[IHM-AUDIO] paplay siren ${kind} burst${i} FAILED (${outcome.kind})`);
-        });
-        _piTrackProc(kind, burstProc);
-      }, i * 1200);
-      _piTrackBurstTimer(kind, t);
-    }
+          _piTrackProc(kind, burstProc);
+        }, i * 1200);
+        _piTrackBurstTimer(kind, t);
+      }
+    });
   });
 }
 
@@ -14043,6 +14191,12 @@ function _piAnchorDropConfirm() {
 (function _probeBackendSinkIIFE() {
   _probeBackendSink().catch((e) => app.debug(`[IHM-PI-AUDIO] backend sink probe error: ${e?.message || e}`));
   _loadAlarmVolume().catch((e) => app.debug(`[IHM-PI-AUDIO] alarm volume load error: ${e?.message || e}`));
+  /* Rev857 (K-03 Fase 3.13): precomputar todos los artefactos de audio en
+     background 3s después del arranque, para que:
+     - _loadAlarmVolume tenga tiempo de leer la preferencia real del cache.
+     - No compitamos con el arranque intenso de SK (evaluators, deltas, etc.).
+     - La primera alarma no tenga que esperar ~200-500ms de ffmpeg. */
+  setTimeout(() => { _precomputeAudioAssets(); }, 3000);
 })();
 
 // Rev43: probe espeak presence at startup. If missing, emit an informational
@@ -14162,7 +14316,12 @@ expressApp.post("/signalk-mareas-ihm/api/audio/alarm-volume", requireControlAcce
   // Rev162-bis: invalidamos cache de audios pre-amplificados — la próxima
   // alarma re-encodificará al nuevo factor antes del primer paplay.
   _invalidateGainCache();
-  app.debug(`[IHM-PI-AUDIO] alarm volume set to ${pct}% (ffmpeg gain factor ${(pct/100).toFixed(2)})`);
+  /* Rev857 (K-03 Fase 3.12/3.13): invalidar también la cache de sirenas
+     pre-renderizadas (depende del volumen) + re-precomputar TODO en
+     background para que la próxima alarma no espere ~200-500ms de ffmpeg. */
+  _invalidateSirenSequenceCache();
+  _precomputeAudioAssets();
+  app.debug(`[IHM-PI-AUDIO] alarm volume set to ${pct}% (ffmpeg gain factor ${(pct/100).toFixed(2)}), re-precomputing audio assets in background`);
   res.json({ ok: true, alarmVolumePct: pct });
 });
 
