@@ -7578,7 +7578,15 @@ function doDrop(opts){if(anch||!bPos){if(!bPos)alert('Sin posición GPS');return
        atrasados que puedan traer anchored=false o dispararlo de nuevo con
        eco tardío del propio drop. */
     window._lastLocalDropMs = Date.now();
-    window._lastAnchorDownVoiceMs = window._lastLocalDropMs;
+    /* Rev858 (K-04 fix): la línea "window._lastAnchorDownVoiceMs =
+       window._lastLocalDropMs" que ANTES estaba aquí era una regresión —
+       marcaba el timestamp del dedupe 300 ms ANTES del setTimeout que
+       intenta llamar _speakAlarm('anchor_down'). Efecto: el dedupe de
+       30 s (L7612) siempre bloqueaba porque el timestamp acababa de
+       ponerse a NOW. Resultado: "Ancla fondeada" no sonaba NUNCA en
+       drop local (confirmado por Carlos: "no sono ni una sola vez").
+       El SSE handler (L8283) tiene su propio guard vía `_dropFresh` +
+       `_justLifted` y no necesita esta pre-marca. */
     /* Garreo siempre ON — alarma base de seguridad del fondeo (Rev629: sigue
        siendo obligatoria; el popup de confirmación pre-drop no la muestra). */
     _alarmGarreoEnabled=true;localStorage.setItem('ihm-garreo-alarm','1');
@@ -7603,15 +7611,17 @@ function doDrop(opts){if(anch||!bPos){if(!bPos)alert('Sin posición GPS');return
        matter most. */
     if(typeof _autoEnableAudio==='function')_autoEnableAudio('drop');
     /* Rev152: tras priming de audio, reproducir confirmación "Ancla fondeada".
-       Rev598 (feedback Carlos): dedupe bajado 30→5s — 30s era demasiado y
-       suprimía la voz en QA con drop/lift/drop rápidos. */
+       Rev859 (feedback Carlos post-K-04): dedupe bajado 30→5s. Ahora que
+       Rev858 ya evita el auto-bloqueo del propio drop, 30s era demasiado
+       para operativa real y para tests con drop/lift/drop rápidos. 5s
+       basta contra doble-clic accidental y eco SSE inmediata. */
     setTimeout(function(){
       var _n = Date.now();
-      /* Rev635: dedupe voz "ancla fondeada" 5→30s. Con Tailscale/4G la eco
-         SSE puede espaciarse 5-20s y disparaba dos veces la voz. */
-      if (!window._lastAnchorDownVoiceMs || (_n - window._lastAnchorDownVoiceMs) > 30000){
-        window._lastAnchorDownVoiceMs = _n;
-        try{ _speakAlarm('anchor_down'); }catch(_){}
+      if (!window._lastAnchorDownVoiceMs || (_n - window._lastAnchorDownVoiceMs) > 5000){
+        try{
+          _speakAlarm('anchor_down');
+          window._lastAnchorDownVoiceMs = _n;   /* marcar tras éxito de la llamada */
+        }catch(_){ /* si _speakAlarm lanza, NO marcamos → siguiente drop puede reintentar */ }
       }
     }, 300);
     /* Rev630: sincronizar checkboxes del panel Alarmas + activar backend
@@ -8280,18 +8290,23 @@ function processPollData(s){
     if (typeof _prevAnch !== 'undefined' && _prevAnch === false && anch === true && _dropFresh && !_justLifted && typeof _autoEnableAudio==='function'){
       _autoEnableAudio('drop-sse');
       var _now = Date.now();
-      if (!window._lastAnchorDownVoiceMs || (_now - window._lastAnchorDownVoiceMs) > 30000){
-        window._lastAnchorDownVoiceMs = _now;
+      /* Rev859: dedupe 30→5s (ver comentario del drop local). */
+      if (!window._lastAnchorDownVoiceMs || (_now - window._lastAnchorDownVoiceMs) > 5000){
         /* Rev338 (fix QA Rev336 cross-device): drop desde otro device no tiene
            user gesture reciente aquí. _autoEnableAudio llama ctx.resume() async;
            300ms a veces no basta en desktop tras suspended → BufferSource.start
            cae sobre ctx suspended → silencio. Polleo el ctx hasta 1.5s buscando
            state='running' antes de hablar; si no llega, intento igual (HTMLAudio
-           fallback). */
+           fallback).
+           Rev859 (consistencia con L7623): marcar timestamp DESPUÉS de la
+           llamada, dentro del try — si falla, siguiente drop puede reintentar. */
         var _t0Drop = Date.now();
         var _tryDropSpeak = function(){
           if (!_audioCtx || _audioCtx.state === 'running' || Date.now() - _t0Drop > 1500){
-            try{ _speakAlarm('anchor_down'); }catch(_){ }
+            try{
+              _speakAlarm('anchor_down');
+              window._lastAnchorDownVoiceMs = _now;
+            }catch(_){ }
             return;
           }
           setTimeout(_tryDropSpeak, 50);
