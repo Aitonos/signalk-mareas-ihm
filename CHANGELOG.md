@@ -1,5 +1,67 @@
 # Changelog
 
+## [2.11.3] - 2026-08-04
+
+### English
+
+**Pi audio pipeline reliability — end-to-end hardening (K-03)**
+
+Full sprint on the Pi-side audio pipeline after Carlos confirmed intermittent failures in production. Root causes fixed:
+
+- **Cancelled playback no longer restarts a stale retry.** A per-kind generation token is captured before each spawn; when the operator cancels the alarm mid-voice, an in-flight `paplay` that returns SIGKILL is classified as `cancelled`, not as a failure — so the retry chain no longer resurrects the burst you just silenced.
+- **`execFile` timeouts are now real failures, not silent successes.** Added a typed outcome discriminant (`ok | cancelled | timeout | spawn_error | exit_error`) and reworked all 3 `paplay` call sites (voice OGG, AIS siren burst, drag siren burst) to use it.
+- **Retry no longer picks a dead sink.** New `_resolveSinkForPlayback` returns a primary + fallback list resolved from a fresh `pactl list sinks short` probe (with `LC_ALL=C` so it works on non-UTF-8 locales), preferring user choice > USB > analog jack > HDMI. Retry walks the resolved list with an explicit `--device` argument — it never falls back to the system default sink blindly (which was HDMI on headless Pi 5, a silent black hole).
+- **`_probeOggDuration` no longer hangs the voice state machine.** Added a `.catch()` net with a 5 s reserve duration.
+- **`_safeKillProc` upgraded.** SIGTERM → 200 ms grace → SIGKILL rescue; the rescue timer cancels on `exit` and uses `unref()` so it doesn't keep the loop alive.
+
+**Pi audio observability — `/api/audio-health` + Alarm Panel badge**
+
+Passive health endpoint exposes: default sink, resolved sink probe, ring buffer of the last 20 `paplay` attempts (`ts, kind, sink, outcome, durationMs, generation, retryCount`), consecutive failures, last success/failure timestamps, three-user-services status, event-loop delay histogram (native `perf_hooks.monitorEventLoopDelay`). 5 s cache — no polling cost. A compact live widget in the Alarm Panel (🔔) shows the last outcome and lets you inspect without SSH.
+
+**Pre-rendered siren + background gain precompute**
+
+Alarm siren sequence (3 bursts + gaps + 250 ms prepended silence) is rendered once at startup with `ffmpeg`, cached in `/tmp/ihm-siren-*.wav`. The 250 ms silence wakes the DAC before the first useful sample — avoids the front-of-siren clipping observed on the Jieli USB DAC. Volume gain precomputed in background on start and on any volume change, so the alarm path never blocks on ffmpeg. Fallback to the 3-`execFile` legacy path preserved if either the pre-render or the gain fails — a boot render failure cannot leave the boat without an alarm.
+
+**Wizard system-check upgrades**
+
+The wizard's system-check step now verifies `Linger=yes` for the pi user (`loginctl user-status pi`) and that `pipewire`, `pipewire-pulse`, and `wireplumber` are all `active` under the user session — the three pieces the audio pipeline needs. `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` are injected explicitly so `systemctl --user` works even when SignalK runs as a system service.
+
+**Client browser "Anchor down" confirmation now actually plays (K-04)**
+
+Reported by Carlos: pressing "Fondear" on the laptop/mobile browser did not play the "Ancla fondeada" confirmation — sometimes, sometimes never. Root cause: the client marked its dedupe timestamp *immediately* after the `/drop` POST response, so the deferred `_speakAlarm('anchor_down')` scheduled 300 ms later always found the dedupe window blocking the call. Fix: timestamp is now marked **after** `_speakAlarm` returns successfully, inside the try — a throw leaves the dedupe unmarked and the next drop can retry. Same anti-pattern fixed by symmetry in the SSE cross-device path. Additionally, dedupe window bumped down from 30 s → 5 s: 30 s came from an old Tailscale/4G SSE echo suppression but was blocking legitimate rapid drop/lift/drop maneuvers; 5 s is enough against double-click while allowing normal operation. Verified by Carlos with 6 drops: 4 spaced >5 s all sounded, 2 spaced <5 s correctly deduped.
+
+---
+
+### Español
+
+**Fiabilidad del pipeline de audio del Pi — endurecimiento end-to-end (K-03)**
+
+Sprint completo sobre el pipeline de audio del lado Pi tras confirmar Carlos fallos intermitentes en producción. Causas raíz corregidas:
+
+- **Un playback cancelado ya no reactiva un retry huérfano.** Se captura un token de generación por tipo antes de cada spawn; cuando el operador cancela la alarma en medio de la voz, un `paplay` en vuelo que devuelve SIGKILL se clasifica como `cancelled`, no como fallo — así la cadena de retry ya no resucita la ráfaga que acabas de silenciar.
+- **Los timeouts de `execFile` son fallos reales, no éxitos silenciosos.** Añadido un discriminante tipado (`ok | cancelled | timeout | spawn_error | exit_error`) y reescritos los 3 sitios de llamada `paplay` (voz OGG, sirena AIS, sirena garreo).
+- **El retry ya no elige un sink muerto.** Nuevo `_resolveSinkForPlayback` devuelve un sink primario + lista de fallback resueltos con un probe fresco de `pactl list sinks short` (con `LC_ALL=C` para que funcione con locale no UTF-8), priorizando elección del usuario > USB > jack analógico > HDMI. El retry recorre la lista con un `--device` explícito — nunca cae al sink default del sistema a ciegas (que en Pi 5 headless era HDMI, un agujero negro silencioso).
+- **`_probeOggDuration` ya no cuelga la máquina de estados de voz.** Red `.catch()` con duración de reserva 5 s.
+- **`_safeKillProc` mejorado.** SIGTERM → 200 ms de gracia → SIGKILL de rescate; el timer de rescate se cancela en `exit` y usa `unref()` para no mantener el loop vivo.
+
+**Observabilidad del audio del Pi — `/api/audio-health` + badge en Panel de Alarmas**
+
+Endpoint pasivo de salud que expone: sink por defecto, probe del sink resuelto, ring buffer de los últimos 20 intentos de `paplay` (`ts, kind, sink, outcome, durationMs, generation, retryCount`), fallos consecutivos, timestamps de último éxito/fallo, estado de los tres user services, histograma del event-loop delay (`perf_hooks.monitorEventLoopDelay` nativo). Cache 5 s — sin coste de polling. Widget compacto en vivo en el Panel de Alarmas (🔔) muestra el último resultado y permite inspeccionar sin SSH.
+
+**Sirena pre-renderizada + pre-cómputo de gain en background**
+
+La secuencia de sirena (3 bursts + gaps + 250 ms de silencio inicial) se renderiza una sola vez al arranque con `ffmpeg`, cacheada en `/tmp/ihm-siren-*.wav`. Los 250 ms de silencio despiertan el DAC antes de la primera muestra útil — evita el clipping observado al inicio en el DAC USB Jieli. Gain de volumen pre-computado en background al arranque y en cada cambio de volumen, así el path de alarma nunca bloquea en ffmpeg. Se preserva el fallback al patrón antiguo de 3 `execFile` si el pre-render o el gain fallan — un fallo de render al boot no puede dejar al barco sin alarma.
+
+**Mejoras del wizard system-check**
+
+El paso system-check del wizard verifica ahora `Linger=yes` para el usuario pi (`loginctl user-status pi`) y que `pipewire`, `pipewire-pulse` y `wireplumber` estén los tres `active` bajo la sesión de usuario — las tres piezas que el pipeline de audio necesita. `DBUS_SESSION_BUS_ADDRESS` y `XDG_RUNTIME_DIR` se inyectan explícitamente para que `systemctl --user` funcione incluso cuando SignalK corre como servicio de sistema.
+
+**La confirmación "Ancla fondeada" del navegador cliente ya suena (K-04)**
+
+Reportado por Carlos: pulsar "Fondear" en el navegador del portátil/móvil no reproducía la confirmación "Ancla fondeada" — a veces sí, a veces no. Causa raíz: el cliente marcaba su timestamp de dedupe *inmediatamente* tras la respuesta POST del `/drop`, así que el `_speakAlarm('anchor_down')` diferido 300 ms más tarde encontraba siempre la ventana de dedupe bloqueando la llamada. Fix: el timestamp se marca **después** del retorno correcto de `_speakAlarm`, dentro del try — si lanza, el dedupe queda sin marcar y el siguiente drop puede reintentar. Mismo anti-patrón corregido por simetría en el path SSE cross-device. Además, ventana de dedupe bajada de 30 s → 5 s: los 30 s venían de una vieja supresión de eco SSE de Tailscale/4G pero bloqueaban maniobras legítimas drop/lift/drop rápidas; 5 s bastan contra doble-clic permitiendo operación normal. Verificado por Carlos con 6 drops: 4 espaciados >5 s sonaron todos, 2 espaciados <5 s se dedupearon correctamente.
+
+---
+
 ## [2.11.2] - 2026-08-01
 
 ### English

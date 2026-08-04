@@ -1,6 +1,6 @@
 # QA_PENDIENTE — validaciones en agua real antes del próximo publish
 
-Estado: **2026-08-02** (Rev843 / v2.11.2). Snapshots históricos:
+Estado: **2026-08-04** (Rev860 / v2.11.3). Snapshots históricos:
 - 2026-06-24 (bugs B-23 a B-26, wizard mandatorio M-02) → resuelto,
   archivo en [`archive/QA_PENDIENTE_2026-06-24_snapshot.md`](archive/QA_PENDIENTE_2026-06-24_snapshot.md).
 - 2026-07-21 (features 2.7 → 2.9 QA + auto-lift + AIS triple online +
@@ -12,7 +12,7 @@ Estado: **2026-08-02** (Rev843 / v2.11.2). Snapshots históricos:
 
 ## 🌊 QA abierto — features 2.11.x publicadas
 
-Todas están **implementadas, desplegadas y publicadas en NPM 2.11.2**.
+Todas están **implementadas, desplegadas y publicadas en NPM 2.11.3**.
 Carlos ya validó lo esencial durante el ciclo; queda validación en
 navegación real de:
 
@@ -51,29 +51,36 @@ navegación real de:
 
 ---
 
+## 🌊 QA abierto — features 2.11.3 (K-03 + K-04)
+
+### K-03 Fase 2 — Panel de Alarmas → widget audio-health
+- Abrir 🔔 → verificar que el widget de "Salud del audio" muestra los
+  últimos intentos y el sink en uso.
+- Test manual del sink (botón "Probar audio del Pi") reproduce
+  fanfarria corta por el USB.
+- Fallo forzado (desenchufar DAC USB) → widget refleja fallos
+  consecutivos y notification SK degradada.
+
+### K-03 Fase 3 — Sirena pre-renderizada
+- Reset del Pi → comprobar que la primera sirena AIS/garreo empieza
+  limpia (sin recorte al inicio, gracias a los 250 ms de silencio).
+- Cambiar el volumen desde el visor → el gain pre-computado se
+  actualiza en background (revisar `/api/audio-health` `lastPrecomputeMs`).
+
+### K-04 — Voz "Ancla fondeada" del cliente
+- Portátil Firefox: 3 drops separados >5 s → los 3 suenan.
+- Portátil Firefox: 2 drops muy rápidos <5 s → el segundo se dedupea.
+- Móvil: idem (verificar AudioContext resume con user gesture).
+- Cross-device: drop en móvil con visor abierto en portátil → suena
+  también en el portátil (path SSE L8296).
+
 ## 🐛 Bugs vigentes a arreglar (fuera de agua)
 
 ### UTF-8 doble-codificación en logs / activity log
 **Síntoma**: "Moaña" aparece como "MoaÃ±a" en algunos textos que pasan
 por un pipeline con codificación mixta.
 
-**Prioridad**: media — es visual pero desmerece la UX.
-
-### Audio Pi — reproducción intermitente
-**Síntoma**: alarmas del Pi (sirena, voz OGG) fallan con más
-frecuencia de lo aceptable para una capa de seguridad.
-
-**Hipótesis en investigación**: relación con VPN (Tailscale) — quizás
-el pipeline de audio queda afectado por el stack de red o por
-dependencias del backend que se cuelgan cuando la ruta cambia.
-Confirmar con:
-- ¿Falla con VPN off?
-- ¿Falla más cuando el 4G se degrada?
-- ¿Correlación con log de systemd (`journalctl -u signalk`) alrededor
-  del fallo?
-
-**Prioridad**: **alta** — es capa de seguridad; si falla, la vigilancia
-efectiva se degrada al audio cliente que ya es complementario.
+**Prioridad**: media — es visual pero desmerece la UX. Objetivo 2.11.4.
 
 ---
 
