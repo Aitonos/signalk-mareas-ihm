@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev863";
+const PLUGIN_REVISION = "Rev864";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -12386,7 +12386,7 @@ function _skReadPath(path: string): any {
      2) Si null y contiene ".", ve cortando el último segmento y baja manualmente
         por el objeto (value.subKey.subKey…). */
   try {
-    let raw: any = (app as any).getSelfPath?.(path);
+    const raw: any = (app as any).getSelfPath?.(path);
     if (raw != null) {
       if (typeof raw === "object" && "value" in raw) {
         const v = (raw as any).value;
