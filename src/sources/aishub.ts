@@ -21,6 +21,8 @@
  * lento, por debajo en prioridad.
  */
 
+import { BackoffScheduler } from "../util/backoffScheduler.js";
+
 export interface AishubTargetUpdate {
   mmsi: string;
   lat?: number | null;
@@ -81,14 +83,18 @@ export function startAishub(opts: AishubOptions): AishubHandle {
   let closed = false;
   let currentBB = opts.boundingBox;
   const intervalMs = Math.max(60_000, opts.pollIntervalMs ?? 65_000);
-  /* Rev865 (issue #40): backoff separado para rate-limit / errores
-     persistentes del server. Sin esto, seguíamos polleando cada 65 s
-     contra un endpoint que devolvía 429/error persistente, manteniendo
-     la ventana rate-limit deslizante activa y auto-perpetuándose. */
-  const RATE_LIMIT_MIN_MS = 5 * 60_000;   // 5 min tras primer 429/error
-  const RATE_LIMIT_MAX_MS = 30 * 60_000;  // 30 min cap
-  let backoffMs = intervalMs;
-  let inRateLimitBackoff = false;
+  /* Rev865 (issue #40) + Rev875 (refactor): backoff con dos regímenes
+     via BackoffScheduler compartido. Sin backoff, seguíamos polleando
+     cada 65 s contra un endpoint que devolvía 429/error persistente,
+     manteniendo la ventana rate-limit deslizante activa y
+     auto-perpetuándose. Normal regime = intervalMs poll. Rate-limit
+     regime = 5 min → 30 min cap. Tests: tests/backoffScheduler.test.js. */
+  const backoff = new BackoffScheduler({
+    normalMinMs: intervalMs,
+    normalMaxMs: intervalMs, // aishub siempre poll cada 65 s en éxito
+    rateLimitMinMs: 5 * 60_000,
+    rateLimitMaxMs: 30 * 60_000,
+  });
   let pollTimer: any = null;
   let nextPollAtMs = 0; // ms epoch cuándo dispara el próximo poll
   let msgReceived = 0;
@@ -138,12 +144,15 @@ export function startAishub(opts: AishubOptions): AishubHandle {
         lastErrorMs = Date.now();
         connected = false;
         error(`poll failed: ${lastError}`);
-        /* Rev865 (issue #40): entrar en rate-limit backoff para 429 y
-           también para 5xx sostenidos. 4xx que no sea 429 son bugs de
-           config (401/403 = credenciales inválidas) — mismo tratamiento
+        /* Rev875: entrar en rate-limit backoff para 429 y también para
+           5xx sostenidos. 4xx que no sea 429 son bugs de config
+           (401/403 = credenciales inválidas) — mismo tratamiento
            conservador para no martillar el server. */
         if (res.status === 429 || res.status === 403 || res.status >= 500) {
-          _enterRateLimitBackoff(`HTTP ${res.status}`);
+          backoff.onRateLimit();
+          debug(`entering rate-limit backoff (HTTP ${res.status})`);
+        } else {
+          backoff.onTransientError();
         }
         return;
       }
@@ -185,12 +194,10 @@ export function startAishub(opts: AishubOptions): AishubHandle {
       connected = true;
       lastError = null;
       lastMsgMs = Date.now();
-      /* Rev865 (issue #40): poll exitoso → salir del backoff si estábamos. */
-      if (inRateLimitBackoff) {
-        debug(`rate-limit backoff released after successful poll`);
-        inRateLimitBackoff = false;
-      }
-      backoffMs = intervalMs;
+      /* Rev875: poll exitoso → reset backoff a regime normal. */
+      const wasInRl = backoff.getSnapshot(Date.now()).rateLimitBackoffActive;
+      backoff.onSuccess();
+      if (wasInRl) debug(`rate-limit backoff released after successful poll`);
       if (pollCount === 1) debug(`first poll OK — ${vessels.length} targets (RECORDS=${header.RECORDS})`);
       if (pollCount % 10 === 0) debug(`stats: poll #${pollCount} ${vessels.length} targets in ${lastPollDurationMs} ms (${msgAccepted} accepted total)`);
       for (const v of vessels) {
@@ -228,37 +235,21 @@ export function startAishub(opts: AishubOptions): AishubHandle {
       lastErrorMs = Date.now();
       connected = false;
       error(`poll exception: ${lastError}`);
+      backoff.onTransientError();
     } finally {
       inFlight = false;
-      /* Rev865 (issue #40): re-armar el próximo poll con el delay adaptativo. */
+      /* Rev875: re-armar próximo poll usando BackoffScheduler. */
       _scheduleNext();
     }
   }
 
-  /* Rev865 (issue #40): entra en modo backoff exponencial para rate-limit
-     (429) o errores persistentes del server (403 credencial, 5xx). */
-  function _enterRateLimitBackoff(reason: string): void {
-    if (!inRateLimitBackoff) {
-      inRateLimitBackoff = true;
-      backoffMs = RATE_LIMIT_MIN_MS;
-      debug(`entering rate-limit backoff (${reason}) — first retry in ${backoffMs}ms, cap ${RATE_LIMIT_MAX_MS}ms`);
-    } else {
-      backoffMs = Math.min(RATE_LIMIT_MAX_MS, backoffMs * 2);
-      debug(`still ${reason}, backoff extended to ${backoffMs}ms`);
-    }
-  }
-
-  /* Rev865 (issue #40): scheduler adaptativo. Usa `intervalMs` (65 s)
-     en modo normal; `backoffMs` en modo rate-limit. Jitter ±20 % evita
-     sincronización de múltiples clientes tras un rearranque de infra
-     aisstream/aishub que hubiese 429'd a todos a la vez. */
+  /* Rev875: scheduler adaptativo delegado a BackoffScheduler. */
   function _scheduleNext(): void {
     if (closed) return;
     if (pollTimer) clearTimeout(pollTimer);
-    const base = inRateLimitBackoff ? backoffMs : intervalMs;
-    const jitter = 1 + (Math.random() * 0.4 - 0.2);
-    const waitMs = Math.max(1000, Math.round(base * jitter));
-    nextPollAtMs = Date.now() + waitMs;
+    const now = Date.now();
+    const waitMs = backoff.nextDelay(now);
+    nextPollAtMs = now + waitMs;
     pollTimer = setTimeout(() => { if (!closed) pollOnce(); }, waitMs);
   }
 
@@ -283,6 +274,7 @@ export function startAishub(opts: AishubOptions): AishubHandle {
       if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     },
     getStats() {
+      const snap = backoff.getSnapshot(Date.now());
       return {
         received: msgReceived,
         accepted: msgAccepted,
@@ -295,7 +287,7 @@ export function startAishub(opts: AishubOptions): AishubHandle {
         lastError,
         lastErrorMs,
         intervalMs,
-        rateLimitBackoffActive: inRateLimitBackoff,
+        rateLimitBackoffActive: snap.rateLimitBackoffActive,
         nextPollInMs: Math.max(0, nextPollAtMs - Date.now()),
       };
     },

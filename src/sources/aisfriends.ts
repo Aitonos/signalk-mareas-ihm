@@ -28,6 +28,8 @@
  * cede a VHF (60 s), aisstream (120 s) y aishub (120 s).
  */
 
+import { BackoffScheduler } from "../util/backoffScheduler.js";
+
 export interface AisfriendsTargetUpdate {
   mmsi: string;
   lat?: number | null;
@@ -83,13 +85,16 @@ export function startAisfriends(opts: AisfriendsOptions): AisfriendsHandle {
   let closed = false;
   let currentBB = opts.boundingBox;
   const intervalMs = Math.max(60_000, opts.pollIntervalMs ?? 65_000);
-  /* Rev865 (issue #40): backoff separado — 429 y 403 (quality
-     requirements not met) requieren pausar mucho, no reintentar cada
-     65 s como antes. 503 (maintenance) también → backoff. */
-  const RATE_LIMIT_MIN_MS = 5 * 60_000;
-  const RATE_LIMIT_MAX_MS = 30 * 60_000;
-  let backoffMs = intervalMs;
-  let inRateLimitBackoff = false;
+  /* Rev865 (issue #40) + Rev875 (refactor): backoff separado — 429 y
+     403 (quality requirements not met) requieren pausar mucho, no
+     reintentar cada 65 s como antes. 503 (maintenance) también.
+     Delegado a BackoffScheduler compartido. */
+  const backoff = new BackoffScheduler({
+    normalMinMs: intervalMs,
+    normalMaxMs: intervalMs,
+    rateLimitMinMs: 5 * 60_000,
+    rateLimitMaxMs: 30 * 60_000,
+  });
   let pollTimer: any = null;
   let nextPollAtMs = 0;
   let msgReceived = 0;
@@ -155,13 +160,16 @@ export function startAisfriends(opts: AisfriendsOptions): AisfriendsHandle {
         lastErrorMs = Date.now();
         connected = false;
         error(`poll failed: ${lastError}`);
-        /* Rev865 (issue #40): activar backoff en errores persistentes.
+        /* Rev875: activar backoff en errores persistentes.
            401/403 = credencial mal → reintentar cada 65 s no ayuda
            (mismo resultado) y podría bloquear la cuenta. 429 = evidente.
            503 = maintenance transitorio. Todos comparten el mismo
            backoff conservador. */
         if (res.status === 429 || res.status === 403 || res.status === 401 || res.status === 503 || res.status >= 500) {
-          _enterRateLimitBackoff(`HTTP ${res.status}`);
+          backoff.onRateLimit();
+          debug(`entering rate-limit backoff (HTTP ${res.status})`);
+        } else {
+          backoff.onTransientError();
         }
         return;
       }
@@ -185,12 +193,10 @@ export function startAisfriends(opts: AisfriendsOptions): AisfriendsHandle {
       connected = true;
       lastError = null;
       lastMsgMs = Date.now();
-      /* Rev865 (issue #40): poll exitoso → salir del backoff. */
-      if (inRateLimitBackoff) {
-        debug(`rate-limit backoff released after successful poll`);
-        inRateLimitBackoff = false;
-      }
-      backoffMs = intervalMs;
+      /* Rev875: poll exitoso → reset backoff. */
+      const wasInRl = backoff.getSnapshot(Date.now()).rateLimitBackoffActive;
+      backoff.onSuccess();
+      if (wasInRl) debug(`rate-limit backoff released after successful poll`);
       if (pollCount === 1) debug(`first poll OK — ${parsed.length} targets`);
       if (pollCount % 10 === 0) debug(`stats: poll #${pollCount} ${parsed.length} targets in ${lastPollDurationMs} ms (${msgAccepted} accepted total)`);
       for (const v of parsed) {
@@ -233,35 +239,20 @@ export function startAisfriends(opts: AisfriendsOptions): AisfriendsHandle {
       lastErrorMs = Date.now();
       connected = false;
       error(`poll exception: ${lastError}`);
+      backoff.onTransientError();
     } finally {
       inFlight = false;
-      /* Rev865 (issue #40): re-armar próximo poll con delay adaptativo. */
+      /* Rev875: re-armar próximo poll via BackoffScheduler. */
       _scheduleNext();
     }
   }
 
-  /* Rev865 (issue #40): backoff exponencial para 429/403/503/5xx. Sin
-     esto, un rate-limit se auto-perpetuaba y el cliente quedaba
-     silencioso durante días (visto en @ABS0lute-1 diagnostic #37). */
-  function _enterRateLimitBackoff(reason: string): void {
-    if (!inRateLimitBackoff) {
-      inRateLimitBackoff = true;
-      backoffMs = RATE_LIMIT_MIN_MS;
-      debug(`entering rate-limit backoff (${reason}) — first retry in ${backoffMs}ms, cap ${RATE_LIMIT_MAX_MS}ms`);
-    } else {
-      backoffMs = Math.min(RATE_LIMIT_MAX_MS, backoffMs * 2);
-      debug(`still ${reason}, backoff extended to ${backoffMs}ms`);
-    }
-  }
-
-  /* Rev865 (issue #40): scheduler adaptativo con jitter ±20 %. */
   function _scheduleNext(): void {
     if (closed) return;
     if (pollTimer) clearTimeout(pollTimer);
-    const base = inRateLimitBackoff ? backoffMs : intervalMs;
-    const jitter = 1 + (Math.random() * 0.4 - 0.2);
-    const waitMs = Math.max(1000, Math.round(base * jitter));
-    nextPollAtMs = Date.now() + waitMs;
+    const now = Date.now();
+    const waitMs = backoff.nextDelay(now);
+    nextPollAtMs = now + waitMs;
     pollTimer = setTimeout(() => { if (!closed) pollOnce(); }, waitMs);
   }
 
@@ -281,6 +272,7 @@ export function startAisfriends(opts: AisfriendsOptions): AisfriendsHandle {
       if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     },
     getStats() {
+      const snap = backoff.getSnapshot(Date.now());
       return {
         received: msgReceived,
         accepted: msgAccepted,
@@ -294,7 +286,7 @@ export function startAisfriends(opts: AisfriendsOptions): AisfriendsHandle {
         lastErrorMs,
         intervalMs,
         lastHttpStatus,
-        rateLimitBackoffActive: inRateLimitBackoff,
+        rateLimitBackoffActive: snap.rateLimitBackoffActive,
         nextPollInMs: Math.max(0, nextPollAtMs - Date.now()),
       };
     },
