@@ -130,7 +130,7 @@
     "better-sqlite3": "^11.0.0",
     "leaflet": "^1.9.4",
     "moment-timezone": "^0.6.2",
-    "neaps": "^0.7.0",
+    "neaps": "^0.8.0",
     "pdf-parse": "^1.1.1",
     "ws": "^8.21.1"
   },
