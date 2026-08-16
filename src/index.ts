@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev870";
+const PLUGIN_REVISION = "Rev873";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1512,9 +1512,15 @@ export default function (app: SignalKApp): Plugin {
        activa está stale >30 s. Aparece en KIP / WilhelmSK / OP
        Notifications → usuario avisado sin abrir el visor. Solo emite en
        transición (bad↔good) para no spammear el bus. */
-    const _lastSubHealth: { ais: boolean; imu: boolean } = { ais: false, imu: false };
+    const _lastSubHealth: { ais: boolean; imu: boolean; audio: boolean } = { ais: false, imu: false, audio: false };
     const AIS_SILENCE_MS = 30 * 60_000;
     const IMU_STALE_MS = 30_000;
+    /* Rev872: umbral de fallos consecutivos audio Pi. 3+ fallos seguidos
+       (sin éxito intermedio) sugiere problema real del sink o del DAC
+       (USB desconectado, ALSA reset, PulseAudio caído). El warn preventivo
+       llega a WilhelmSK/KIP/OP antes de que la próxima alarma real quede
+       muda. Se limpia (state:normal) en cuanto un playback tiene éxito. */
+    const AUDIO_CONSEC_FAIL_THRESHOLD = 3;
     function _emitSubsystemHealth(): void {
       try {
         const now = Date.now();
@@ -1563,6 +1569,27 @@ export default function (app: SignalKApp): Plugin {
                 value: imuIsBad
                   ? { state: "warn", method: ["visual"], message: `IMU source '${imuActive?.id}' stale for ${Math.round((imuAgeMs || 0) / 1000)}s` }
                   : { state: "normal", method: [] as string[], message: "IMU source recovered" },
+              }]}],
+            });
+          } catch { /* defensive */ }
+        }
+        // -- Audio Pi preventive warn (Rev872) --
+        // Complementa la notification "audioPipelineDegraded" que solo
+        // se emite cuando TODOS los sinks fallan en un intento único.
+        // Este warn preventivo dispara cuando llevamos N fallos
+        // consecutivos (sin éxito intermedio) — early warning antes
+        // de que la siguiente alarma real quede muda.
+        const audioIsBad = _audioConsecutiveFailures >= AUDIO_CONSEC_FAIL_THRESHOLD;
+        if (audioIsBad !== _lastSubHealth.audio) {
+          _lastSubHealth.audio = audioIsBad;
+          try {
+            app.handleMessage(plugin.id, {
+              context: ("vessels." + app.selfId) as Context,
+              updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
+                path: "notifications.security.audioPipelineDegradedPreventive" as any,
+                value: audioIsBad
+                  ? { state: "warn", method: ["visual"], message: `Pi audio pipeline: ${_audioConsecutiveFailures} consecutive failures — next alarm may not sound` }
+                  : { state: "normal", method: [] as string[], message: "Pi audio pipeline recovered" },
               }]}],
             });
           } catch { /* defensive */ }
@@ -9586,7 +9613,20 @@ async function _fetchWx6h(lat: number, lng: number): Promise<void> {
   _wx6hFetchInFlight = true;
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&hourly=temperature_2m,wind_speed_10m,weather_code,is_day&wind_speed_unit=kn&forecast_days=2&timezone=auto`;
-    const r: any = await (globalThis as any).fetch(url);
+    /* Rev871: AbortController con timeout 10s. Sin timeout, un servidor
+       lento (Open-Meteo saturado, 4G del barco a 5 KB/s, TCP handshake
+       colgado) dejaba _wx6hFetchInFlight=true bloqueando futuros
+       intentos hasta que el TCP timeout del kernel disparara (~2 min).
+       Con 10s explícito, un fetch fallido libera el flag rápido y el
+       siguiente tick reintenta. Cache existente se mantiene si falla. */
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10_000);
+    let r: any;
+    try {
+      r = await (globalThis as any).fetch(url, { signal: ctrl.signal });
+    } finally {
+      clearTimeout(timer);
+    }
     if (!r || !r.ok) return;
     const j: any = await r.json();
     if (!j || !j.hourly || !Array.isArray(j.hourly.time)) return;
@@ -13959,9 +13999,17 @@ interface _AudioAttemptEntry {
 }
 const _AUDIO_HISTORY_MAX = 20;
 const _audioAttemptHistory: _AudioAttemptEntry[] = [];
-let _audioConsecutiveFailures = 0;
-let _audioLastSuccessMs: number | null = null;
-let _audioLastFailureMs: number | null = null;
+/* Rev872: usamos var para hoisting — el watchdog Rev869 (dentro de
+   start(), L1582) referencia _audioConsecutiveFailures antes de que
+   esta línea se ejecute en runtime. Con `let` TypeScript quejaba en
+   compile-time "Cannot find name". `var` es idiomático aquí — patrón
+   forward-declaration común en el monolito. */
+// eslint-disable-next-line no-var
+var _audioConsecutiveFailures = 0;
+// eslint-disable-next-line no-var
+var _audioLastSuccessMs: number | null = null;
+// eslint-disable-next-line no-var
+var _audioLastFailureMs: number | null = null;
 function _recordAudioAttempt(entry: Omit<_AudioAttemptEntry, "tsMs">) {
   const now = Date.now();
   const rec: _AudioAttemptEntry = { tsMs: now, ...entry };

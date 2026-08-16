@@ -3479,6 +3479,25 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
         </div>
         <div id="audio-health-detail" style="display:none;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;color:#c8d6e0"></div>
       </div>
+      <!-- Rev873: widget salud IMU. Muestra fuente activa + edad + Hz.
+           Se refresca con el mismo timer del Panel Alarmas. Detalle
+           expandible con todas las fuentes disponibles. -->
+      <div id="imu-health-panel" style="margin-top:10px;padding:12px 14px;background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.10);border-radius:10px;font-size:14px;color:#cfd8dc">
+        <div id="imu-health-summary" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <span>📐 <b data-i18n="imu_health_title">Salud IMU</b> · <span id="imu-health-status" style="color:#9aa">cargando…</span></span>
+          <button onclick="_imuHealthToggle()" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.20);color:#cfd8dc;font-size:13px;padding:5px 10px;border-radius:6px;cursor:pointer" id="imu-health-toggle-btn">▾ Detalle</button>
+        </div>
+        <div id="imu-health-detail" style="display:none;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;color:#c8d6e0"></div>
+      </div>
+      <!-- Rev873: widget salud AIS online (aisstream + aishub + aisfriends).
+           Muestra qué motores están conectados / silent / rate-limited. -->
+      <div id="ais-health-panel" style="margin-top:10px;padding:12px 14px;background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.10);border-radius:10px;font-size:14px;color:#cfd8dc">
+        <div id="ais-health-summary" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <span>📡 <b data-i18n="ais_health_title">Salud AIS online</b> · <span id="ais-health-status" style="color:#9aa">cargando…</span></span>
+          <button onclick="_aisHealthToggle()" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.20);color:#cfd8dc;font-size:13px;padding:5px 10px;border-radius:6px;cursor:pointer" id="ais-health-toggle-btn">▾ Detalle</button>
+        </div>
+        <div id="ais-health-detail" style="display:none;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;color:#c8d6e0"></div>
+      </div>
       <!-- Rev868: atajo directo al diagnóstico. Antes solo estaba
            accesible desde el modal Feedback en la sidebar; ahora
            visible en el Panel Alarmas donde el usuario está mirando
@@ -6238,6 +6257,8 @@ var _i18n={
   audio_pi:{es:'Salida audio Pi',en:'Pi audio output'},
   vol_alarmas:{es:'🔊 Volumen alarmas',en:'🔊 Alarm volume'},
   audio_health_title:{es:'Salud audio Pi',en:'Pi audio health'},
+  imu_health_title:{es:'Salud IMU',en:'IMU health'},
+  ais_health_title:{es:'Salud AIS online',en:'AIS online health'},
   diag_capture_btn:{es:'🐛 Capturar diagnóstico',en:'🐛 Capture diagnostic'},
   vol_alarmas_hint:{es:'50–100% normal · 100–250% amplificación con limitador (sin chasquidos)',en:'50–100% normal · 100–250% boost with limiter (no clipping)'},
   probar:{es:'Probar',en:'Test'},
@@ -12685,6 +12706,9 @@ closePopup=function(id){
      cerrar el panel de Alarmas (donde vive el badge). */
   if(id==='alarm-panel-pop'){
     try{ if(typeof _audioHealthStop === 'function') _audioHealthStop(); }catch(_){}
+    /* Rev873: parar también los nuevos widgets IMU + AIS status. */
+    try{ if(typeof _imuHealthStop === 'function') _imuHealthStop(); }catch(_){}
+    try{ if(typeof _aisHealthStop === 'function') _aisHealthStop(); }catch(_){}
   }
   if(id==='ais-pop'){
     /* If closing a popup whose target is DISAPPEARED and not yet ACKed,
@@ -13031,6 +13055,10 @@ function toggleAlarmPanel(){
      modal (junto al selector de sink), NO en Config como pensé por error.
      Arrancar polling aquí y parar al cerrar. */
   try{ if(typeof _audioHealthStart === 'function') _audioHealthStart(); }catch(_){}
+  /* Rev873: arrancar también los nuevos widgets IMU + AIS. Mismo timer
+     15s de refresh compartido para minimizar carga. */
+  try{ if(typeof _imuHealthStart === 'function') _imuHealthStart(); }catch(_){}
+  try{ if(typeof _aisHealthStart === 'function') _aisHealthStart(); }catch(_){}
   openPopup('alarm-panel-pop');
 }
 /* Bug 8 (Deploy 3a): Pi audio output management */
@@ -13185,6 +13213,152 @@ function _audioHealthStart(){
 }
 function _audioHealthStop(){
   if(_audioHealthTimer){ clearInterval(_audioHealthTimer); _audioHealthTimer=null; }
+}
+/* Rev873: widgets IMU + AIS status en Panel Alarmas. Mismo patrón que
+   audio-health: refresh cada 15s solo mientras el panel está abierto. */
+var _imuHealthTimer=null;
+var _imuHealthDetailOpen=false;
+var _aisHealthTimer=null;
+var _aisHealthDetailOpen=false;
+function _imuHealthToggle(){
+  var det=document.getElementById('imu-health-detail');
+  var btn=document.getElementById('imu-health-toggle-btn');
+  if(!det||!btn)return;
+  _imuHealthDetailOpen=!_imuHealthDetailOpen;
+  det.style.display=_imuHealthDetailOpen?'block':'none';
+  btn.textContent=_imuHealthDetailOpen?'▴ Ocultar':'▾ Detalle';
+  if(_imuHealthDetailOpen) _imuHealthRefresh();
+}
+function _imuHealthRefresh(){
+  var panel=document.getElementById('imu-health-panel');
+  if(!panel) return;
+  fetch(A+'/imu/status',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(d){
+    if(!d)return;
+    var st=document.getElementById('imu-health-status');
+    var det=document.getElementById('imu-health-detail');
+    var active=d.active;
+    var available=Array.isArray(d.available)?d.available:[];
+    var isOK=!!(active && active.id);
+    var color=isOK?'#3aa856':'#e53935';
+    panel.style.borderColor=isOK?'rgba(255,255,255,.10)':'rgba(229,57,53,.55)';
+    if(st){
+      if(isOK){
+        var age=active.ageMs;
+        var ageTxt=(typeof age==='number'&&isFinite(age))?(age<1000?age+'ms':Math.round(age/1000)+'s'):'?';
+        st.innerHTML='<b style="color:'+color+'">'+active.id+'</b> · edad '+ageTxt;
+      } else {
+        st.innerHTML='<b style="color:'+color+'">SIN FUENTE</b> · widget IMU quedará a 0';
+      }
+    }
+    if(det){
+      var lines=[];
+      lines.push('<b>Fuente activa:</b> '+(active?active.id:'—')+' ('+(active?active.type:'—')+')');
+      lines.push('<b>Fuentes registradas:</b> '+available.length);
+      available.forEach(function(s){
+        var sym=s.status==='active'?'✓':s.status==='available'?'○':s.status==='stale'?'⚠':'✗';
+        var sc=s.status==='active'?'#3aa856':s.status==='available'?'#9aa':s.status==='stale'?'#ff9800':'#e53935';
+        var provides=[];
+        if(s.provides){
+          if(s.provides.headingMagnetic||s.provides.headingTrue) provides.push('heading');
+          if(s.provides.roll) provides.push('roll');
+          if(s.provides.pitch) provides.push('pitch');
+          if(s.provides.acceleration) provides.push('accel');
+          if(s.provides.gyro) provides.push('gyro');
+        }
+        lines.push('&nbsp;&nbsp;<span style="color:'+sc+'">'+sym+'</span> '+s.id+' <span style="color:#9ad;font-size:12px">('+s.status+', prio '+s.priority+', '+s.sampleRateHz+'Hz)'+(provides.length?' → '+provides.join(','):'')+'</span>'+(s.lastError?'<br>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#e53935;font-size:12px">'+s.lastError+'</span>':''));
+      });
+      det.innerHTML=lines.join('<br>');
+    }
+  }).catch(function(){});
+}
+function _imuHealthStart(){
+  _imuHealthRefresh();
+  if(_imuHealthTimer) clearInterval(_imuHealthTimer);
+  _imuHealthTimer=setInterval(_imuHealthRefresh,15000);
+}
+function _imuHealthStop(){
+  if(_imuHealthTimer){ clearInterval(_imuHealthTimer); _imuHealthTimer=null; }
+}
+function _aisHealthToggle(){
+  var det=document.getElementById('ais-health-detail');
+  var btn=document.getElementById('ais-health-toggle-btn');
+  if(!det||!btn)return;
+  _aisHealthDetailOpen=!_aisHealthDetailOpen;
+  det.style.display=_aisHealthDetailOpen?'block':'none';
+  btn.textContent=_aisHealthDetailOpen?'▴ Ocultar':'▾ Detalle';
+  if(_aisHealthDetailOpen) _aisHealthRefresh();
+}
+function _aisHealthRefresh(){
+  var panel=document.getElementById('ais-health-panel');
+  if(!panel) return;
+  /* Reusamos /api/diagnostic (que ya expone los 3 clientes). Alternativa
+     serían 3 fetches individuales pero es más ruidoso. */
+  fetch(A+'/diagnostic',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(d){
+    if(!d)return;
+    var st=document.getElementById('ais-health-status');
+    var det=document.getElementById('ais-health-detail');
+    var now=Date.now();
+    var engines=[
+      {name:'aisstream',data:d.aisstream},
+      {name:'aishub',data:d.aishub},
+      {name:'aisfriends',data:d.aisfriends},
+    ].filter(function(e){return e.data&&(e.data.tokenSetInProps||e.data.apiKeySetInProps||e.data.clientRunning||e.data.received);});
+    if(engines.length===0){
+      panel.style.display='none';
+      return;
+    }
+    panel.style.display='';
+    var badMotors=[];
+    var goodMotors=[];
+    engines.forEach(function(e){
+      var s=e.data;
+      var silent=s.lastMsgAgeMs>1800000; /* >30 min */
+      var backoff=!!s.rateLimitBackoffActive;
+      if(silent||backoff){
+        badMotors.push(e.name+(backoff?'(rate-limit)':'(silent)'));
+      } else if(s.connected||(s.lastMsgAgeMs>=0&&s.lastMsgAgeMs<300000)){
+        goodMotors.push(e.name);
+      }
+    });
+    var isOK=badMotors.length===0&&goodMotors.length>0;
+    var color=badMotors.length>0?'#ff9800':(goodMotors.length>0?'#3aa856':'#9aa');
+    panel.style.borderColor=badMotors.length>0?'rgba(255,152,0,.55)':'rgba(255,255,255,.10)';
+    if(st){
+      if(badMotors.length>0){
+        st.innerHTML='<b style="color:'+color+'">⚠ '+badMotors.length+' degradado(s)</b> · '+badMotors.join(', ');
+      } else if(goodMotors.length>0){
+        st.innerHTML='<b style="color:'+color+'">OK</b> · '+goodMotors.join(', ');
+      } else {
+        st.innerHTML='<b style="color:#9aa">sin actividad</b>';
+      }
+    }
+    if(det){
+      var lines=[];
+      engines.forEach(function(e){
+        var s=e.data;
+        var connSym=s.connected?'✓':'○';
+        var connColor=s.connected?'#3aa856':'#9aa';
+        var ageTxt=s.lastMsgAgeMs>=0?_msToRelative(now-s.lastMsgAgeMs):'nunca';
+        var extra=[];
+        if(s.rateLimitBackoffActive) extra.push('<span style="color:#ff9800">rate-limit backoff</span>');
+        if(typeof s.nextReconnectMs==='number'&&s.nextReconnectMs>0) extra.push('next reconnect '+Math.round(s.nextReconnectMs/1000)+'s');
+        if(typeof s.nextPollInMs==='number'&&s.nextPollInMs>0) extra.push('next poll '+Math.round(s.nextPollInMs/1000)+'s');
+        lines.push('<b><span style="color:'+connColor+'">'+connSym+'</span> '+e.name+'</b>: '+(s.received||0)+' recv, último msg '+ageTxt+(extra.length?' · '+extra.join(' · '):''));
+        if(s.lastError){
+          lines.push('&nbsp;&nbsp;<span style="color:#e53935;font-size:12px">'+s.lastError+'</span>');
+        }
+      });
+      det.innerHTML=lines.join('<br>');
+    }
+  }).catch(function(){});
+}
+function _aisHealthStart(){
+  _aisHealthRefresh();
+  if(_aisHealthTimer) clearInterval(_aisHealthTimer);
+  _aisHealthTimer=setInterval(_aisHealthRefresh,15000);
+}
+function _aisHealthStop(){
+  if(_aisHealthTimer){ clearInterval(_aisHealthTimer); _aisHealthTimer=null; }
 }
 function testPiAudio(){
   var status=document.getElementById('pi-audio-status');
