@@ -39,6 +39,8 @@ import { ImuManager } from "./imu/manager.js";
 import type { ImuConfig, ImuSourceType } from "./imu/types.js";
 import { approximateTideHeightAt } from "./calculations.js";
 import FileCache from "./cache.js";
+import { BackoffScheduler } from "./util/backoffScheduler.js";
+import { buildAisRepublishDeltas } from "./sources/aisRepublish.js";
 import {
   setSecurityLayerEnabled,
   getSecurityLayerEnabled,
@@ -117,7 +119,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev875";
+const PLUGIN_REVISION = "Rev877";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1440,6 +1442,27 @@ export default function (app: SignalKApp): Plugin {
   function _telegramEffectiveChatId(): string {
     return _telegramChatId || _telegramChatIdCached || "";
   }
+  /* Rev876: helper para publicar un único path SK al contexto self.
+     El patrón `{context, updates:[{timestamp, values:[{path, value}]}]}`
+     está repetido 40+ veces en index.ts. El helper unifica formato,
+     inyecta timestamp automático, centraliza los casts `as any`
+     necesarios por los tipos de server-api, y captura excepciones
+     (defensive: un fallo del bus SK jamás debe romper al caller —
+     por ejemplo, si estamos en un tick de alarma). Sitios que
+     publican varios paths a la vez o cross-context siguen usando
+     `app.handleMessage` directamente. */
+  function _publishSkPath(path: string, value: any): void {
+    try {
+      app.handleMessage(plugin.id, {
+        context: ("vessels." + app.selfId) as Context,
+        updates: [{
+          timestamp: new Date().toISOString() as Timestamp,
+          values: [{ path: path as any, value }],
+        }],
+      });
+    } catch { /* defensive: never break caller for a publish failure */ }
+  }
+
   // Rev765: thin wrapper around extracted sendTelegram() so unit tests can
   // exercise the POST path without booting the full plugin.
   function _sendTelegram(kind: string, text: string) {
@@ -1543,17 +1566,10 @@ export default function (app: SignalKApp): Plugin {
         const aisIsBad = aisDegraded.length > 0;
         if (aisIsBad !== _lastSubHealth.ais) {
           _lastSubHealth.ais = aisIsBad;
-          try {
-            app.handleMessage(plugin.id, {
-              context: ("vessels." + app.selfId) as Context,
-              updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
-                path: "notifications.security.aisOnlineDegraded" as any,
-                value: aisIsBad
-                  ? { state: "warn", method: ["visual"], message: `AIS online degraded: ${aisDegraded.join(", ")}` }
-                  : { state: "normal", method: [] as string[], message: "AIS online recovered" },
-              }]}],
-            });
-          } catch { /* defensive */ }
+          _publishSkPath("notifications.security.aisOnlineDegraded",
+            aisIsBad
+              ? { state: "warn", method: ["visual"], message: `AIS online degraded: ${aisDegraded.join(", ")}` }
+              : { state: "normal", method: [] as string[], message: "AIS online recovered" });
         }
         // -- IMU health --
         const imuActive = _imuManager?.active ?? null;
@@ -1561,17 +1577,10 @@ export default function (app: SignalKApp): Plugin {
         const imuIsBad = !!(imuActive && typeof imuAgeMs === "number" && isFinite(imuAgeMs) && imuAgeMs > IMU_STALE_MS);
         if (imuIsBad !== _lastSubHealth.imu) {
           _lastSubHealth.imu = imuIsBad;
-          try {
-            app.handleMessage(plugin.id, {
-              context: ("vessels." + app.selfId) as Context,
-              updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
-                path: "notifications.security.imuStale" as any,
-                value: imuIsBad
-                  ? { state: "warn", method: ["visual"], message: `IMU source '${imuActive?.id}' stale for ${Math.round((imuAgeMs || 0) / 1000)}s` }
-                  : { state: "normal", method: [] as string[], message: "IMU source recovered" },
-              }]}],
-            });
-          } catch { /* defensive */ }
+          _publishSkPath("notifications.security.imuStale",
+            imuIsBad
+              ? { state: "warn", method: ["visual"], message: `IMU source '${imuActive?.id}' stale for ${Math.round((imuAgeMs || 0) / 1000)}s` }
+              : { state: "normal", method: [] as string[], message: "IMU source recovered" });
         }
         // -- Audio Pi preventive warn (Rev872) --
         // Complementa la notification "audioPipelineDegraded" que solo
@@ -1582,17 +1591,10 @@ export default function (app: SignalKApp): Plugin {
         const audioIsBad = _audioConsecutiveFailures >= AUDIO_CONSEC_FAIL_THRESHOLD;
         if (audioIsBad !== _lastSubHealth.audio) {
           _lastSubHealth.audio = audioIsBad;
-          try {
-            app.handleMessage(plugin.id, {
-              context: ("vessels." + app.selfId) as Context,
-              updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
-                path: "notifications.security.audioPipelineDegradedPreventive" as any,
-                value: audioIsBad
-                  ? { state: "warn", method: ["visual"], message: `Pi audio pipeline: ${_audioConsecutiveFailures} consecutive failures — next alarm may not sound` }
-                  : { state: "normal", method: [] as string[], message: "Pi audio pipeline recovered" },
-              }]}],
-            });
-          } catch { /* defensive */ }
+          _publishSkPath("notifications.security.audioPipelineDegradedPreventive",
+            audioIsBad
+              ? { state: "warn", method: ["visual"], message: `Pi audio pipeline: ${_audioConsecutiveFailures} consecutive failures — next alarm may not sound` }
+              : { state: "normal", method: [] as string[], message: "Pi audio pipeline recovered" });
         }
       } catch { /* never break plugin */ }
     }
@@ -6888,56 +6890,21 @@ function _aisstreamMergeUpdate(u: _AisstreamMergePayload): void {
   } catch { /* republish is a nice-to-have, no fallar por él */ }
 }
 function _aisstreamRepublishToSK(u: _AisstreamMergePayload): void {
-  /* Rev835: nunca republicar el propio MMSI al bus SK — evita el ciclo
-     motor online → bus SK → listado AIS → target fantasma "Tunatunes". */
-  { const selfMmsi = _getSelfMmsi(); if (selfMmsi && u.mmsi === selfMmsi) return; }
-  const ctx = "vessels.urn:mrn:imo:mmsi:" + u.mmsi;
-  const values: Array<{ path: string; value: any }> = [];
-  if (u.lat != null && u.lng != null) {
-    values.push({ path: "navigation.position", value: { latitude: u.lat, longitude: u.lng } });
-  }
-  if (u.sog != null && Number.isFinite(u.sog)) {
-    values.push({ path: "navigation.speedOverGround", value: u.sog }); // m/s SK canonical
-  }
-  if (u.cog != null && Number.isFinite(u.cog)) {
-    values.push({ path: "navigation.courseOverGroundTrue", value: u.cog }); // rad
-  }
-  if (u.heading != null && Number.isFinite(u.heading)) {
-    values.push({ path: "navigation.headingTrue", value: u.heading }); // rad
-  }
-  /* Rev861 (memory leak fix): NO republicar `path: "name"`. El nombre del
-     vessel en SignalK es top-level property, NO un delta path — al pasar
-     `{path:"name", value:<string>}` a handleMessage, fullsignalk.js:181
-     intenta `stringValue.meta = ...` en strict mode y truena con
-     `TypeError: Cannot create property 'meta' on string 'AURORA'`. Con
-     ~80 vessels AIS distintos en la ria y publicaciones cada segundo,
-     esto generaba 3900+ errores/hora + stack traces acumulados que el GC
-     no podia liberar, contribuyendo al leak (2.5 GB RSS en 4 dias).
-     El nombre del vessel lo ingesta SK server directamente del AIS type 5
-     (static data), no necesita nuestro republish. */
-  if (u.callsign) {
-    values.push({ path: "communication.callsignVhf", value: u.callsign });
-  }
-  if (u.imo) {
-    values.push({ path: "registrations.imo", value: `IMO ${u.imo}` });
-  }
-  if (u.length != null && u.length > 0) {
-    values.push({ path: "design.length", value: { overall: u.length } });
-  }
-  if (u.beam != null && u.beam > 0) {
-    values.push({ path: "design.beam", value: u.beam });
-  }
-  if (typeof u.shipType === "number") {
-    values.push({ path: "design.aisShipType", value: { id: u.shipType, name: String(u.shipType) } });
-  }
-  if (values.length === 0) return;
+  /* Rev877: lógica pura extraída a src/sources/aisRepublish.ts para
+     testeabilidad + regresión-proof del bug Rev861. Aquí solo el
+     wiring al bus SK. */
+  const deltas = buildAisRepublishDeltas(u, _getSelfMmsi());
+  if (deltas.length === 0) return;
+  // Todas los deltas van al mismo context (mismo mmsi) → un solo
+  // handleMessage con múltiples values. SK acepta cross-context deltas
+  // emitidos por plugins; $source implícito "mareas-ihm.aisstream".
   try {
-    // Publicamos con contexto de OTRO vessel — SK acepta cross-context
-    // deltas emitidos por plugins. $source (implícito "mareas-ihm.aisstream")
-    // permite a otras apps distinguir la procedencia.
     (app as any).handleMessage(plugin.id + ".aisstream", {
-      context: ctx as any,
-      updates: [{ timestamp: new Date().toISOString() as any, values }],
+      context: deltas[0].context as any,
+      updates: [{
+        timestamp: new Date().toISOString() as any,
+        values: deltas.map(d => ({ path: d.path as any, value: d.value })),
+      }],
     });
   } catch { /* defensive */ }
 }
@@ -9608,17 +9575,29 @@ type Wx6hPoint = { windKt: number | null; tempC: number | null; code: number | n
 type Wx6hCache = { ts: number; lat: number | null; lng: number | null; now: Wx6hPoint | null; plus6: Wx6hPoint | null };
 const _wx6hCache: Wx6hCache = { ts: 0, lat: null, lng: null, now: null, plus6: null };
 let _wx6hFetchInFlight = false;
+/* Rev876: BackoffScheduler para Open-Meteo weather fetch. La cache
+   TTL de 30 min + fire-and-forget cada 5 s desde /api/state/full
+   causaba spam de intentos cada 5 s si el fetch fallaba (cache queda
+   stale, in-flight=false, siguiente tick reintenta). Con backoff:
+   fallo transitorio → 1-10 min, HTTP 429 → 15-60 min. Reutiliza el
+   helper Rev875 compartido con los 3 clientes AIS. */
+const _wx6hBackoff = new BackoffScheduler({
+  normalMinMs: 60_000,
+  normalMaxMs: 10 * 60_000,
+  rateLimitMinMs: 15 * 60_000,
+  rateLimitMaxMs: 60 * 60_000,
+});
+let _wx6hNextAllowedMs = 0;
 async function _fetchWx6h(lat: number, lng: number): Promise<void> {
   if (_wx6hFetchInFlight) return;
+  if (Date.now() < _wx6hNextAllowedMs) return; // Rev876: en backoff
   _wx6hFetchInFlight = true;
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&hourly=temperature_2m,wind_speed_10m,weather_code,is_day&wind_speed_unit=kn&forecast_days=2&timezone=auto`;
     /* Rev871: AbortController con timeout 10s. Sin timeout, un servidor
        lento (Open-Meteo saturado, 4G del barco a 5 KB/s, TCP handshake
        colgado) dejaba _wx6hFetchInFlight=true bloqueando futuros
-       intentos hasta que el TCP timeout del kernel disparara (~2 min).
-       Con 10s explícito, un fetch fallido libera el flag rápido y el
-       siguiente tick reintenta. Cache existente se mantiene si falla. */
+       intentos hasta que el TCP timeout del kernel disparara (~2 min). */
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 10_000);
     let r: any;
@@ -9627,7 +9606,13 @@ async function _fetchWx6h(lat: number, lng: number): Promise<void> {
     } finally {
       clearTimeout(timer);
     }
-    if (!r || !r.ok) return;
+    if (!r || !r.ok) {
+      /* Rev876: dispara backoff según el código HTTP. */
+      if (r && r.status === 429) _wx6hBackoff.onRateLimit();
+      else _wx6hBackoff.onTransientError();
+      _wx6hNextAllowedMs = Date.now() + _wx6hBackoff.nextDelay();
+      return;
+    }
     const j: any = await r.json();
     if (!j || !j.hourly || !Array.isArray(j.hourly.time)) return;
     const times: string[] = j.hourly.time;
@@ -9652,7 +9637,15 @@ async function _fetchWx6h(lat: number, lng: number): Promise<void> {
     _wx6hCache.lng = lng;
     _wx6hCache.now = mk(nowIdx);
     _wx6hCache.plus6 = mk(p6Idx);
-  } catch { /* network fail: keep last cache */ } finally {
+    /* Rev876: fetch exitoso end-to-end → reset backoff. */
+    _wx6hBackoff.onSuccess();
+    _wx6hNextAllowedMs = 0;
+  } catch {
+    /* Rev876: exception (network drop, DNS, abort por timeout) →
+       backoff transitorio. Cache existente se mantiene. */
+    _wx6hBackoff.onTransientError();
+    _wx6hNextAllowedMs = Date.now() + _wx6hBackoff.nextDelay();
+  } finally {
     _wx6hFetchInFlight = false;
   }
 }
