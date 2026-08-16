@@ -411,6 +411,16 @@ Después abre: `http://tu-pi.local:3000/signalk-mareas-ihm/`
 
 Es una **ayuda a la navegación**, NO un sustituto del anchor watch con vigilancia humana. El autor no se responsabiliza de garreos, colisiones, varadas ni ningún otro incidente. Uso bajo tu propia responsabilidad.
 
+### Solución de problemas frecuentes
+
+**El uso de RAM del Pi sube lento durante días hasta que el sistema queda irresponsivo.** Bug conocido de versiones anteriores a la 2.11.4 (issue #37): el republish AIS publicaba un delta inválido (`path:"name"` con un string plano en vez del objeto que espera SignalK), generando miles de errores por hora y reteniendo closures que el garbage collector no podía liberar. Actualiza a **2.11.4 o superior** desde el SignalK App Store; RSS del plugin debe estabilizarse por debajo de 500 MB.
+
+**El widget de IMU, olas, roll o pitch en el visor se queda a cero aunque hay datos en el bus SignalK.** Si el peer que publica los datos (típicamente el plugin oficial de pypilot en localhost o remoto) se cayó y volvió mientras este plugin ya estaba corriendo, el auto-detect de fuentes IMU solo se ejecutaba al arrancar el plugin y no volvía a rescatar. Arreglado en **2.11.4** con un watchdog automático que reintenta cada 60 s. Como remedio manual mientras actualizas: `curl -X POST http://<pi>:3000/signalk-mareas-ihm/api/imu/scan`.
+
+**El AIS online (aisstream / AIShub / AIS Friends) deja de recibir mensajes después de un rato.** Antes de 2.11.5 los tres clientes reintentaban con intervalo fijo aunque el server devolviera HTTP 429 (rate limit), lo que hacía que la ventana rate-limit del server se auto-perpetuase y el cliente quedara silencioso durante días. Arreglado en **2.11.5** con backoff exponencial 60 s → 30 min y jitter ±20 % al detectar 429/403/503. Puedes verificar el estado con `GET /signalk-mareas-ihm/api/diagnostic`: si `rateLimitBackoffActive` es `true`, sabes que el server está aplicándote rate limit y cuándo será el próximo intento.
+
+**Cómo reportar un bug con evidencia.** Abre el panel de alarmas (🔔) en el visor → botón "🐛 Capturar diagnóstico" al final del panel → "Descargar JSON". Adjunta ese fichero al [issue de GitHub](https://github.com/Aitonos/signalk-mareas-ihm/issues/new). Datos sensibles (GPS, PIN, tokens Telegram, MMSI propio) ya vienen enmascarados; datos técnicos íntegros. El JSON incluye uptime del plugin, uso de RAM, estado IMU, estadísticas de los clientes AIS online, ping a servicios externos, plugins SK cargados, y últimos valores de paths SK relevantes.
+
 ### Contribuir y soporte
 
 Issues, PRs y peticiones de funcionalidad en el [repo de GitHub](https://github.com/Aitonos/signalk-mareas-ihm).

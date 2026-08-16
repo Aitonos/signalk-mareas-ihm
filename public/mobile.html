@@ -3479,6 +3479,15 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
         </div>
         <div id="audio-health-detail" style="display:none;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;color:#c8d6e0"></div>
       </div>
+      <!-- Rev868: atajo directo al diagnóstico. Antes solo estaba
+           accesible desde el modal Feedback en la sidebar; ahora
+           visible en el Panel Alarmas donde el usuario está mirando
+           salud del audio. Útil especialmente para reportar bugs. -->
+      <div style="margin-top:10px;display:flex;justify-content:flex-end">
+        <button onclick="closePopup('alarm-panel-pop'); if (typeof m_captureDiagnostic==='function') m_captureDiagnostic();"
+                style="background:rgba(255,193,7,.16);border:1px solid rgba(255,193,7,.55);color:#ffd54f;font-size:13px;padding:8px 14px;border-radius:8px;cursor:pointer;font-weight:600"
+                data-i18n="diag_capture_btn">🐛 Capturar diagnóstico</button>
+      </div>
     </div>
   </div>
 </div>
@@ -6229,6 +6238,7 @@ var _i18n={
   audio_pi:{es:'Salida audio Pi',en:'Pi audio output'},
   vol_alarmas:{es:'🔊 Volumen alarmas',en:'🔊 Alarm volume'},
   audio_health_title:{es:'Salud audio Pi',en:'Pi audio health'},
+  diag_capture_btn:{es:'🐛 Capturar diagnóstico',en:'🐛 Capture diagnostic'},
   vol_alarmas_hint:{es:'50–100% normal · 100–250% amplificación con limitador (sin chasquidos)',en:'50–100% normal · 100–250% boost with limiter (no clipping)'},
   probar:{es:'Probar',en:'Test'},
   audio_no_disponible:{es:'PulseAudio no disponible (run loginctl enable-linger pi)',en:'PulseAudio not available (run loginctl enable-linger pi)'},
@@ -20877,7 +20887,33 @@ function _mShowDiagnosticPreview(txt){
       try { if (typeof showAlert==='function') showAlert(T('diag_failed')); else alert(T('diag_failed')); } catch(_) { alert(T('diag_failed')); }
     });
   };
+  /* Rev868: botón "Descargar JSON" — genera blob y triggerea download
+     como fichero. Muy útil para bug reports (adjuntar al issue de
+     GitHub) — el reporter @ABS0lute-1 tuvo que descargar el JSON
+     manualmente vía navegador para el issue #37; ahora con un click. */
+  var dl = document.createElement('button');
+  dl.style.cssText = 'flex:1.2;background:rgba(76,175,80,.22);color:#a5d6a7;padding:18px;font-size:20px;font-weight:800;border-radius:10px;border:1px solid rgba(76,175,80,.55);cursor:pointer';
+  dl.textContent = (_lang==='en') ? '💾 Download JSON' : '💾 Descargar JSON';
+  dl.onclick = function(){
+    try {
+      var pad = function(n){ return n<10?('0'+n):(''+n); };
+      var d = new Date();
+      var stamp = d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate())
+                + '-' + pad(d.getHours()) + pad(d.getMinutes());
+      var fname = 'mareas-ihm-diagnostic_' + stamp + '.json';
+      var blob = new Blob([txt], { type: 'application/json;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = fname;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 100);
+      closePopup('m-diag-preview-pop');
+    } catch(e) {
+      try { if (typeof showAlert==='function') showAlert(T('diag_failed')); else alert(T('diag_failed')); } catch(_) { alert(T('diag_failed')); }
+    }
+  };
   actions.appendChild(cancel);
+  actions.appendChild(dl);
   actions.appendChild(copy);
   box.appendChild(actions);
   overlay.appendChild(box);

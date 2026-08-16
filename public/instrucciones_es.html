@@ -341,6 +341,24 @@ profundidad_futura = profundidad_actual + (marea_actual − marea_futura)
 </ul>
 
 <!-- ================================================================ -->
+<h2>🐛 Solución de problemas frecuentes</h2>
+
+<h3>El uso de RAM del Pi sube durante días hasta quedar irresponsivo</h3>
+<p>Bug conocido de versiones anteriores a <strong>2.11.4</strong> (issue #37). El republish de AIS emitía un delta inválido que hacía a SignalK server lanzar miles de <code>TypeError</code> por hora, y las closures capturadas por los <code>try/catch</code> internos impedían al garbage collector liberar la memoria. Con muchos vessels AIS en la zona el heap crecía hasta 2–3 GB en unos pocos días.</p>
+<p><strong>Solución:</strong> actualizar a <strong>2.11.4 o superior</strong> desde el SignalK App Store. Tras reiniciar, el RSS del plugin debe estabilizarse por debajo de 500 MB.</p>
+
+<h3>El widget de IMU / olas / roll / pitch se queda a cero aunque hay datos en el bus SK</h3>
+<p>Antes de <strong>2.11.4</strong>, el auto-detect de fuentes IMU se ejecutaba solo una vez al arrancar el plugin. Si el peer (típicamente el plugin oficial de pypilot) estaba caído en ese instante y volvía después, ninguna vía reintenta la detección — el widget quedaba congelado hasta reiniciar SignalK.</p>
+<p><strong>Solución:</strong> actualizar a <strong>2.11.4 o superior</strong>. Ahora el manager IMU reintenta el escaneo cada 60 s de forma automática cuando no hay fuente activa. Como remedio manual mientras actualizas: <code>curl -X POST http://&lt;pi&gt;:3000/signalk-mareas-ihm/api/imu/scan</code>.</p>
+
+<h3>El AIS online (aisstream / AIShub / AIS Friends) deja de recibir mensajes al cabo de un tiempo</h3>
+<p>Antes de <strong>2.11.5</strong>, los tres clientes de AIS online reintentaban con intervalo fijo (~60 s) sin backoff. Cuando el servidor devolvía HTTP 429 (rate limit), los reintentos cada 60 s mantenían la ventana de rate limit del servidor siempre activa y el cliente quedaba silencioso durante días.</p>
+<p><strong>Solución:</strong> actualizar a <strong>2.11.5 o superior</strong>. Todos los clientes AIS online tienen ahora backoff exponencial 60 s → 30 min con jitter ±20 % cuando detectan HTTP 429 / 403 / 503, y salen del backoff automáticamente al primer mensaje real. Puedes verificar el estado con <code>GET /signalk-mareas-ihm/api/diagnostic</code>: si algún cliente muestra <code>rateLimitBackoffActive: true</code>, sabes que el servidor está aplicándote rate limit y cuándo será el próximo intento.</p>
+
+<h3>Cómo reportar un bug con evidencia</h3>
+<p>Abre el <strong>Panel de Alarmas (🔔)</strong> en el visor → botón <strong>🐛 Capturar diagnóstico</strong> al final del panel → <strong>💾 Descargar JSON</strong>. Adjunta el fichero al <a href="https://github.com/Aitonos/signalk-mareas-ihm/issues/new" target="_blank">issue de GitHub</a>. Los datos sensibles ya vienen enmascarados: GPS redondeado a 0,1° (~11 km), tokens de Telegram y MMSI propio ocultos como <code>XXXX</code>. Los datos técnicos van íntegros. El JSON incluye uptime del plugin, uso de RAM, estado IMU, estadísticas de los clientes AIS online (incluidos los flags de rate-limit backoff), ping a servicios externos, plugins SK cargados y últimos valores de los paths SK relevantes.</p>
+
+<!-- ================================================================ -->
 <h2 class="tech">📡 Paths Signal K publicados</h2>
 <p>Referencia técnica completa de los paths que el plugin publica al servidor Signal K. En el modal del producto, esta sección incluye una tabla dinámica generada en tiempo real con todos los paths activos y sus descripciones.</p>
 

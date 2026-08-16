@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev867";
+const PLUGIN_REVISION = "Rev870";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1505,6 +1505,73 @@ export default function (app: SignalKApp): Plugin {
     setTimeout(() => { _detectSetSystemTimePlugin().catch(() => {}); }, 5000);
     // Re-probe cada 5 min por si el usuario lo desactiva sin restart de SK.
     setInterval(() => { _detectSetSystemTimePlugin().catch(() => {}); }, 5 * 60_000);
+
+    /* Rev869: watchdog de degradación de subsistemas. Emite SK
+       notifications warn en transiciones cuando AIS online lleva >30 min
+       sin mensajes o está en rate-limit backoff, o cuando la fuente IMU
+       activa está stale >30 s. Aparece en KIP / WilhelmSK / OP
+       Notifications → usuario avisado sin abrir el visor. Solo emite en
+       transición (bad↔good) para no spammear el bus. */
+    const _lastSubHealth: { ais: boolean; imu: boolean } = { ais: false, imu: false };
+    const AIS_SILENCE_MS = 30 * 60_000;
+    const IMU_STALE_MS = 30_000;
+    function _emitSubsystemHealth(): void {
+      try {
+        const now = Date.now();
+        // -- AIS online health --
+        const handles: Array<{ name: string; getStats: () => any }> = [];
+        if (_aisstreamHandle) handles.push({ name: "aisstream", getStats: _aisstreamHandle.getStats });
+        if (_aishubHandle)    handles.push({ name: "aishub",    getStats: _aishubHandle.getStats });
+        if (_aisfriendsHandle)handles.push({ name: "aisfriends",getStats: _aisfriendsHandle.getStats });
+        const aisDegraded: string[] = [];
+        for (const h of handles) {
+          try {
+            const s = h.getStats();
+            const silent = typeof s.lastMsgMs === "number" && s.lastMsgMs > 0 && (now - s.lastMsgMs) > AIS_SILENCE_MS;
+            const inBackoff = !!s.rateLimitBackoffActive;
+            if (silent || inBackoff) {
+              aisDegraded.push(`${h.name}(${inBackoff ? "rate-limited" : "silent"})`);
+            }
+          } catch { /* per-handle defensive */ }
+        }
+        const aisIsBad = aisDegraded.length > 0;
+        if (aisIsBad !== _lastSubHealth.ais) {
+          _lastSubHealth.ais = aisIsBad;
+          try {
+            app.handleMessage(plugin.id, {
+              context: ("vessels." + app.selfId) as Context,
+              updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
+                path: "notifications.security.aisOnlineDegraded" as any,
+                value: aisIsBad
+                  ? { state: "warn", method: ["visual"], message: `AIS online degraded: ${aisDegraded.join(", ")}` }
+                  : { state: "normal", method: [] as string[], message: "AIS online recovered" },
+              }]}],
+            });
+          } catch { /* defensive */ }
+        }
+        // -- IMU health --
+        const imuActive = _imuManager?.active ?? null;
+        const imuAgeMs = imuActive?.quality?.ageMs ?? null;
+        const imuIsBad = !!(imuActive && typeof imuAgeMs === "number" && isFinite(imuAgeMs) && imuAgeMs > IMU_STALE_MS);
+        if (imuIsBad !== _lastSubHealth.imu) {
+          _lastSubHealth.imu = imuIsBad;
+          try {
+            app.handleMessage(plugin.id, {
+              context: ("vessels." + app.selfId) as Context,
+              updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
+                path: "notifications.security.imuStale" as any,
+                value: imuIsBad
+                  ? { state: "warn", method: ["visual"], message: `IMU source '${imuActive?.id}' stale for ${Math.round((imuAgeMs || 0) / 1000)}s` }
+                  : { state: "normal", method: [] as string[], message: "IMU source recovered" },
+              }]}],
+            });
+          } catch { /* defensive */ }
+        }
+      } catch { /* never break plugin */ }
+    }
+    // Primera check 90 s post-boot (deja tiempo a que handles arranquen).
+    setTimeout(_emitSubsystemHealth, 90_000);
+    setInterval(_emitSubsystemHealth, 60_000);
 
     let lastForecast: TideForecastResult | null = null;
     let lastPosition: Position | null = null;
