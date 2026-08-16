@@ -65,6 +65,13 @@ export class PypilotKeyValueSource implements ImuSource {
   private currentSample: ImuSample = { ts: 0 };
   private staleAfterMs: number;
   private _recentTs: number[] = [];
+  /* Rev867: watchdog timer que detecta "peer vivo pero silencioso"
+     (protocolo pypilot congelado, red MUY lenta pero no muerta). El
+     TCP keepalive del socket cubre el caso "peer completamente muerto"
+     a nivel kernel (~30s), pero no el silencio patológico donde el
+     socket está OPEN pero no llega data. Ambas capas son ortogonales
+     y necesarias. */
+  private _watchdogTimer: NodeJS.Timeout | null = null;
 
   constructor(opts: {
     app: SignalKApp;
@@ -121,13 +128,37 @@ export class PypilotKeyValueSource implements ImuSource {
     this.status = "available";
     this.lastError = null;
     this._connect();
+    /* Rev867: watchdog periódico (cada max(5s, staleAfterMs)). Si el
+       socket está abierto pero la última muestra tiene edad > 2×
+       staleAfterMs, destruye el socket para forzar reconnect. Cubre
+       el caso peer-vivo-silencioso que TCP keepalive no detecta. */
+    if (!this._watchdogTimer) {
+      const period = Math.max(5_000, this.staleAfterMs);
+      this._watchdogTimer = setInterval(() => this._watchdogTick(), period);
+    }
   }
 
   stop(): void {
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    if (this._watchdogTimer) { clearInterval(this._watchdogTimer); this._watchdogTimer = null; }
     if (this.socket) { try { this.socket.destroy(); } catch { /* ignore */ } this.socket = null; }
     this.status = "disabled";
     this.buffer = "";
+  }
+
+  /* Rev867: watchdog interno. Corre cada max(5s, staleAfterMs) mientras
+     start()==true. Si el socket sigue "conectado" pero no llega data en
+     >2× staleAfterMs, forzamos destroy → el on('close') scheduler intenta
+     reconnect. Sin esto, un socket ESTABLISHED-pero-silencioso quedaba
+     zombie indefinidamente aunque el peer estuviera OK pero congelado. */
+  private _watchdogTick(): void {
+    if (!this.socket) return;
+    const age = this.lastSeen > 0 ? Date.now() - this.lastSeen : Infinity;
+    if (age > this.staleAfterMs * 2) {
+      this.app.debug?.(`[IMU-PYPILOT] watchdog: no data for ${Math.round(age / 1000)}s (>2× ${Math.round(this.staleAfterMs / 1000)}s stale), destroying socket to force reconnect`);
+      try { this.socket.destroy(); } catch { /* defensive */ }
+      // 'close' handler llamará _scheduleReconnect.
+    }
   }
 
   poll(): ImuSample | null {
@@ -157,6 +188,14 @@ export class PypilotKeyValueSource implements ImuSource {
       return;
     }
     const sock = new Socket();
+    /* Rev867: TCP keepalive kernel-level. Sin esto, Linux mantiene el
+       socket ESTABLISHED hasta el default de tcp_keepalive_time (2h)
+       aunque el peer esté completamente muerto (Pi Zero apagado, cable
+       desenchufado). Con 30s, detecta peer-dead en pocos segundos y
+       dispara on('error')+on('close') → reconnect automático rápido.
+       Ortogonal al watchdog interno de _watchdogTick (que cubre el caso
+       peer-vivo-silencioso). */
+    sock.setKeepAlive(true, 30_000);
     this.socket = sock;
     sock.on("connect", () => {
       this.app.debug?.(`[IMU-PYPILOT] connected ${this.host}:${this.port}`);
