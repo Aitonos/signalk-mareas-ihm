@@ -1,7 +1,8 @@
-# KNOWN_BUGS — bugs vigentes en Rev863 / v2.11.4
+# KNOWN_BUGS — bugs vigentes en Rev866 / v2.11.5
 
-Estado: **2026-08-16** — snapshot tras publicar 2.11.4 con fix de leak
-AIS (Rev861) y watchdog IMU (Rev862). Sin bugs abiertos confirmados.
+Estado: **2026-08-16** — snapshot tras publicar 2.11.5 con backoff
+rate-limit en los 3 clientes AIS online (Rev865, fix #40). Sin bugs
+abiertos confirmados hoy.
 Los 22 bugs B-01…B-22 del archivo Rev190 están todos resueltos y
 viven en `archive/KNOWN_BUGS_Rev190_snapshot.md` para referencia
 histórica.
@@ -53,6 +54,16 @@ como limitación.
 
 ## Bugs y features resueltos recientemente (para no volver a abrir)
 
+- **AIS online rate-limit self-perpetuating loop** (Rev865 / v2.11.5,
+  issue #40) — los 3 clientes AIS online (aisstream WebSocket, aishub
+  y aisfriends HTTP polling) usaban interval/retry fijo cada ~60 s.
+  Un solo HTTP 429 dejaba al cliente rate-limitado indefinidamente
+  porque los reintentos cada 60 s mantenían la ventana rate-limit del
+  server siempre activa. @ABS0lute-1 reportó 2.7 días sin mensajes
+  aisstream tras un 429. Fix: backoff exponencial 60 s → 30 min con
+  jitter ±20 %, reset solo al primer mensaje real end-to-end (no en
+  handshake). Refactor de setInterval a setTimeout auto-rearmable en
+  aishub/aisfriends. Zero cambio en el happy path.
 - **Memory leak AIS republish 'name'** (Rev861 / v2.11.4) — publicábamos
   `{path:"name", value:<string>}` para cada vessel AIS republicado.
   SignalK server-api reventaba con `TypeError: Cannot create property

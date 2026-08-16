@@ -1,5 +1,43 @@
 # Changelog
 
+## [2.11.5] - 2026-08-16
+
+### English
+
+**Rate-limit backoff across all three AIS online clients (fix #40)**
+
+Follow-up to 2.11.4 based on findings from the same diagnostic snapshot shared by @ABS0lute-1 in issue #37: their `aisstream` WebSocket had been silent for **2.7 days** after a single HTTP 429 hit, with the client keeps retrying every ~60 s and the server's sliding rate-limit window staying active forever. The three AIS online clients (`aisstream`, `aishub`, `aisfriends`) all had the same class of bug: fixed retry / poll intervals with no backoff on rate-limit responses.
+
+Applied a consistent fix across the three:
+
+- **aisstream (WebSocket)** — reconnect backoff now separates two regimes: normal (5 s → 60 s cap, for transient network drops) and rate-limited (60 s → 30 min cap, activated when the server returns HTTP 429 in the handshake). Backoff reset only happens when a real message flows end-to-end (not merely when the WebSocket handshake succeeds — the server can accept the handshake and close with 429 immediately after).
+- **aishub and aisfriends (HTTP polling every 65 s)** — refactored from `setInterval` to a self-rearming `setTimeout` in the `finally` block. Normal polls stay at 65 s ± 20 % jitter; if the server returns 429, 403 ("quality requirements not met" on aisfriends), 503 (maintenance), or any 5xx, the client enters a 5 min → 30 min exponential backoff. Backoff resets on the first successful poll.
+- **All three** — ±20 % jitter on every timer to prevent multiple client instances (e.g. after an aisstream infra reboot) from thundering the server back into rate-limit at the same instant.
+
+New fields exposed in each client's `getStats()`: `rateLimitBackoffActive` (boolean) and `nextReconnectMs` / `nextPollInMs` (ms until next attempt). Useful for visualising the backoff state from the diagnostic snapshot or a future UI badge.
+
+Zero behavioural change in the happy path — normal polls at 65 s remain 65 s. Only failure paths are affected. Not a critical fix (silent degradation of AIS coverage was the worst case, not a crash), but it removes an entire class of "why did online AIS stop working after a day?" reports.
+
+---
+
+### Español
+
+**Backoff con rate-limit en los tres clientes online AIS (fix #40)**
+
+Follow-up de la 2.11.4 a partir de los hallazgos del mismo diagnostic que compartió @ABS0lute-1 en el issue #37: su `aisstream` WebSocket llevaba **2.7 días en silencio** tras un único HTTP 429, con el cliente reintentando cada ~60 s y la ventana rate-limit del servidor manteniéndose activa indefinidamente. Los tres clientes AIS online (`aisstream`, `aishub`, `aisfriends`) tenían la misma clase de bug: intervalos de retry / poll fijos sin backoff ante rate-limit.
+
+Fix consistente aplicado a los tres:
+
+- **aisstream (WebSocket)** — el backoff de reconexión ahora separa dos regímenes: normal (5 s → 60 s cap, para caídas transitorias de red) y rate-limited (60 s → 30 min cap, activado cuando el server devuelve HTTP 429 en el handshake). El reset del backoff solo ocurre cuando fluye un mensaje real end-to-end (no simplemente cuando el handshake WebSocket tiene éxito — el server puede aceptar el handshake y cerrar con 429 inmediatamente después).
+- **aishub y aisfriends (polling HTTP cada 65 s)** — refactorizados de `setInterval` a `setTimeout` auto-rearmable en el `finally`. Los polls normales siguen a 65 s ± 20 % de jitter; si el server devuelve 429, 403 ("quality requirements not met" en aisfriends), 503 (mantenimiento) o cualquier 5xx, el cliente entra en backoff exponencial 5 min → 30 min. El backoff se resetea al primer poll exitoso.
+- **Los tres** — jitter ±20 % en cada timer para evitar que múltiples instancias de cliente (p.ej. tras un reboot de infra aisstream) martilleen al server de vuelta a rate-limit en el mismo instante.
+
+Campos nuevos expuestos en el `getStats()` de cada cliente: `rateLimitBackoffActive` (boolean) y `nextReconnectMs` / `nextPollInMs` (ms hasta el próximo intento). Útil para visualizar el estado del backoff desde el diagnostic snapshot o un badge futuro en la UI.
+
+Cero cambio de comportamiento en el camino feliz — los polls normales a 65 s siguen siendo 65 s. Solo los caminos de fallo cambian. No es un fix crítico (la degradación silenciosa de cobertura AIS era el peor caso, no un crash), pero elimina toda una clase de reportes de "¿por qué el AIS online dejó de funcionar tras un día?".
+
+---
+
 ## [2.11.4] - 2026-08-16
 
 ### English
