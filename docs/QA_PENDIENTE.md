@@ -76,11 +76,9 @@ navegación real de:
 
 ## 🐛 Bugs vigentes a arreglar (fuera de agua)
 
-### UTF-8 doble-codificación en logs / activity log
-**Síntoma**: "Moaña" aparece como "MoaÃ±a" en algunos textos que pasan
-por un pipeline con codificación mixta.
-
-**Prioridad**: media — es visual pero desmerece la UX. Objetivo 2.11.4.
+_(vacío en 2026-08-04 — K-02 UTF-8 verificado no reproducible hoy en el
+Pi de Tunatunes; los favoritos con acentos ("Moaña") persisten
+correctamente en UTF-8.)_
 
 ---
 

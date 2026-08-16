@@ -1,8 +1,9 @@
-# BACKLOG — items abiertos en Rev843 / v2.11.2
+# BACKLOG — items abiertos en Rev860 / v2.11.3
 
-Estado: **2026-08-02** — actualizado tras la aprobación del ciclo QA de
-Carlos. Los sprints 1-6 originales (B-01…B-22, Rev190) están todos
-resueltos y archivados en
+Estado: **2026-08-04** — actualizado tras publicar v2.11.3 (K-03 audio
+Pi hardening en 3 fases + K-04 voz "Ancla fondeada") y verificar que
+K-02 UTF-8 no es reproducible hoy. Los sprints 1-6 originales
+(B-01…B-22, Rev190) están todos resueltos y archivados en
 [`archive/BACKLOG_Rev190_snapshot.md`](archive/BACKLOG_Rev190_snapshot.md).
 
 Nota: no hay estructura de sprints activa. Trabajamos por feature
@@ -16,8 +17,6 @@ memorias están completados y viven como snapshot histórico en
 
 | Item | Prio | Ref |
 |---|---|---|
-| **Audio Pi intermitente (probable stack VPN)** | Alta | [K-03 en KNOWN_BUGS.md](KNOWN_BUGS.md#k-03--audio-pi-intermitente-probable-stack-vpn) |
-| **UTF-8 doble-codificación (Moaña → MoaÃ±a)** | Media | [K-02 en KNOWN_BUGS.md](KNOWN_BUGS.md#k-02--utf-8-doble-codificación-en-textos-con-acentos) |
 | **Llamada de teléfono por Telegram** (nueva idea Carlos 2026-08-02) | Media | Ver sección "Ideas en incubación" abajo |
 
 ---

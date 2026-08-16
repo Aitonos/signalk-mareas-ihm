@@ -1,9 +1,10 @@
 # KNOWN_BUGS — bugs vigentes en Rev860 / v2.11.3
 
-Estado: **2026-08-04** — snapshot tras cerrar el sprint K-03 (audio Pi)
-y K-04 (voz "Ancla fondeada" del cliente). Los 22 bugs B-01…B-22 del
-archivo Rev190 están todos resueltos y viven en
-`archive/KNOWN_BUGS_Rev190_snapshot.md` para referencia histórica.
+Estado: **2026-08-04** — snapshot tras cerrar el sprint K-03 (audio Pi),
+K-04 (voz "Ancla fondeada" del cliente) y verificar que K-02 (UTF-8)
+no es reproducible hoy. Los 22 bugs B-01…B-22 del archivo Rev190 están
+todos resueltos y viven en `archive/KNOWN_BUGS_Rev190_snapshot.md` para
+referencia histórica.
 
 Aquí solo bugs **confirmados por Carlos y aún vigentes** hoy.
 
@@ -11,16 +12,7 @@ Aquí solo bugs **confirmados por Carlos y aún vigentes** hoy.
 
 ## Vigentes
 
-### K-02 — UTF-8 doble-codificación en textos con acentos
-**Síntoma**: "Moaña" aparece como "MoaÃ±a" en logs / activity log /
-algún endpoint que reserializa strings. La causa es un pipeline que
-lee UTF-8 y lo re-empaqueta asumiendo Latin-1.
-
-**Fix esperado**: auditar dónde reserializamos strings del bus SK,
-locales `.json`, textos de plugin config. Forzar `utf8` explícito en
-`readFile` / `writeFile` y en el response Content-Type.
-
-**Prioridad**: media — visual pero degradante. Objetivo 2.11.4.
+_(vacío — sin bugs abiertos confirmados con caso reproducible en Rev860 / v2.11.3)_
 
 ---
 
@@ -61,6 +53,15 @@ como limitación.
 
 ## Bugs y features resueltos recientemente (para no volver a abrir)
 
+- **K-02 UTF-8 doble-codificación** — verificado no reproducible en
+  Rev860 / v2.11.3. El fichero `~/.signalk/plugin-config-data/mareas-ihm/ihm/favorites.json`
+  del Pi tiene los strings con acentos ("Moaña") perfectamente
+  codificados en UTF-8 (bytes 0xC3 0xB1 correctos). Los favoritos
+  corruptos vistos en sesión antigua ("Moañ~a", `Ã³a`) ya
+  no existen — o Carlos los borró y re-creó, o algún fix entre
+  Rev735 y Rev860 los arregló como side-effect. Si alguna vez
+  reaparece con caso concreto, reabrir K-02 con evidencia (path,
+  string original y bytes en disco).
 - **K-03 Audio Pi intermitente** — resuelto en 3 fases (v2.11.3):
   - Fase 1: 5 bugs deterministas del pipeline (cancelled vs failed,
     timeout tipado, sink resolution con `--device` explícito, safe kill,

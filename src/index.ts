@@ -117,7 +117,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev860";
+const PLUGIN_REVISION = "Rev861";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -6811,9 +6811,16 @@ function _aisstreamRepublishToSK(u: _AisstreamMergePayload): void {
   if (u.heading != null && Number.isFinite(u.heading)) {
     values.push({ path: "navigation.headingTrue", value: u.heading }); // rad
   }
-  if (u.name) {
-    values.push({ path: "name", value: u.name });
-  }
+  /* Rev861 (memory leak fix): NO republicar `path: "name"`. El nombre del
+     vessel en SignalK es top-level property, NO un delta path — al pasar
+     `{path:"name", value:<string>}` a handleMessage, fullsignalk.js:181
+     intenta `stringValue.meta = ...` en strict mode y truena con
+     `TypeError: Cannot create property 'meta' on string 'AURORA'`. Con
+     ~80 vessels AIS distintos en la ria y publicaciones cada segundo,
+     esto generaba 3900+ errores/hora + stack traces acumulados que el GC
+     no podia liberar, contribuyendo al leak (2.5 GB RSS en 4 dias).
+     El nombre del vessel lo ingesta SK server directamente del AIS type 5
+     (static data), no necesita nuestro republish. */
   if (u.callsign) {
     values.push({ path: "communication.callsignVhf", value: u.callsign });
   }
