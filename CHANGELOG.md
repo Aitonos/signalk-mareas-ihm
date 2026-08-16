@@ -1,5 +1,47 @@
 # Changelog
 
+## [2.11.6] - 2026-08-16
+
+### English
+
+Defense-in-depth, observability and UX batch on top of 2.11.5. No user-visible feature changes, only fortification, diagnostics and troubleshooting docs. Seven improvements bundled:
+
+- **Pypilot TCP client hardening (Rev867)** — two independent layers of defence for the case where the pypilot peer (Pi Zero, box, whatever) dies silently while the socket is nominally still `ESTABLISHED`. Kernel-level `sock.setKeepAlive(true, 30_000)` probes the peer every 30 s instead of the Linux default of 2 h, so a dead peer is caught in seconds. Complementary in-process watchdog (`_watchdogTick`) destroys the socket if no message has arrived in >2× `staleAfterMs`, covering the "peer alive but silent" case that TCP keepalive alone would miss. Together with the `ImuManager` watchdog shipped in 2.11.4, IMU recovery after a peer reboot is now sub-minute end to end.
+- **One-click diagnostic download from the Alarm Panel (Rev868)** — the diagnostic snapshot (already used by user @ABS0lute-1 to file the memory leak reported in issue #37) is now a single click away. A new "🐛 Capturar diagnóstico" button in the Alarm Panel (🔔) captures + previews + lets you download the JSON as `mareas-ihm-diagnostic_YYYYMMDD-HHMM.json`. The existing "Copy JSON" button remains. Sensitive data (GPS, PIN, Telegram tokens, own MMSI) stays automatically redacted.
+- **SignalK notifications for subsystem degradation (Rev869 + Rev872)** — new watchdog inside `start()` (60 s cadence) emits SK notifications in transition when subsystems degrade:
+  - `notifications.security.aisOnlineDegraded` (warn) if any of aisstream / aishub / aisfriends is silent for >30 min or in rate-limit backoff.
+  - `notifications.security.imuStale` (warn) if the active IMU source has `ageMs > 30 s`.
+  - `notifications.security.audioPipelineDegradedPreventive` (warn) if the Pi audio pipeline has ≥3 consecutive failures without a success in between.
+  All three emit only on transition (bad↔good) to avoid bus spam. They reach KIP, WilhelmSK and OpenPlotter Notifications so the user is warned without needing to open the visor.
+- **Open-Meteo weather fetch timeout (Rev871)** — `_fetchWx6h` did `await fetch(url)` without an `AbortController`. A slow server or a hung TCP handshake would leave the in-flight flag stuck, blocking further attempts until the kernel timed out (~2 min). Added a 10 s explicit `AbortController`; cache content is preserved on failure and the next tick retries.
+- **IMU + AIS online status widgets in the Alarm Panel (Rev873)** — two new widgets alongside the audio-health widget from 2.11.3. "Salud IMU" shows the active source id, age and sample rate, with an expandable detail listing all registered sources and what each provides. "Salud AIS online" shows the combined status of aisstream / aishub / aisfriends, with detail per client including the new `rateLimitBackoffActive` / `nextReconnectMs` / `nextPollInMs` fields introduced in 2.11.5. Both refresh every 15 s only while the panel is open.
+- **Troubleshooting section in README and instructions modal (Rev870)** — new "Solución de problemas frecuentes" section documenting the three known post-mortem cases (memory leak fixed in 2.11.4, IMU widget frozen fixed in 2.11.4, AIS online silent fixed in 2.11.5): symptom, root cause hint, how to update or mitigate. Also documents how to capture a diagnostic in one click for bug reports.
+- **CI publish automation (`.github/workflows/publish.yml`)** — pushing a `vX.Y.Z` git tag now triggers a GitHub Actions workflow that verifies the tag matches `package.json` version, builds, and publishes to NPM. Removes the manual `npm publish` step from future releases. Requires one-time `NPM_TOKEN` secret setup by the maintainer.
+
+This is the first release published by the new CI workflow instead of a manual `npm publish` from the maintainer's laptop.
+
+---
+
+### Español
+
+Batch de defense-in-depth, observabilidad y UX sobre 2.11.5. Sin cambios de features visibles al usuario, solo fortificación, diagnósticos y docs de troubleshooting. Siete mejoras en un batch:
+
+- **Fortificación del cliente TCP de pypilot (Rev867)** — dos capas independientes de defensa para el caso donde el peer pypilot (Pi Zero, box, cualquier cosa) muere en silencio mientras el socket sigue nominalmente `ESTABLISHED`. Keepalive a nivel kernel `sock.setKeepAlive(true, 30_000)` sondea el peer cada 30 s en vez del default de Linux de 2 h, así un peer muerto se detecta en segundos. Watchdog complementario en proceso (`_watchdogTick`) destruye el socket si no llega ningún mensaje en >2× `staleAfterMs`, cubriendo el caso "peer vivo pero silencioso" que el TCP keepalive por sí solo no ve. Junto al watchdog del `ImuManager` de 2.11.4, la recuperación del IMU tras un reboot del peer ahora es sub-minuto end-to-end.
+- **Descarga del diagnóstico con un click desde el Panel Alarmas (Rev868)** — el snapshot de diagnóstico (que ya usó el usuario @ABS0lute-1 para reportar el memory leak del issue #37) está ahora a un click. Nuevo botón "🐛 Capturar diagnóstico" en el Panel Alarmas (🔔) captura + previsualiza + permite descargar el JSON como `mareas-ihm-diagnostic_YYYYMMDD-HHMM.json`. El botón "Copiar JSON" existente se mantiene. Los datos sensibles (GPS, PIN, tokens Telegram, MMSI propio) siguen enmascarándose automáticamente.
+- **SignalK notifications de degradación de subsistemas (Rev869 + Rev872)** — nuevo watchdog dentro de `start()` (cadencia 60 s) que emite SK notifications en transición cuando los subsistemas se degradan:
+  - `notifications.security.aisOnlineDegraded` (warn) si alguno de aisstream / aishub / aisfriends lleva >30 min sin mensajes o está en rate-limit backoff.
+  - `notifications.security.imuStale` (warn) si la fuente IMU activa tiene `ageMs > 30 s`.
+  - `notifications.security.audioPipelineDegradedPreventive` (warn) si el pipeline de audio del Pi lleva ≥3 fallos consecutivos sin éxito intermedio.
+  Los tres emiten solo en transición (bad↔good) para no spamear el bus. Llegan a KIP, WilhelmSK y OpenPlotter Notifications, así que el usuario está avisado sin necesidad de abrir el visor.
+- **Timeout en el fetch de Open-Meteo weather (Rev871)** — `_fetchWx6h` hacía `await fetch(url)` sin `AbortController`. Un servidor lento o un TCP handshake colgado dejaba el flag in-flight bloqueado, impidiendo futuros intentos hasta el timeout del kernel (~2 min). Añadido `AbortController` con 10 s explícito; el contenido de la caché se preserva si falla y el siguiente tick reintenta.
+- **Widgets de estado IMU + AIS online en el Panel Alarmas (Rev873)** — dos widgets nuevos junto al widget de salud del audio de 2.11.3. "Salud IMU" muestra el id de la fuente activa, edad y tasa de muestreo, con un detalle expandible que lista todas las fuentes registradas y qué provee cada una. "Salud AIS online" muestra el estado combinado de aisstream / aishub / aisfriends, con detalle por cliente incluyendo los nuevos campos `rateLimitBackoffActive` / `nextReconnectMs` / `nextPollInMs` introducidos en 2.11.5. Ambos refrescan cada 15 s solo mientras el panel está abierto.
+- **Sección Troubleshooting en README y modal Instrucciones (Rev870)** — nueva sección "Solución de problemas frecuentes" que documenta los tres casos post-mortem conocidos (memory leak arreglado en 2.11.4, widget IMU congelado arreglado en 2.11.4, AIS online silencioso arreglado en 2.11.5): síntoma, hint de causa raíz, cómo actualizar o mitigar. También documenta cómo capturar un diagnóstico en un click para reportes de bugs.
+- **Automatización del publish en CI (`.github/workflows/publish.yml`)** — pushear un tag git `vX.Y.Z` dispara ahora un workflow de GitHub Actions que verifica que el tag coincide con la versión de `package.json`, construye y publica a NPM. Elimina el paso manual de `npm publish` en futuros releases. Requiere setup one-time del secreto `NPM_TOKEN` por el maintainer.
+
+Este es el primer release publicado por el nuevo workflow CI en vez de un `npm publish` manual desde el laptop del maintainer.
+
+---
+
 ## [2.11.5] - 2026-08-16
 
 ### English

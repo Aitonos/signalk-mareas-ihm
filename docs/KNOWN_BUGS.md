@@ -1,8 +1,9 @@
-# KNOWN_BUGS — bugs vigentes en Rev866 / v2.11.5
+# KNOWN_BUGS — bugs vigentes en Rev874 / v2.11.6
 
-Estado: **2026-08-16** — snapshot tras publicar 2.11.5 con backoff
-rate-limit en los 3 clientes AIS online (Rev865, fix #40). Sin bugs
-abiertos confirmados hoy.
+Estado: **2026-08-16** — snapshot tras publicar 2.11.6 (batch de
+defense-in-depth + observabilidad + UX + docs sobre 2.11.5). Sin bugs
+abiertos confirmados hoy. Este es el primer release publicado por el
+nuevo workflow CI (auto-publish al pushear tag vX.Y.Z).
 Los 22 bugs B-01…B-22 del archivo Rev190 están todos resueltos y
 viven en `archive/KNOWN_BUGS_Rev190_snapshot.md` para referencia
 histórica.

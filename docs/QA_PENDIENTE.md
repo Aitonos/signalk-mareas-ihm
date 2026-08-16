@@ -1,6 +1,6 @@
 # QA_PENDIENTE — validaciones en agua real antes del próximo publish
 
-Estado: **2026-08-16** (Rev866 / v2.11.5). Snapshots históricos:
+Estado: **2026-08-16** (Rev874 / v2.11.6). Snapshots históricos:
 - 2026-06-24 (bugs B-23 a B-26, wizard mandatorio M-02) → resuelto,
   archivo en [`archive/QA_PENDIENTE_2026-06-24_snapshot.md`](archive/QA_PENDIENTE_2026-06-24_snapshot.md).
 - 2026-07-21 (features 2.7 → 2.9 QA + auto-lift + AIS triple online +
