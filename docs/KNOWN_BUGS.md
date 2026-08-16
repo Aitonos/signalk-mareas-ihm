@@ -1,10 +1,10 @@
-# KNOWN_BUGS — bugs vigentes en Rev860 / v2.11.3
+# KNOWN_BUGS — bugs vigentes en Rev863 / v2.11.4
 
-Estado: **2026-08-04** — snapshot tras cerrar el sprint K-03 (audio Pi),
-K-04 (voz "Ancla fondeada" del cliente) y verificar que K-02 (UTF-8)
-no es reproducible hoy. Los 22 bugs B-01…B-22 del archivo Rev190 están
-todos resueltos y viven en `archive/KNOWN_BUGS_Rev190_snapshot.md` para
-referencia histórica.
+Estado: **2026-08-16** — snapshot tras publicar 2.11.4 con fix de leak
+AIS (Rev861) y watchdog IMU (Rev862). Sin bugs abiertos confirmados.
+Los 22 bugs B-01…B-22 del archivo Rev190 están todos resueltos y
+viven en `archive/KNOWN_BUGS_Rev190_snapshot.md` para referencia
+histórica.
 
 Aquí solo bugs **confirmados por Carlos y aún vigentes** hoy.
 
@@ -53,6 +53,19 @@ como limitación.
 
 ## Bugs y features resueltos recientemente (para no volver a abrir)
 
+- **Memory leak AIS republish 'name'** (Rev861 / v2.11.4) — publicábamos
+  `{path:"name", value:<string>}` para cada vessel AIS republicado.
+  SignalK server-api reventaba con `TypeError: Cannot create property
+  'meta' on string 'AURORA'` en strict mode, generando 3914 errores/hora
+  con ~80 vessels en la Ría de Vigo. Heap creció de ~450 MB a 2.5 GB
+  en 4 días 15h. Fix: quitar el push (name es top-level property, no
+  delta). Post-fix RSS = 484 MB estable.
+- **IMU watchdog auto-recuperación** (Rev862 / v2.11.4) — `ImuManager.
+  _autoDetect()` corría 1 sola vez al arranque. Si peer pypilot estaba
+  muerto en ese instante, todas las fuentes quedaban `disabled` para
+  siempre — widget IMU congelado hasta reboot SK. Fix: watchdog en
+  `_tick()` que re-lanza auto-detect cada 60s si `active===null`.
+  Recuperación en <2 min cuando el peer vuelve.
 - **K-02 UTF-8 doble-codificación** — verificado no reproducible en
   Rev860 / v2.11.3. El fichero `~/.signalk/plugin-config-data/mareas-ihm/ihm/favorites.json`
   del Pi tiene los strings con acentos ("Moaña") perfectamente

@@ -1,5 +1,31 @@
 # Changelog
 
+## [2.11.4] - 2026-08-16
+
+### English
+
+**AIS republish memory leak fixed — RSS dropped from 2.5 GB to 484 MB**
+
+Diagnosed on Carlos's Pi 5 after 4 days 15 h uptime showed 78 % RAM used with the system nearly at the OOM edge (swap at 96 % and only 400 MB free). Root cause was in the AIS republish helper (`_aisstreamRepublishToSK` in `src/index.ts:6814`): we were pushing `{path: "name", value: <string>}` for every AIS vessel republished to the SignalK bus. The `name` property is not a valid delta path in SignalK — it is a top-level property populated directly by the SK server from AIS type 5 (static data). When SignalK's server-api tried to attach metadata via `stringValue.meta = ...`, it threw `TypeError: Cannot create property 'meta' on string 'AURORA'` in strict mode. With ~80 distinct AIS vessels visible in the Ría de Vigo publishing every second, the plugin was generating **3914 errors per hour**. Each caught error retained closures pointing to the delta object, preventing garbage collection from freeing them. Over 4 days the heap grew from ~450 MB baseline to 2.5 GB. Fix: remove the offending `values.push`. Verified live post-restart — RAM usage dropped from 6.6 GB to 2.2 GB system-wide, plugin RSS from 2.5 GB to 484 MB, error rate from 3914/hour to 0.
+
+**IMU manager watchdog — auto-recover after peer loss without restart**
+
+Second bug reported the same session: after the pypilot Pi Zero rebooted via domotic switch, the IMU / wave / pitch / roll widgets in the visor stayed at 0 forever. `navigation.attitude` was fresh in the SK bus (verified via `/signalk/v1/api/vessels/self/navigation/attitude`), but the plugin's `active` IMU source was `null`. Root cause: `ImuManager._autoDetect()` runs exactly once, at plugin `start()`. If in that instant all sources fail their probe (peer offline, SK not yet publishing attitude, raw-i2c disabled), every source is left `status: "disabled"` forever. Later when the peer returns, no code path re-runs the scan — the widget stays frozen until either a full SignalK restart or a manual `POST /api/imu/scan`. Fix: a watchdog inside `_tick()` (runs every 100 ms). If `active === null || active.status !== "active"` and ≥60 s have passed since the last auto-detect, re-run `_autoDetect()` automatically. The 60 s throttle prevents busy-loop when nothing is truly reachable, and 60 s is short enough to recover well within a sailor's tolerance after a peer reboot. Verified live — after pypilot came back, `active` transitioned to `pypilot-192.168.1.115` with `ageMs: 2` in under 2 min without any manual intervention.
+
+---
+
+### Español
+
+**Memory leak del republish AIS arreglado — RSS bajó de 2.5 GB a 484 MB**
+
+Diagnosticado en el Pi 5 de Carlos tras 4 días 15 h de uptime, con 78 % de RAM usada y el sistema al borde del OOM (swap al 96 % y solo 400 MB libres). Causa raíz en el helper de republish AIS (`_aisstreamRepublishToSK` en `src/index.ts:6814`): estábamos publicando `{path: "name", value: <string>}` para cada vessel AIS republicado al bus SignalK. La propiedad `name` no es un delta path válido en SignalK — es una propiedad top-level que el propio SK server rellena directamente al procesar AIS type 5 (static data). Cuando el server-api de SignalK intentaba adjuntar metadata via `stringValue.meta = ...`, lanzaba `TypeError: Cannot create property 'meta' on string 'AURORA'` en strict mode. Con ~80 vessels AIS distintos visibles en la Ría de Vigo publicando cada segundo, el plugin generaba **3914 errores por hora**. Cada error capturado retenía closures apuntando al objeto delta, impidiendo al garbage collector liberarlos. En 4 días el heap creció desde ~450 MB baseline a 2.5 GB. Fix: quitar el `values.push` ofensor. Verificado en vivo tras el restart — uso de RAM bajó de 6.6 GB a 2.2 GB a nivel sistema, RSS del plugin de 2.5 GB a 484 MB, tasa de errores de 3914/hora a 0.
+
+**Watchdog del manager IMU — auto-recuperación al perder el peer sin necesidad de reinicio**
+
+Segundo bug reportado la misma sesión: tras rebootar el pypilot Pi Zero con un interruptor domótico, los widgets de IMU / wave / pitch / roll del visor se quedaban a 0 permanentemente. `navigation.attitude` estaba fresco en el bus SK (verificado via `/signalk/v1/api/vessels/self/navigation/attitude`), pero la fuente `active` IMU del plugin era `null`. Causa raíz: `ImuManager._autoDetect()` se ejecuta exactamente una vez, en el `start()` del plugin. Si en ese instante todas las fuentes fallan su probe (peer offline, SK aún no publicando attitude, raw-i2c disabled), cada fuente queda `status: "disabled"` para siempre. Cuando el peer vuelve más tarde, ningún código re-ejecuta el scan — el widget queda congelado hasta un reinicio completo de SignalK o un `POST /api/imu/scan` manual. Fix: watchdog dentro de `_tick()` (corre cada 100 ms). Si `active === null || active.status !== "active"` y han pasado ≥60 s desde el último auto-detect, se re-ejecuta `_autoDetect()` automáticamente. El throttle de 60 s evita busy-loop cuando nada está realmente accesible, y 60 s es lo suficientemente corto para recuperar dentro de la tolerancia razonable de un navegante tras un reboot del peer. Verificado en vivo — tras volver el pypilot, `active` pasó a `pypilot-192.168.1.115` con `ageMs: 2` en menos de 2 min sin intervención manual.
+
+---
+
 ## [2.11.3] - 2026-08-04
 
 ### English
