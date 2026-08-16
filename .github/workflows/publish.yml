@@ -59,7 +59,10 @@ jobs:
           fi
 
       - name: Install dependencies
-        run: npm ci
+        # `npm install` en vez de `npm ci` porque este proyecto NO commitea
+        # package-lock.json (ver .gitignore: "this project does not commit
+        # package-lock.json"). npm ci requiere lock, npm install no.
+        run: npm install
 
       - name: Build
         run: npm run build
