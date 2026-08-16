@@ -69,6 +69,13 @@ export class ImuManager {
   private tickTimer: NodeJS.Timeout | null = null;
   private bootstrapDone = false;
   private lastFailoverLogMs = 0;
+  /* Rev862: watchdog auto-scan — timestamp del último auto-detect (manual o
+     automático) para throttle. Sin esto, si el peer pypilot cae/reboota
+     después del arranque del plugin, TODAS las fuentes quedan disabled
+     hasta reboot SK o POST manual a /api/imu/scan. Con el watchdog, se
+     reintenta cada 60 s hasta encontrar fuente. */
+  private _lastAutoDetectMs = 0;
+  private _lastWatchdogLogMs = 0;
 
   constructor(opts: ImuManagerOptions) {
     this.app = opts.app;
@@ -210,6 +217,7 @@ export class ImuManager {
   // ─────────────────────────── internals ───────────────────────────
 
   private async _autoDetect(): Promise<void> {
+    this._lastAutoDetectMs = Date.now(); // Rev862: watchdog throttle
     // A. SK: ya arrancada. Esperamos un tick por si llega data inmediata.
     await this._sleep(200);
     const skSource = this.sources.find((s) => s.type === "signalk");
@@ -289,6 +297,20 @@ export class ImuManager {
       // Sin fuente activa — intentamos elegir una entre las disponibles
       const cand = this._chooseBestSource(null);
       if (cand) this._setActive(cand);
+    }
+    /* Rev862: watchdog auto-recuperación. Si no hay fuente activa Y ha
+       pasado >60s desde el último auto-detect, reintenta. Cubre el caso
+       "arranco con pypilot Pi Zero muerto → todo disabled → pypilot vuelve
+       después → nadie re-scanea → widget IMU congelado hasta reboot SK".
+       Con este watchdog, el plugin recupera solo en <2 min. */
+    const now = Date.now();
+    const noActive = !this.active || this.active.status !== "active";
+    if (noActive && (now - this._lastAutoDetectMs) > 60_000) {
+      if (now - this._lastWatchdogLogMs > 60_000) {
+        this.app.debug?.("[IMU] watchdog: no active source, re-running auto-detect");
+        this._lastWatchdogLogMs = now;
+      }
+      this._autoDetect().catch(() => { /* defensive */ });
     }
   }
 
