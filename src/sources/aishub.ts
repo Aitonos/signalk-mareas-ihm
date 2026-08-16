@@ -63,6 +63,9 @@ interface AishubHandle {
     lastError: string | null;
     lastErrorMs: number;
     intervalMs: number;
+    /* Rev865 (issue #40): visibilidad del rate-limit backoff. */
+    rateLimitBackoffActive: boolean;
+    nextPollInMs: number;
   };
 }
 
@@ -78,7 +81,16 @@ export function startAishub(opts: AishubOptions): AishubHandle {
   let closed = false;
   let currentBB = opts.boundingBox;
   const intervalMs = Math.max(60_000, opts.pollIntervalMs ?? 65_000);
+  /* Rev865 (issue #40): backoff separado para rate-limit / errores
+     persistentes del server. Sin esto, seguíamos polleando cada 65 s
+     contra un endpoint que devolvía 429/error persistente, manteniendo
+     la ventana rate-limit deslizante activa y auto-perpetuándose. */
+  const RATE_LIMIT_MIN_MS = 5 * 60_000;   // 5 min tras primer 429/error
+  const RATE_LIMIT_MAX_MS = 30 * 60_000;  // 30 min cap
+  let backoffMs = intervalMs;
+  let inRateLimitBackoff = false;
   let pollTimer: any = null;
+  let nextPollAtMs = 0; // ms epoch cuándo dispara el próximo poll
   let msgReceived = 0;
   let msgAccepted = 0;
   let lastMsgMs = 0;
@@ -126,6 +138,13 @@ export function startAishub(opts: AishubOptions): AishubHandle {
         lastErrorMs = Date.now();
         connected = false;
         error(`poll failed: ${lastError}`);
+        /* Rev865 (issue #40): entrar en rate-limit backoff para 429 y
+           también para 5xx sostenidos. 4xx que no sea 429 son bugs de
+           config (401/403 = credenciales inválidas) — mismo tratamiento
+           conservador para no martillar el server. */
+        if (res.status === 429 || res.status === 403 || res.status >= 500) {
+          _enterRateLimitBackoff(`HTTP ${res.status}`);
+        }
         return;
       }
       const raw = await res.text();
@@ -166,6 +185,12 @@ export function startAishub(opts: AishubOptions): AishubHandle {
       connected = true;
       lastError = null;
       lastMsgMs = Date.now();
+      /* Rev865 (issue #40): poll exitoso → salir del backoff si estábamos. */
+      if (inRateLimitBackoff) {
+        debug(`rate-limit backoff released after successful poll`);
+        inRateLimitBackoff = false;
+      }
+      backoffMs = intervalMs;
       if (pollCount === 1) debug(`first poll OK — ${vessels.length} targets (RECORDS=${header.RECORDS})`);
       if (pollCount % 10 === 0) debug(`stats: poll #${pollCount} ${vessels.length} targets in ${lastPollDurationMs} ms (${msgAccepted} accepted total)`);
       for (const v of vessels) {
@@ -205,15 +230,44 @@ export function startAishub(opts: AishubOptions): AishubHandle {
       error(`poll exception: ${lastError}`);
     } finally {
       inFlight = false;
+      /* Rev865 (issue #40): re-armar el próximo poll con el delay adaptativo. */
+      _scheduleNext();
     }
+  }
+
+  /* Rev865 (issue #40): entra en modo backoff exponencial para rate-limit
+     (429) o errores persistentes del server (403 credencial, 5xx). */
+  function _enterRateLimitBackoff(reason: string): void {
+    if (!inRateLimitBackoff) {
+      inRateLimitBackoff = true;
+      backoffMs = RATE_LIMIT_MIN_MS;
+      debug(`entering rate-limit backoff (${reason}) — first retry in ${backoffMs}ms, cap ${RATE_LIMIT_MAX_MS}ms`);
+    } else {
+      backoffMs = Math.min(RATE_LIMIT_MAX_MS, backoffMs * 2);
+      debug(`still ${reason}, backoff extended to ${backoffMs}ms`);
+    }
+  }
+
+  /* Rev865 (issue #40): scheduler adaptativo. Usa `intervalMs` (65 s)
+     en modo normal; `backoffMs` en modo rate-limit. Jitter ±20 % evita
+     sincronización de múltiples clientes tras un rearranque de infra
+     aisstream/aishub que hubiese 429'd a todos a la vez. */
+  function _scheduleNext(): void {
+    if (closed) return;
+    if (pollTimer) clearTimeout(pollTimer);
+    const base = inRateLimitBackoff ? backoffMs : intervalMs;
+    const jitter = 1 + (Math.random() * 0.4 - 0.2);
+    const waitMs = Math.max(1000, Math.round(base * jitter));
+    nextPollAtMs = Date.now() + waitMs;
+    pollTimer = setTimeout(() => { if (!closed) pollOnce(); }, waitMs);
   }
 
   function start() {
     if (pollTimer) return;
     /* Primer poll con 5 s de retraso para no chocar con arranque de SK. */
-    setTimeout(() => { if (!closed) pollOnce(); }, 5_000);
-    pollTimer = setInterval(() => { if (!closed) pollOnce(); }, intervalMs);
-    debug(`aishub client started (poll every ${intervalMs} ms, bbox=${JSON.stringify(currentBB)})`);
+    pollTimer = setTimeout(() => { if (!closed) pollOnce(); }, 5_000);
+    nextPollAtMs = Date.now() + 5_000;
+    debug(`aishub client started (poll every ${intervalMs} ms nominal, bbox=${JSON.stringify(currentBB)})`);
   }
 
   start();
@@ -226,7 +280,7 @@ export function startAishub(opts: AishubOptions): AishubHandle {
     },
     close() {
       closed = true;
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     },
     getStats() {
       return {
@@ -241,6 +295,8 @@ export function startAishub(opts: AishubOptions): AishubHandle {
         lastError,
         lastErrorMs,
         intervalMs,
+        rateLimitBackoffActive: inRateLimitBackoff,
+        nextPollInMs: Math.max(0, nextPollAtMs - Date.now()),
       };
     },
   };

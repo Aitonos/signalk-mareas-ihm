@@ -56,8 +56,21 @@ interface AisstreamHandle {
    *  Rev746 (feedback Carlos "cert expired en aisstream"): incluye
    *  lastError y lastErrorMs para exponer el motivo real del fallo
    *  (cert caducado, connection refused, DNS, etc.) sin necesidad de
-   *  SSH al Pi para ver journalctl. */
-  getStats: () => { received: number; accepted: number; lastMsgMs: number; connected: boolean; boundingBox: [[number, number], [number, number]]; lastError: string | null; lastErrorMs: number };
+   *  SSH al Pi para ver journalctl.
+   *  Rev865 (issue #40): expone rateLimitBackoffActive y nextReconnectMs
+   *  para diagnosticar el 429 loop que llevaba a clientes silenciosos
+   *  durante días sin recuperación. */
+  getStats: () => {
+    received: number;
+    accepted: number;
+    lastMsgMs: number;
+    connected: boolean;
+    boundingBox: [[number, number], [number, number]];
+    lastError: string | null;
+    lastErrorMs: number;
+    rateLimitBackoffActive: boolean;
+    nextReconnectMs: number;
+  };
 }
 
 export function startAisstream(opts: AisstreamOptions): AisstreamHandle {
@@ -66,8 +79,19 @@ export function startAisstream(opts: AisstreamOptions): AisstreamHandle {
   let ws: any = null;
   let closed = false;
   let currentBB = opts.boundingBox;
-  let reconnectMs = 5_000;
+  /* Rev865 (issue #40): dos regímenes de backoff. El "normal" es agresivo
+     (5s → 60s) para fallos transitorios (net drop, cert glitch). El
+     "rate-limited" es lento (60s → 30min) porque cuando el server
+     aisstream.io devuelve HTTP 429 en el handshake, seguir intentando
+     cada 60s mantiene el rate-limit sliding-window activo indefinidamente
+     y el cliente se queda silencioso durante días (visto en el diagnostic
+     de @ABS0lute-1 issue #37: 2.7 días sin mensajes tras un 429). */
+  const RECONNECT_MIN_MS = 5_000;
   const RECONNECT_MAX_MS = 60_000;
+  const RATE_LIMIT_MIN_MS = 60_000;      // 1 min primer intento post-429
+  const RATE_LIMIT_MAX_MS = 30 * 60_000; // 30 min cap
+  let reconnectMs = RECONNECT_MIN_MS;
+  let inRateLimitBackoff = false;
   let reconnectTimer: any = null;
 
   // Cargar `ws` via require dinámico — dependencia declarada en package.json.
@@ -79,7 +103,7 @@ export function startAisstream(opts: AisstreamOptions): AisstreamHandle {
     return {
       updateBoundingBox: () => { /* noop */ },
       close: () => { /* noop */ },
-      getStats: () => ({ received: 0, accepted: 0, lastMsgMs: 0, connected: false, boundingBox: opts.boundingBox, lastError: "ws lib not available", lastErrorMs: Date.now() }),
+      getStats: () => ({ received: 0, accepted: 0, lastMsgMs: 0, connected: false, boundingBox: opts.boundingBox, lastError: "ws lib not available", lastErrorMs: Date.now(), rateLimitBackoffActive: false, nextReconnectMs: 0 }),
     };
   }
 
@@ -139,8 +163,11 @@ export function startAisstream(opts: AisstreamOptions): AisstreamHandle {
       return;
     }
     ws.on("open", () => {
-      debug(`websocket open (reset backoff, prev streak ended)`);
-      reconnectMs = 5_000; // reset backoff en conexión exitosa
+      /* Rev865 (issue #40): NO resetear el backoff aquí. Un handshake
+         exitoso NO garantiza que el server no nos cierre inmediatamente
+         con 429 o error de suscripción. El reset del backoff se hace al
+         PRIMER mensaje real recibido — sabemos que la sesión está viva. */
+      debug(`websocket open`);
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       lastError = null;
       subscribe();
@@ -151,7 +178,17 @@ export function startAisstream(opts: AisstreamOptions): AisstreamHandle {
       catch { return; }
       msgReceived++;
       lastMsgMs = Date.now();
-      if (msgReceived === 1) debug(`first message received (subscribe OK)`);
+      if (msgReceived === 1) {
+        debug(`first message received (subscribe OK)`);
+        /* Rev865 (issue #40): reset del backoff solo al primer mensaje
+           real — confirma que la sesión funciona end-to-end (no solo
+           handshake). Sale del rate-limit backoff si estábamos ahí. */
+        if (inRateLimitBackoff) {
+          debug(`rate-limit backoff released after successful data flow`);
+          inRateLimitBackoff = false;
+        }
+        reconnectMs = RECONNECT_MIN_MS;
+      }
       if (msgReceived % 100 === 0) debug(`stats: ${msgReceived} recv / ${msgAccepted} accepted`);
       /* Rev739: si el server nos manda un mensaje de error, log claro. */
       if (msg?.error || msg?.MessageType === "Error") {
@@ -211,9 +248,21 @@ export function startAisstream(opts: AisstreamOptions): AisstreamHandle {
       scheduleReconnect();
     });
     ws.on("error", (e: any) => {
-      lastError = String(e?.message ?? e);
+      const errStr = String(e?.message ?? e);
+      lastError = errStr;
       lastErrorMs = Date.now();
       error(`websocket error: ${lastError}`);
+      /* Rev865 (issue #40): detectar HTTP 429 (rate limit) del server y
+         entrar en régimen de backoff lento. Sin esto, el cliente reintentaba
+         cada 60s indefinidamente contra un server que rechazaba por rate
+         limit — la ventana rate-limit se mantenía deslizante y el cliente
+         quedaba silencioso durante días. Fix: subir a backoff min 60s,
+         max 30min con exponencial. */
+      if (/\b429\b/.test(errStr) && !inRateLimitBackoff) {
+        inRateLimitBackoff = true;
+        reconnectMs = RATE_LIMIT_MIN_MS;
+        debug(`HTTP 429 rate limit detected → entering rate-limit backoff (start ${RATE_LIMIT_MIN_MS}ms, cap ${RATE_LIMIT_MAX_MS}ms)`);
+      }
       // 'close' vendrá detrás y disparará reconnect — si no viene, el
       // watchdog fuerza un connect() nuevo en <=30 s.
     });
@@ -222,12 +271,19 @@ export function startAisstream(opts: AisstreamOptions): AisstreamHandle {
   function scheduleReconnect() {
     if (closed) return;
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    debug(`reconnecting in ${reconnectMs}ms (streak resets on next successful open)`);
+    /* Rev865 (issue #40): jitter ±20% para que múltiples clientes que
+       hayan topado 429 al mismo tiempo (ej. rearranque de infra
+       aisstream.io) no vuelvan a sincronizarse al reconectar. */
+    const jitter = 1 + (Math.random() * 0.4 - 0.2);
+    const waitMs = Math.max(1000, Math.round(reconnectMs * jitter));
+    const cap = inRateLimitBackoff ? RATE_LIMIT_MAX_MS : RECONNECT_MAX_MS;
+    const regime = inRateLimitBackoff ? "rate-limit" : "normal";
+    debug(`reconnecting in ${waitMs}ms (${regime} backoff, next step cap ${cap}ms)`);
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
-      reconnectMs = Math.min(RECONNECT_MAX_MS, reconnectMs * 2);
+      reconnectMs = Math.min(cap, reconnectMs * 2);
       connect();
-    }, reconnectMs);
+    }, waitMs);
   }
 
   /* Rev745: watchdog periódico independiente. Cubre el caso donde
@@ -277,6 +333,13 @@ export function startAisstream(opts: AisstreamOptions): AisstreamHandle {
         boundingBox: currentBB,
         lastError,
         lastErrorMs,
+        /* Rev865 (issue #40): expone estado del rate-limit backoff
+           para que el diagnostic (y el user via UI) vea cuándo estamos
+           bloqueados por 429 vs simplemente offline. `nextReconnectMs`
+           es el intervalo del PRÓXIMO reconnect (ya escalado, no el
+           anterior) — 0 si no hay reconnect programado. */
+        rateLimitBackoffActive: inRateLimitBackoff,
+        nextReconnectMs: reconnectTimer ? reconnectMs : 0,
       };
     },
   };
