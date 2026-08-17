@@ -119,7 +119,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev877";
+const PLUGIN_REVISION = "Rev878";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1461,6 +1461,33 @@ export default function (app: SignalKApp): Plugin {
         }],
       });
     } catch { /* defensive: never break caller for a publish failure */ }
+  }
+
+  /* Rev878: helper para declarar meta.timeout en un batch de paths self.
+     SK server 2.31.0+ (PR #2689) usa este metadata para detectar
+     automáticamente cuándo un path está stale y marcarlo como tal en
+     los consumidores (KIP, WilhelmSK, Freeboard). Servers anteriores
+     ignoran silenciosamente el meta.timeout — retrocompatible al 100%.
+     Los valores están en SEGUNDOS (SK spec). Publicar una sola vez al
+     arrancar el plugin — SK persiste el meta hasta el siguiente boot. */
+  function _publishSkMetaTimeouts(timeoutSec: Record<string, number>): void {
+    try {
+      const meta = Object.entries(timeoutSec).map(([path, sec]) => ({
+        path: path as any,
+        value: { timeout: sec },
+      }));
+      if (meta.length === 0) return;
+      app.handleMessage(plugin.id, {
+        context: ("vessels." + app.selfId) as Context,
+        updates: [{
+          timestamp: new Date().toISOString() as Timestamp,
+          meta,
+        } as any],
+      });
+      app.debug?.(`[IHM-META] published meta.timeout for ${meta.length} paths`);
+    } catch (e: any) {
+      app.debug?.(`[IHM-META] publish failed: ${e?.message ?? e}`);
+    }
   }
 
   // Rev765: thin wrapper around extracted sendTelegram() so unit tests can
@@ -18430,6 +18457,33 @@ try {
       app.handleMessage(plugin.id, clearDelta);
       app.debug(`[IHM-STARTUP] Cleared ${clearPaths.length} notification paths to kill zombies`);
     } catch { /* never break startup */ }
+
+    /* Rev878: declare meta.timeout en paths self que publicamos
+       periódicamente. SK server 2.31.0+ marca automáticamente como
+       stale los paths cuyo valor no se actualiza en el timeout
+       declarado. Servers anteriores ignoran silenciosamente el meta —
+       retrocompatible. Valores en segundos, escogidos con margen
+       generoso sobre el tick real de cada evaluador. */
+    _publishSkMetaTimeouts({
+      // Paths grounding (evaluateAndPublishGroundingRisk, tick ~60s):
+      "environment.tide.vessel.groundingRisk":       300,
+      "environment.tide.vessel.groundingStatus":     300,
+      "environment.tide.vessel.groundingAlarm":      300,
+      "environment.tide.vessel.finalExpctDepthBKeel":300,
+      "environment.tide.vessel.expectedDropToLW":    300,
+      "environment.tide.vessel.BKeelFreeWater":      300,
+      "environment.depth.belowKeelExpectedAtLW":     300,
+      // Paths de calado (rara vez cambian, timeout largo):
+      "environment.tide.vessel.draftUsed":            3600,
+      "environment.tide.vessel.draftBase":            3600,
+      "environment.tide.vessel.draftEffective":       3600,
+      "environment.tide.vessel.draftSafetyMarginUsed":3600,
+      // Nombre estación (config, cambia raro):
+      "environment.tide.stationName":                 86400,
+      // Ancla canónica (fondeados = estable):
+      "navigation.anchor.position":                   3600,
+      "navigation.anchor.maxRadius":                  3600,
+    });
 
     // Perform initial update on startup after short delay to allow gnss position to be populated
     delay(4000).then(updatePosition);
