@@ -72,6 +72,7 @@ import {
   formatTelegramMessage,
   TELEGRAM_THROTTLE_MS,
 } from "./telegram.js";
+import { resolveBoatLang } from "./langSettings.js";
 
 // Rev680 (feedback Carlos "aunque pongamos NEAPS en curvas siguen saliendo
 // datos de IHM"): las pseudo-estaciones no-IHM (sin-marea, mediterráneo,
@@ -1274,6 +1275,36 @@ export default function (app: SignalKApp): Plugin {
   // (same mirror as Pi voice). Real value refreshed from ihmCache /settings.
   let _currentLang: UiLang = DEFAULT_LANG;
 
+  /** Load boat-global lang from props, ihmCache, or plugin-config file. */
+  async function _refreshCurrentLang(props?: Config): Promise<void> {
+    try {
+      const cache = _ihmCacheRef;
+      if (!cache) return;
+
+      let configLang: unknown;
+      try {
+        const cfgDir = path.join(app.getDataDirPath(), "plugin-config-data");
+        const cfgPath = path.join(cfgDir, "mareas-ihm.json");
+        const raw = await fs.promises.readFile(cfgPath, "utf-8");
+        configLang = JSON.parse(raw)?.configuration?.lang;
+      } catch {
+        /* ignore missing/unreadable config */
+      }
+
+      const propLang = (props as any)?.lang;
+      const resolved = await resolveBoatLang(cache, { propsLang: propLang, configLang });
+      _currentLang = resolved as UiLang;
+
+      if (propLang === "es" || propLang === "en") {
+        await cache.set("lang", resolved);
+      } else if (configLang === "es" || configLang === "en") {
+        await cache.set("lang", resolved);
+      }
+    } catch {
+      /* keep current _currentLang */
+    }
+  }
+
   // v1.3.1 Rev38: Crash diagnostics — log uncaught errors to identify if our plugin causes SK restarts
   const _ihmCrashLog = (type: string, err: any) => {
     const msg = `[signalk-mareas-ihm CRASH] ${type}: ${err?.message ?? err}\n${err?.stack ?? "no stack"}`;
@@ -2013,6 +2044,7 @@ export default function (app: SignalKApp): Plugin {
       }
     };
     _aisfriendsStartIfConfigured(props);
+    await _refreshCurrentLang(props);
     _telegramBotToken = String((props as any)?.telegramBotToken || "").trim();
     _telegramChatId   = String((props as any)?.telegramChatId   || "").trim();
     try {
@@ -2131,7 +2163,11 @@ export default function (app: SignalKApp): Plugin {
         await ihmCache.set("favoriteStationId", String((props as any).favoriteStationId));
       }
       if ((props as any).lang) {
-        await ihmCache.set("lang", String((props as any).lang));
+        const lang = String((props as any).lang);
+        if (lang === "es" || lang === "en") {
+          _currentLang = lang as UiLang;
+          await ihmCache.set("lang", lang);
+        }
       }
       // Rev695 (feedback Carlos "Arranca en Auto NEAPS Vigo, si se puede
       // siempre debe ser IHM"): en arranque, si no hay override manual y el
@@ -2221,22 +2257,7 @@ export default function (app: SignalKApp): Plugin {
       // ignore
     }
 
-    // If no lang was provided via props (Admin UI), try reading the persisted config file.
-    try {
-      const existing = await ihmCache.get("lang");
-      if (!existing) {
-        const cfgDir = path.join(app.getDataDirPath(), "plugin-config-data");
-        const cfgPath = path.join(cfgDir, "mareas-ihm.json");
-        const raw = await fs.promises.readFile(cfgPath, "utf-8");
-        const parsed = JSON.parse(raw);
-        const lang = parsed?.configuration?.lang;
-        if (lang === "es" || lang === "en") {
-          await ihmCache.set("lang", lang);
-        }
-      }
-    } catch {
-      // ignore
-    }
+    // Lang already loaded in _refreshCurrentLang() before Telegram startup.
 
     // --- v1.125: Diagnostic startup log ---
     // Invaluable for headless / Raspberry Pi debugging. Shows effective state, not just config.
