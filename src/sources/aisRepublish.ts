@@ -55,6 +55,20 @@ export interface AisRepublishDelta {
  *   `{path:"name", value:"AURORA"}` reventaba `fullsignalk.js` en
  *   strict mode con `TypeError: Cannot create property 'meta' on
  *   string 'AURORA'`, generando miles de errores por hora y leak.
+ * - Nunca publica `communication.callsignVhf` — mismo mecanismo que
+ *   `name`. Bug Rev879 (2026-09-06): 16.978 excepciones en 15.8 h en
+ *   producción. El parser AIS built-in de SK ya pre-planta el
+ *   callsign como string pelado en el árbol del vessel; nuestro
+ *   delta rompe fullsignalk.js al intentar añadir `.meta` encima.
+ * - Nunca publica `registrations.imo` — mismo mecanismo. Bug Rev880
+ *   (2026-09-06): destapado inmediatamente tras Rev879 en el mismo
+ *   pushup al Pi. 3 crashes en 45 s con valores `IMO 9976264/…`
+ *   (exactamente el string prefijado que emitíamos).
+ * - Nunca publica `design.aisShipType`. Rev881 (2026-09-06): NO
+ *   crashea (SK lo pre-planta como objeto) pero degrada — emitíamos
+ *   `name: "36"` y sobreescribíamos el `name: "Sailing"` del parser
+ *   built-in en el bus. Cirugía preventiva por coherencia: solo
+ *   emitimos paths posicionales/dimensionales, no identitarios.
  * - `length` y `beam` solo se publican si son > 0 (evita "unknown"
  *   contaminando el bus).
  * - Devuelve array vacío si no hay valores útiles — el caller debe
@@ -84,20 +98,42 @@ export function buildAisRepublishDeltas(
      en strict mode y genera miles de errores por hora + leak.
      Sí se acepta `u.name` en la payload por compatibilidad con las
      3 fuentes que lo pasan; simplemente lo ignoramos aquí. */
-  if (u.callsign) {
-    deltas.push({ context: ctx, path: "communication.callsignVhf", value: u.callsign });
-  }
-  if (u.imo) {
-    deltas.push({ context: ctx, path: "registrations.imo", value: `IMO ${u.imo}` });
-  }
+  /* Rev879: MISMO bug que Rev861, ahora en `communication.callsignVhf`.
+     El parser AIS built-in de SK pre-planta el callsign como string
+     pelado en el árbol del vessel (no como `{value, meta}`); cuando
+     nuestro republish emite el delta, fullsignalk.js:190 intenta
+     `previous[pathPart].meta = {...}` sobre ese string y truena con
+     `TypeError: Cannot create property 'meta' on string '<callsign>'`.
+     Observado en producción 2026-09-06: 16.978 excepciones en 15.8 h
+     (~18/min, 85 callsigns únicos: EA/EB/CU/CQ/5B/5T/…). Cada
+     excepción deja un handler colgado → MaxListeners → cuelgue SK.
+     Igual que con name: se acepta `u.callsign` en la payload por
+     compat con aisstream/aishub/aisfriends, pero NO se publica.
+     Ver test `REGRESSION Rev879` en tests/aisRepublish.test.js. */
+  /* Rev880: mismo bug que Rev861 (name) y Rev879 (callsign), ahora en
+     `registrations.imo`. Confirmado en el pushup Rev879 en el Pi:
+     inmediatamente tras el fix del callsign aparecen 3 crashes en
+     45 s con valores `IMO 9976264`, `IMO 9593672`, `IMO 919421800`
+     — exactamente el string que emitíamos aquí. El parser AIS
+     built-in de SK ya guarda el IMO como string pelado en el árbol
+     del vessel; nuestro delta rompe fullsignalk.js:190 al añadir
+     `.meta` encima. Silently drop `u.imo`. Ver test regresión
+     `REGRESSION Rev880` en tests/aisRepublish.test.js. */
   if (u.length != null && u.length > 0) {
     deltas.push({ context: ctx, path: "design.length", value: { overall: u.length } });
   }
   if (u.beam != null && u.beam > 0) {
     deltas.push({ context: ctx, path: "design.beam", value: u.beam });
   }
-  if (typeof u.shipType === "number") {
-    deltas.push({ context: ctx, path: "design.aisShipType", value: { id: u.shipType, name: String(u.shipType) } });
-  }
+  /* Rev881: no republicar `design.aisShipType`. NO crashea (SK
+     built-in lo pre-planta como objeto {value,meta}, no como valor
+     pelado), pero SÍ degrada: emitimos `name: String(u.shipType)`
+     → `name: "36"` mientras que el parser AIS de SK guarda
+     `name: "Sailing"`. Apps que leen del bus (KIP, Freeboard,
+     WilhelmSK) veían "36" en vez de "Sailing" porque nuestro delta
+     era el $source más reciente. Los targets online (aisstream/
+     aishub/aisfriends) sin equivalente VHF pierden aisShipType en
+     el bus SK; para esos, la identidad la sirve nuestro propio
+     visor vía SSE desde _aisKnownDB, que es lo que Carlos usa. */
   return deltas;
 }

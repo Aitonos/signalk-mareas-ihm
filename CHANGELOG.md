@@ -1,5 +1,55 @@
 # Changelog
 
+## [2.11.7] - 2026-09-06
+
+### English
+
+**Critical bug fix: AIS republish TypeError crash on identity fields (Rev879 + Rev880 + Rev881).**
+
+Silent production crash cascade discovered 2026-09-06 on a Pi 5 running 2.11.6. The plugin's AIS republish helper (`buildAisRepublishDeltas`, introduced in Rev877) emitted deltas for AIS target identity fields (`communication.callsignVhf`, `registrations.imo`, `design.aisShipType`) via `handleMessage` to `vessels.urn:mrn:imo:mmsi:<mmsi>.*`. When the same leaf had already been pre-planted as a bare string in the vessel tree by SignalK's built-in AIS parser (from AIS-5 static data received over VHF), the subsequent `addValue` reduce inside `fullsignalk.js:190` walked into the string and threw `TypeError: Cannot create property 'meta' on string '<value>'`. Each throw left a listener attached; the accumulation triggered `MaxListenersExceededWarning` warnings and, in the worst observed case, silently hung the SignalK HTTP server after tens of thousands of exceptions.
+
+Reported symptom: 16,978 exceptions in a single 15.8-hour window (~18/min, 85 unique callsigns across 30+ flags). Same mechanism as the memory leak fixed in Rev861 for the `name` field.
+
+Fixes bundled:
+
+- **Rev879** — stop republishing `communication.callsignVhf`. Was the root cause of the initial 18/min crash rate.
+- **Rev880** — stop republishing `registrations.imo`. Uncovered immediately after the Rev879 deploy revealed a second identity field with the same pre-plant collision (3 crashes in 45 s with values like `IMO 9976264`).
+- **Rev881** — stop republishing `design.aisShipType`. Preventive: does not crash (SignalK pre-plants this one as a wrapped object, not a bare string), but it did overwrite the built-in's ship-type `name: "Sailing"` with a stringified id `name: "36"` in the SK tree, degrading identity data for downstream apps (KIP, Freeboard, WilhelmSK).
+
+The republish helper now emits only positional and dimensional data (`navigation.position`, `navigation.speedOverGround`, `navigation.courseOverGroundTrue`, `navigation.headingTrue`, `design.length`, `design.beam`). Identity fields are left to the SignalK built-in AIS parser, which owns them correctly. Targets coming from the online engines (aisstream / aishub / aisfriends) that have no VHF equivalent keep receiving position and dimensions on the SK bus; identity data for those targets is still served by the plugin's own visor via SSE from `_aisKnownDB`.
+
+Three dedicated regression tests (`REGRESSION Rev879`, `REGRESSION Rev880`, `REGRESSION Rev881`) fail the build if any of the four identity fields (`name`, `callsignVhf`, `imo`, `aisShipType`) is ever re-added to the republish output. Extends the existing `REGRESSION Rev861` test for `name`.
+
+Bonus finding while diagnosing the crash: opened upstream issue [SignalK/signalk-server#3018](https://github.com/SignalK/signalk-server/issues/3018) about the `toStdout` array in serial provider config growing unbounded on every Connections editor Apply, which was also causing `MaxListenersExceededWarning` warnings at boot on the affected setup. Unrelated to this crash but the same log noise, so worth flagging.
+
+Post-fix telemetry: 0 crashes in the observed window after Rev881 deploy (previous rate ~18/min, so ~250 crashes expected in the same period).
+
+---
+
+### Español
+
+**Fix crítico: crash TypeError en el republish AIS de campos identitarios (Rev879 + Rev880 + Rev881).**
+
+Cascada de crashes silenciosa descubierta el 2026-09-06 en el Pi 5 corriendo 2.11.6. El helper `buildAisRepublishDeltas` del plugin (introducido en Rev877) emitía deltas para campos identitarios de targets AIS (`communication.callsignVhf`, `registrations.imo`, `design.aisShipType`) vía `handleMessage` a `vessels.urn:mrn:imo:mmsi:<mmsi>.*`. Cuando ese mismo leaf ya había sido pre-plantado como string pelado en el árbol del vessel por el parser AIS built-in de SignalK (a partir de AIS-5 static data recibida por VHF), el reduce de `addValue` dentro de `fullsignalk.js:190` entraba en el string y lanzaba `TypeError: Cannot create property 'meta' on string '<value>'`. Cada excepción dejaba un listener enganchado; la acumulación disparaba warnings `MaxListenersExceededWarning` y, en el peor caso observado, colgaba silenciosamente el servidor HTTP de SignalK tras decenas de miles de excepciones.
+
+Síntoma reportado: 16.978 excepciones en una ventana de 15,8 horas (~18/min, 85 callsigns únicos de 30+ banderas). Mismo mecanismo que el memory leak arreglado en Rev861 para el campo `name`.
+
+Fixes empaquetados:
+
+- **Rev879** — dejar de republicar `communication.callsignVhf`. Era la causa raíz del ratio inicial de 18 crashes/min.
+- **Rev880** — dejar de republicar `registrations.imo`. Se destapó inmediatamente tras el deploy de Rev879 al aparecer un segundo campo identitario con la misma colisión (3 crashes en 45 s con valores tipo `IMO 9976264`).
+- **Rev881** — dejar de republicar `design.aisShipType`. Preventivo: no crashea (SignalK lo pre-planta como objeto envuelto, no como string pelado), pero sí sobreescribía el `name: "Sailing"` del built-in con un id stringificado `name: "36"` en el árbol SK, degradando datos identitarios para apps downstream (KIP, Freeboard, WilhelmSK).
+
+El helper de republish ahora emite solo datos posicionales y dimensionales (`navigation.position`, `navigation.speedOverGround`, `navigation.courseOverGroundTrue`, `navigation.headingTrue`, `design.length`, `design.beam`). Los campos identitarios se dejan al parser AIS built-in de SignalK, que los gestiona correctamente. Los targets de los motores online (aisstream / aishub / aisfriends) sin equivalente VHF siguen recibiendo posición y dimensiones en el bus SK; la identidad de esos targets la sirve el visor propio del plugin vía SSE desde `_aisKnownDB`.
+
+Tres tests de regresión dedicados (`REGRESSION Rev879`, `REGRESSION Rev880`, `REGRESSION Rev881`) rompen la build si alguno de los cuatro campos identitarios (`name`, `callsignVhf`, `imo`, `aisShipType`) es re-añadido al output del republish. Extiende el test `REGRESSION Rev861` que ya existía para `name`.
+
+Hallazgo colateral durante el diagnóstico: abierta la issue upstream [SignalK/signalk-server#3018](https://github.com/SignalK/signalk-server/issues/3018) sobre el array `toStdout` en la config de providers serie creciendo sin límite en cada Apply del editor de Connections, que también estaba provocando warnings `MaxListenersExceededWarning` al boot en la instalación afectada. No relacionado con este crash pero mismo ruido en el log, se marca por completitud.
+
+Telemetría post-fix: 0 crashes en la ventana observada tras deploy de Rev881 (rate previo ~18/min, esperados ~250 crashes en el mismo periodo).
+
+---
+
 ## [2.11.6] - 2026-08-16
 
 ### English

@@ -68,6 +68,31 @@ test('name in payload does not block other fields', () => {
   assert.equal(deltas[0].path, 'navigation.position');
 });
 
+test('REGRESSION Rev879: callsign is NEVER republished as SK delta', () => {
+  // Mismo bug que Rev861 pero en communication.callsignVhf. El parser
+  // AIS built-in de SK ya guarda el callsign como string pelado en el
+  // árbol; nuestro delta reventaba fullsignalk.js:190 con
+  // TypeError: Cannot create property 'meta' on string '<callsign>'.
+  // Observado 2026-09-06: 16.978 excepciones en 15.8 h. Este test
+  // rompe la build si alguien vuelve a añadir el push.
+  const deltas = buildAisRepublishDeltas(
+    { mmsi: '999', callsign: '5BEE6', lat: 42, lng: -8, tsMs: 0 },
+    null,
+  );
+  const callsignPaths = deltas.filter(d => d.path === 'communication.callsignVhf');
+  assert.equal(callsignPaths.length, 0,
+    'CRITICAL: callsignVhf must NEVER be republished — see Rev879 (17k errors/day)');
+});
+
+test('callsign in payload does not block other fields', () => {
+  const deltas = buildAisRepublishDeltas(
+    { mmsi: '999', callsign: '5BEE6', lat: 42, lng: -8, tsMs: 0 },
+    null,
+  );
+  assert.equal(deltas.length, 1);
+  assert.equal(deltas[0].path, 'navigation.position');
+});
+
 test('sog=0 IS published (0 is a valid speed, not "missing")', () => {
   const deltas = buildAisRepublishDeltas(
     { mmsi: '123', sog: 0, tsMs: 0 },
@@ -110,24 +135,51 @@ test('length negative does NOT publish', () => {
   assert.equal(deltas.length, 0);
 });
 
-test('imo generates registrations.imo with "IMO " prefix', () => {
+test('REGRESSION Rev880: imo is NEVER republished as SK delta', () => {
+  // Mismo bug que Rev861 (name) y Rev879 (callsign). Destapado
+  // 2026-09-06 inmediatamente tras Rev879: al eliminar el push del
+  // callsign, aparecieron 3 crashes en 45 s con `IMO 9976264/…`,
+  // que es exactamente el string que emitíamos como
+  // { path: "registrations.imo", value: `IMO ${u.imo}` }.
   const deltas = buildAisRepublishDeltas(
     { mmsi: '123', imo: '9876543', tsMs: 0 },
     null,
   );
-  assert.equal(deltas.length, 1);
-  assert.equal(deltas[0].path, 'registrations.imo');
-  assert.equal(deltas[0].value, 'IMO 9876543');
+  const imoPaths = deltas.filter(d => d.path === 'registrations.imo');
+  assert.equal(imoPaths.length, 0,
+    'CRITICAL: registrations.imo must NEVER be republished — Rev880');
 });
 
-test('shipType=0 IS published (0 = Not available, still valid AIS type)', () => {
+test('imo in payload does not block other fields', () => {
   const deltas = buildAisRepublishDeltas(
-    { mmsi: '123', shipType: 0, tsMs: 0 },
+    { mmsi: '123', imo: '9876543', lat: 42, lng: -8, tsMs: 0 },
     null,
   );
   assert.equal(deltas.length, 1);
-  assert.equal(deltas[0].path, 'design.aisShipType');
-  assert.deepEqual(deltas[0].value, { id: 0, name: '0' });
+  assert.equal(deltas[0].path, 'navigation.position');
+});
+
+test('REGRESSION Rev881: aisShipType is NEVER republished as SK delta', () => {
+  // Rev881 (2026-09-06): no crashea (SK lo pre-planta como objeto)
+  // pero degrada — emitíamos `name: "36"` y sobreescribíamos el
+  // `name: "Sailing"` que puso el parser built-in. Cirugía
+  // preventiva por coherencia con name/callsign/imo.
+  const deltas = buildAisRepublishDeltas(
+    { mmsi: '123', shipType: 36, tsMs: 0 },
+    null,
+  );
+  const stPaths = deltas.filter(d => d.path === 'design.aisShipType');
+  assert.equal(stPaths.length, 0,
+    'CRITICAL: aisShipType must NEVER be republished — Rev881 (name degradation)');
+});
+
+test('shipType in payload does not block other fields', () => {
+  const deltas = buildAisRepublishDeltas(
+    { mmsi: '123', shipType: 36, lat: 42, lng: -8, tsMs: 0 },
+    null,
+  );
+  assert.equal(deltas.length, 1);
+  assert.equal(deltas[0].path, 'navigation.position');
 });
 
 test('full payload generates all applicable deltas', () => {
@@ -135,23 +187,21 @@ test('full payload generates all applicable deltas', () => {
     mmsi: '999',
     lat: 42, lng: -8,
     sog: 5.14, cog: 1.57, heading: 1.57,
-    name: 'IGNORED', // Rev861: silently dropped
-    callsign: 'ABC', imo: '1234567',
+    name: 'IGNORED',      // Rev861: silently dropped
+    callsign: 'IGNORED',  // Rev879: silently dropped
+    imo: '1234567',       // Rev880: silently dropped
+    shipType: 36,         // Rev881: silently dropped
     length: 12, beam: 4,
-    shipType: 36,
     tsMs: 0,
   }, null);
   const paths = deltas.map(d => d.path).sort();
   assert.deepEqual(paths, [
-    'communication.callsignVhf',
-    'design.aisShipType',
     'design.beam',
     'design.length',
     'navigation.courseOverGroundTrue',
     'navigation.headingTrue',
     'navigation.position',
     'navigation.speedOverGround',
-    'registrations.imo',
   ]);
   // Confirm all share the same context
   const ctxs = new Set(deltas.map(d => d.context));
