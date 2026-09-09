@@ -1,5 +1,53 @@
 # Changelog
 
+## [2.11.8] - 2026-09-09
+
+### English
+
+**Bug fix contributed by [@s991116](https://github.com/s991116): Telegram startup message now respects the plugin language setting.**
+
+When the plugin was started or restarted, the Telegram startup notification always went out in Spanish, even when the plugin's `lang` setting was `en`. Root cause was an initialization order bug: the in-memory `_currentLang` mirror was left at the compiled-in default (`es`) at the moment the startup Telegram push was fired, and only got updated to the persisted value much later in `plugin.start()` (when the cache/config-file lang was reconciled). The startup message therefore captured the default, not the user's setting.
+
+Fix (PR #41, closes #46):
+
+- New pure module `src/langSettings.ts` exporting `resolveBoatLang(storage, {propsLang, configLang})` with a clear priority order: props → cache → config file → default. Isolated and unit-testable without any plugin scaffolding.
+- New `_refreshCurrentLang(props)` helper in `plugin.start()` that reads props, cache, and the persisted `plugin-config-data/mareas-ihm.json`, then calls the resolver and updates the `_currentLang` mirror. Called explicitly right before the Telegram bot is initialized, so the startup push already sees the correct language.
+- The subsequent `props.lang` handling is now strictly validated (only `"es"` or `"en"` accepted). The previous "if no lang in cache, try config file" fallback that used to live later in `plugin.start()` has been removed — the new `_refreshCurrentLang` covers it, earlier and more thoroughly.
+- 5 new tests in `tests/telegram.test.js`:
+  - Locks the ES + EN copy for the startup message.
+  - Verifies `resolveBoatLang` returns the persisted value.
+  - End-to-end simulation of the plugin boot lang refresh.
+  - Static analysis test that reads `src/index.ts` and asserts the init order `_aisfriendsStartIfConfigured` → `_refreshCurrentLang` → `_telegramBotToken`, so moving the refresh to a wrong position later breaks the build.
+
+Thanks to [@s991116](https://github.com/s991116) for reporting the bug ([issue #46](https://github.com/Aitonos/signalk-mareas-ihm/issues/46)) and contributing the fix with tests ([PR #41](https://github.com/Aitonos/signalk-mareas-ihm/pull/41)).
+
+**Also**: this is the first release published under the new NPM Trusted Publishing (OIDC) workflow migrated in the previous cycle. No secrets in transit, provenance attestation attached automatically.
+
+---
+
+### Español
+
+**Bug fix contribuido por [@s991116](https://github.com/s991116): el mensaje de arranque por Telegram ahora respeta el idioma configurado en el plugin.**
+
+Al arrancar o reiniciar el plugin, la notificación de arranque por Telegram salía siempre en español, incluso con la configuración `lang` en `en`. La causa raíz era un bug de orden de inicialización: el mirror en memoria `_currentLang` se quedaba con el default compilado (`es`) en el momento en que se disparaba el push de arranque de Telegram, y solo se refrescaba con el valor persistido mucho más tarde dentro de `plugin.start()` (cuando se reconciliaba el idioma desde cache/config). El mensaje de arranque, por tanto, capturaba el default, no la elección del usuario.
+
+Fix (PR #41, cierra #46):
+
+- Nuevo módulo puro `src/langSettings.ts` que exporta `resolveBoatLang(storage, {propsLang, configLang})` con prioridad clara: props → cache → config file → default. Aislado y testeable sin necesidad de arrancar el plugin.
+- Nuevo helper `_refreshCurrentLang(props)` dentro de `plugin.start()` que lee props, cache y el `plugin-config-data/mareas-ihm.json` persistido, llama al resolver y actualiza el mirror `_currentLang`. Se invoca explícitamente **justo antes** de inicializar el bot de Telegram, así el push de arranque ya ve el idioma correcto.
+- El bloque posterior de `props.lang` valida ahora estrictamente (solo se aceptan `"es"` o `"en"`). El fallback antiguo de "si no hay lang en cache, intenta leer del config file" que vivía más adelante en `plugin.start()` se elimina — el nuevo `_refreshCurrentLang` lo cubre antes y de forma más completa.
+- 5 tests nuevos en `tests/telegram.test.js`:
+  - Fijan las cadenas ES + EN del mensaje de arranque.
+  - Verifican que `resolveBoatLang` devuelve el valor persistido.
+  - Simulación end-to-end del refresh de idioma al arrancar.
+  - Test de análisis estático que lee `src/index.ts` y valida el orden de init `_aisfriendsStartIfConfigured` → `_refreshCurrentLang` → `_telegramBotToken`, así mover el refresh a una posición equivocada rompe la build.
+
+Gracias a [@s991116](https://github.com/s991116) por reportar el bug ([issue #46](https://github.com/Aitonos/signalk-mareas-ihm/issues/46)) y contribuir el fix con tests ([PR #41](https://github.com/Aitonos/signalk-mareas-ihm/pull/41)).
+
+**Además**: esta es la primera release publicada bajo el nuevo workflow de NPM Trusted Publishing (OIDC) migrado en el ciclo anterior. Sin secretos en tránsito, attestation de provenance adjuntada automáticamente.
+
+---
+
 ## [2.11.7] - 2026-09-06
 
 ### English
