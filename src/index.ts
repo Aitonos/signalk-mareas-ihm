@@ -14067,7 +14067,12 @@ function _recordAudioAttempt(entry: Omit<_AudioAttemptEntry, "tsMs">) {
 /* Rev849: event loop lag histogram. Coste ~cero. Se lee al servir
    /api/audio-health. Alto p99 = evaluator/geocoding/… bloqueando el thread
    → alarma llega tarde. */
-let _eventLoopHistogram: import("perf_hooks").IntervalHistogram | null = null;
+// Type derived from the function's return, not from a named interface, because
+// @types/node renamed `IntervalHistogram` → `ELDHistogram` in 26.5.0 while
+// keeping `monitorEventLoopDelay`'s signature stable. Fresh CI installs
+// resolve to 26.5.0 (broke build until this fix); local dev may still have
+// 26.0.0 cached. `ReturnType<typeof …>` works on both.
+let _eventLoopHistogram: ReturnType<typeof import("node:perf_hooks").monitorEventLoopDelay> | null = null;
 try {
   const { monitorEventLoopDelay } = require("perf_hooks");
   const h = monitorEventLoopDelay({ resolution: 20 });
