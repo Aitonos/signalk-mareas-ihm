@@ -1,22 +1,31 @@
 # CLAUDE.md — instrucciones para asistente AI
 
-> **Estado 2026-07-21 — Rev761 / v2.9.0**
+> **Estado 2026-09-23 — Rev885 / v2.12.0**
 >
 > QA pendiente en agua real (validar antes del próximo publish):
->  - Auto-lift al arrancar motor (Rev751): `propulsion.<name>.state`.
->  - Motor AIS online triple (aisstream + aishub + aisfriends): badges
->    VHF/AS/AH/AF, republish a `vessels.*`, dedupe simétrica.
->  - Smoothing filter sonda (~30 cm de oscilación).
+>  - **Rev883 auto-lift MOTORING fix + ACKs AIS preservados** en re-drop
+>    < 5 m / < 2 min (issue #37 side-thread). Trigger primario motor+SOG
+>    30 s, fallback SOG-only 60 s (antes 30 s).
+>  - **Rev885 perf visor** en tablet real: dedup fetches + `whenVisible`
+>    timers. Verificar fluidez pan/zoom + comportamiento al cambiar de app.
 >  - Cualquier "retal" listado en `docs/QA_PENDIENTE.md`.
 >
 > Resueltos recientemente:
->  - ✅ Alarma ancla al motorizar saliendo (auto-lift Rev751).
->  - ✅ Widget viento lag (2026-07-21).
->  - ✅ Ghost grounding alarm al boot (warmup 20 s + stability 15 s +
->       depth-quality guard).
->  - ✅ Configurator wizard mandatorio primer install (Rev714+).
->  - ✅ Cache HTML Firefox agresivo (safety-net JS Rev761).
->  - ✅ Slider AIS máx 100 km + bbox online 1° (Rev757).
+>  - ✅ Auto-lift MOTORING duplicado sin `_saveAisAckPending` (Rev883,
+>       causa raíz del "anchor reset + ACKs limpias" reportado por
+>       @ABS0lute-1 en issue #37).
+>  - ✅ Memory leak AIS republish `path:"name"` (Rev861 / v2.11.4).
+>  - ✅ aisstream/aishub/aisfriends rate-limit backoff exponencial
+>       (Rev865 / v2.11.5, issue #40).
+>  - ✅ Heap V8 grow lento en Pi con 23 plugins habilitados — workaround
+>       operacional: **cron `/etc/cron.d/signalk-restart` cada 3 días
+>       04:00 CEST + toggle icon LXDE** (2026-09-23).
+>  - ✅ K-01 smoothing sonda (aprobado agua real 2026-08-02).
+>  - ✅ Auto-lift al arrancar motor (Rev751).
+>
+> Un bug cosmético vigente: **TypeError meta on string** al arrancar SK
+> (1 chispazo/restart, sin impacto funcional, ver `docs/KNOWN_BUGS.md`
+> B-A1).
 >
 > No proponer `npm publish` por iniciativa propia, y NO heredar
 > autorización de sesiones anteriores: cada publish requiere OK
@@ -32,23 +41,31 @@ y `docs/BOOTSTRAP_PROMPT.md`** antes de tocar nada.
   garreo, AIS anti-colisión (VHF + 3 motores online aisstream/aishub/aisfriends),
   abrigo, meteo, sonda, wave estimation IMU, log multi-usuario, wizard
   configurator completo, PIN master + invitados.
-- **Rev actual**: `Rev761` (en `src/index.ts` const `PLUGIN_REVISION`).
-- **Versión paquete**: `2.9.0` (`package.json`).
+- **Rev actual**: `Rev885` (en `src/index.ts` const `PLUGIN_REVISION`).
+- **Versión paquete**: `2.12.0` (`package.json`).
 
-## Features nuevas 2.7.0 → 2.9.0 (última tanda)
-- **2.9.0** (Rev714 → Rev761): motor AIS online **triple** — aisstream.io
-  (WS real-time) + aishub.net (peer 1/min) + aisfriends.com (peer 1/min
-  con Bearer). Dedupe simétrica VHF ▶ aisstream ▶ aishub/aisfriends,
-  republish a `vessels.urn:mrn:imo:mmsi:*`, badge fuente en listado
-  (VHF/AS/AH/AF). Auto-lift al arrancar motor (Rev751). Cache HTML
-  bust agresivo (safety-net JS Rev761). Feedback modal con estilo
-  nativo + "Copiar diagnóstico" integrado. Bbox online reducido a 1°
-  para no saturar visor. Log de fondeos multi-user, shy tide provider,
-  widgets cadena+temp agua, GPS glitch filter, test alarms endpoint.
-- **2.8.0**: interop canonical SK `navigation.anchor.*` + notifications
-  espejadas + `method:["push"]` WilhelmSK.
-- **2.7.0**: sensor check wizard con 16 tiles, NEAPS LAT datum 365 d,
-  popup permisos paths SK.
+## Features nuevas 2.10.0 → 2.12.0 (última tanda)
+- **2.12.0** (Rev883 → Rev885, 2026-09-23):
+  - **Bug fix** — eliminado bloque MOTORING duplicado en el evaluador
+    de anchor watch (issue #37 side-thread). El path nuevo unificado
+    `_checkIntentionalDeparture` → `_autoLiftAnchorIntentional` es el
+    único ahora; siempre llama `_saveAisAckPending()` antes de wipe.
+    Umbral SOG-only subido a 60 s (antes 30 s).
+  - **Heap diagnostics** — sección `heapAudit` bajo `/api/diagnostic`
+    (sizes de estructuras internas del plugin) y endpoint admin
+    `POST /api/heap-snapshot` con RAM safety guard.
+  - **Perf visor** — `_ihmWhenVisible(fn)` en 8 timers de polling +
+    monkey-patch de `window.fetch` que dedupea GETs en vuelo al backend.
+- **2.11.0 → 2.11.8** (Rev800 → Rev882, ago-sep 2026): Cartas por
+  Países configurables (IHM/IGN/NOAA/Kartverket/Traficom/CHS +
+  PT/SHOM restringidos), radar RainViewer con timeline animada,
+  buscador mundial de puertos (Nominatim), shelter smart open,
+  K-03/K-04 audio Pi + voz cliente. Memory leak fix (2.11.4), aisstream
+  backoff (2.11.5), Telegram lang fix (2.11.8, PR @s991116). Migración
+  workflow publish OIDC Trusted Publishing (2.11.7-8).
+- **2.9.0 y anteriores**: ver `docs/SPRINTS.md` + `git log` + CHANGELOG.
+  Highlights: motor AIS online triple (2.9.0), interop canonical SK
+  (2.8.0), sensor check wizard (2.7.0).
 
 ## Workflow
 
@@ -71,7 +88,7 @@ y `docs/BOOTSTRAP_PROMPT.md`** antes de tocar nada.
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Backend SoT, mobile.html unificado |
 | [docs/AUDIO_FLOW.md](docs/AUDIO_FLOW.md) | Arquitectura audio 2 canales (Pi sink USB + visor navegador) |
 | [docs/Q_AND_A.md](docs/Q_AND_A.md) | Decisiones del usuario Q-A a Q-AU (fuente de verdad) |
-| [docs/KNOWN_BUGS.md](docs/KNOWN_BUGS.md) | Bugs vigentes + QA pendiente 2.7-2.9 |
+| [docs/KNOWN_BUGS.md](docs/KNOWN_BUGS.md) | Bugs vigentes (B-A1 cosmético) + resueltos recientes 2.11-2.12 |
 | [docs/BACKLOG.md](docs/BACKLOG.md) | Items ACTIVE / PAUSED / DROPPED |
 | [docs/SPRINTS.md](docs/SPRINTS.md) | Mapa histórico de trabajo por release (no hay sprints activos) |
 | [docs/QA_PENDIENTE.md](docs/QA_PENDIENTE.md) | QA a validar en agua real |
@@ -111,17 +128,40 @@ y `docs/BOOTSTRAP_PROMPT.md`** antes de tocar nada.
 
 No hay sprint activo. Trabajamos por feature request de Carlos + bug
 hunt reactivo. Ver [`docs/BACKLOG.md`](docs/BACKLOG.md) para lo que
-queda abierto (K-01 smoothing sonda, QA en agua de features 2.7-2.9,
-Fase 2 forwarder embebido de aisfriends/aishub como paused).
+queda abierto:
+
+- **QA agua Rev883** (auto-lift MOTORING fix + ACKs preserved) — cuando
+  Carlos salga a navegar.
+- **QA tablet real Rev885** (perf visor: dedup fetches + whenVisible).
+- **Vigilancia heap V8 post-cron** — verificar en 7 días que el restart
+  cada 3 días mantiene RSS estable < 800 MB. Comparar curva de
+  `heapAudit` con la de 2026-09-23.
+- **Fix TypeError callsign** (B-A1 en KNOWN_BUGS) — bug cosmético
+  1/restart, sin urgencia.
+- **Feature "llamada Telegram"** en incubación — decidir vía MTProto
+  vs alternativa antes de arrancar código.
+- **Fase 2 forwarder embebido** de aisfriends/aishub como paused.
+
+## Operacional en la Pi de Carlos (2026-09-23)
+
+- **Cron restart auto**: `/etc/cron.d/signalk-restart` con `0 4 */3 * *
+  root systemctl restart signalk`. Log en `/var/log/signalk-restart.log`.
+- **Toggle icon LXDE**: `/home/pi/Desktop/Toggle-SignalK-Restart.desktop`.
+  Click alterna entre activo (`/etc/cron.d/signalk-restart`) y
+  desactivado (`.disabled`). Script: `/home/pi/toggle-signalk-restart.sh`.
 
 ## Memory files (persistente entre sesiones)
 
 Hay observaciones del usuario en
 `C:\Users\bybek\.claude\projects\c--Users-bybek-Downloads-signalk-mareas-ihm-Beta1-3-1-Rev40-signalk-mareas-ihm\memory\`.
-Leerlos al inicio. Los más críticos:
+Leerlos al inicio (índice completo en `MEMORY.md`). Los más críticos
+para operar hoy:
 
-- `feedback_audit_before_action.md` — auditar antes de actuar
-- `feedback_always_restart_deploy.md` — siempre `-Restart`
+- `feedback_challenge_carlos_decisions.md` — rebatir cuando técnicamente proceda
+- `feedback_no_coauthor_attribution.md` — NO añadir Co-Authored-By en commits
+- `feedback_always_restart_deploy.md` — siempre `.\deploy.ps1 -Restart`
+- `feedback_deploy_automatically.md` — deploy automático tras batch
+- `feedback_no_permission_asks_for_recurrent_actions.md` — no pedir permiso para deploy/commit rutinario
 - `feedback_powershell_ascii.md` — ASCII en PS scripts
 - `feedback_powershell_exitcode.md` — check `$LASTEXITCODE`
 - `feedback_no_commercial_refs.md` — sin referencias comerciales
@@ -140,12 +180,17 @@ Leerlos al inicio. Los más críticos:
 - `feedback_3_strikes_then_gemini.md` — tras 3 fallos, prompt para Gemini
 - `feedback_backend_is_source_of_truth.md` — todos POSTean al mismo endpoint
 - `feedback_backlog_docs_are_stale.md` — advertir staleness antes de quotear
+- `feedback_batch_trivial_npm_publishes.md` — no publish trivial suelto
+- `feedback_less_is_more.md` — recortar antes que añadir
+- `feedback_no_heap_snapshot_on_tight_ram.md` — snapshot heap solo si `available >= heap × 5 + 500 MB` (incidente 2026-09-23: colgué la Pi)
+- `feedback_mobile_only_no_legacy.md` — mobile.html única, olvida `#panel` desktop
 - `project_audio_hardware_ceiling.md` — no más software gain Pi
 - `project_pi_connectivity.md` — Pi frágil (4G + EMI)
+- `project_pi_ssh_tailscale.md` — SSH via 100.127.222.27
 - `project_dev_environment.md` — laptop builds, Pi runs
+- `project_npm_2fa_windows_hello.md` — NPM Trusted Publishing OIDC (tag push → CI publica)
 - `project_ais_engine_resolved.md` — no re-abrir AIS engine ticket viejo
-- `project_bug_imu_60s_clock_glitch.md` — `@signalk/set-system-time`
-  corrompe IMU cada 60 s (fix: desactivar plugin)
+- `project_bug_imu_60s_clock_glitch.md` — `@signalk/set-system-time` corrompe IMU cada 60 s
 
 Si una observación nueva contradice memoria existente, ACTUALIZAR
 memoria.
