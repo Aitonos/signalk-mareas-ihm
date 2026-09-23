@@ -120,7 +120,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev882";
+const PLUGIN_REVISION = "Rev885";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -4375,6 +4375,29 @@ try {
             pluginHeapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
           },
         };
+        // Rev884: audit de las estructuras internas del plugin. Sirve para
+        // discriminar entre "leak en algo mío" (tamaño creciendo aquí) y
+        // "leak fuera" (todo estable aquí pero heap V8 sigue subiendo).
+        try {
+          const mu = process.memoryUsage();
+          (bag.runtime as any).heapAudit = {
+            trackPoints: trackPoints.length,
+            aisKnownDB: Object.keys(_aisKnownDB).length,
+            aisOnlineSeen: _aisOnlineSeen.size,
+            aisFirstInZoneAt: _aisFirstInZoneAt.size,
+            waveHistBins: _waveHistBins.length,
+            waveBufferSize: _waveBuffer.length,
+            activityLog: _activityLog.length,
+            pypilotRawSamples: _pypilotRawSamples.length,
+            navtileRamCache: _navtileRamCache.size,
+            navtileInFlight: _navtileInFlight.size,
+            publishedPaths: PUBLISHED_PATHS.size,
+            skValNoTimestampWarnedFor: _skValNoTimestampWarnedFor.size,
+            coefTableCache: COEF_TABLE_CACHE.size,
+            externalMB: Math.round(mu.external / 1024 / 1024),
+            arrayBuffersMB: Math.round(((mu as any).arrayBuffers ?? 0) / 1024 / 1024),
+          };
+        } catch { /* audit non-critical */ }
       } catch { /* ignore */ }
 
       // Rev650/Rev651: enabled real. En SignalK el archivo raíz de config
@@ -4649,6 +4672,61 @@ try {
       bag.durationMs = Date.now() - started;
       bag.serverTimeMs = now;
       res.json(bag);
+    });
+
+    // Rev884: dump del heap V8 a disco para diagnosis de leaks. Protegido por
+    // requireControlAccess (solo master PIN). El write bloquea el event loop
+    // ~1-3 s por cada 100 MB de heap. El file resultante se puede abrir en
+    // Chrome DevTools (Memory → Load).
+    //
+    // SAFETY GUARD: writeHeapSnapshot duplica temporalmente el heap en RAM
+    // durante la serializacion. Si `available` < `heapUsed * 1.5` se rechaza
+    // con 409 — no queremos volver a tumbar la Pi (incidente 2026-09-23). El
+    // caller puede pasar `?force=1` para saltar el guard bajo su responsabilidad.
+    expressApp.post("/signalk-mareas-ihm/api/heap-snapshot", requireControlAccess, async (req: any, res: any) => {
+      try {
+        const mu = process.memoryUsage();
+        const heapUsedMB = Math.round(mu.heapUsed / 1024 / 1024);
+        const osX = await import("os");
+        const availMB = Math.round(osX.freemem() / 1024 / 1024);
+        const requiredMB = Math.ceil(heapUsedMB * 1.5);
+        const force = req?.query?.force === "1" || req?.body?.force === true;
+        if (!force && availMB < requiredMB) {
+          return res.status(409).json({
+            ok: false,
+            error: "INSUFFICIENT_RAM",
+            heapUsedMB, availableMB: availMB, requiredMB,
+            hint: `Snapshot may crash the Pi. Restart SK to shrink heap first, or POST with ?force=1 at your own risk.`,
+          });
+        }
+        const v8 = await import("v8");
+        const fsX = await import("fs");
+        const pathX = await import("path");
+        const ts = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15);
+        const outFile = pathX.join("/tmp", `mareas-heap-${ts}-${process.pid}.heapsnapshot`);
+        const t0 = Date.now();
+        const written = v8.writeHeapSnapshot(outFile);
+        const durMs = Date.now() - t0;
+        let sizeBytes = 0;
+        try { sizeBytes = fsX.statSync(written).size; } catch { /* ignore */ }
+        const muAfter = process.memoryUsage();
+        return res.json({
+          ok: true,
+          file: written,
+          sizeBytes,
+          sizeMB: Math.round(sizeBytes / 1024 / 1024),
+          durMs,
+          heapAtDump: {
+            rss: Math.round(muAfter.rss / 1024 / 1024),
+            heapUsed: Math.round(muAfter.heapUsed / 1024 / 1024),
+            heapTotal: Math.round(muAfter.heapTotal / 1024 / 1024),
+            external: Math.round(muAfter.external / 1024 / 1024),
+          },
+          hint: `scp pi@<host>:${written} ./ then open in Chrome DevTools → Memory → Load`,
+        });
+      } catch (e: any) {
+        return res.status(500).json({ ok: false, error: e?.message ?? "unknown" });
+      }
     });
 
     // Rev575 (feedback Carlos 2026-06-26): F1 capa acceso opcional.
@@ -6687,9 +6765,6 @@ function _cancelGarreoMuteOverride() {
 const DRAG_REEMIT_MS = 30_000;
 const PSEUDO_TRANSITION_GAP_MS = 1000;
 
-// Rev389: contador para detectar SOG sostenido > 3kn (salida intencional).
-let _motoringStartMs = 0;
-
 // Rev387: Database persistente de propiedades estaticas AIS por MMSI.
 // Cuando un target reaparece tras haber estado fuera de rango/desaparecido,
 // SignalK puede tardar en re-enviar todos los datos AIS estaticos (name,
@@ -8005,55 +8080,10 @@ function evaluateAnchorWatch() {
   }
   if (bowLat == null || bowLng == null) return; // anchored but no GPS — bail out
 
-  // Rev389: deteccion de SALIDA INTENCIONAL a motor/vela. Si SOG sostenido
-  // > 3 kn durante >= 30s, asumimos que el patron esta navegando (no garreo).
-  // Auto-desarmamos vigilancia ancla en lugar de disparar alarma de garreo.
-  // Garreo real raramente excede 1-2 kn; >3 kn sostenidos es casi siempre
-  // propulsion propia. Notificacion "info" para que el patron sepa que se
-  // hizo automatico, y un PUT a /lift implicito.
-  try {
-    let _curSogKt = 0;
-    try {
-      const v = app.getSelfPath("navigation.speedOverGround");
-      const sogMs = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0);
-      _curSogKt = sogMs * 1.94384;
-    } catch { /* sog read fail = 0, no auto-disarm */ }
-    const MOTORING_THRESHOLD_KT = 3.0;
-    const MOTORING_SUSTAINED_MS = 30_000;
-    if (_curSogKt > MOTORING_THRESHOLD_KT) {
-      if (!_motoringStartMs) _motoringStartMs = Date.now();
-      if (Date.now() - _motoringStartMs >= MOTORING_SUSTAINED_MS) {
-        app.debug(`[IHM-MOTORING] SOG ${_curSogKt.toFixed(1)} kt sostenido ${MOTORING_SUSTAINED_MS / 1000}s -> auto-desarmando vigilancia ancla`);
-        // Desarmar: estado = no fondeado, limpiar posicion, limpiar alarmas.
-        if (anchorDragAlarmActive) { clearDragAlarm(); }
-        anchorWatch.anchorPosition = null;
-        anchorWatch.anchoredSinceMs = null;
-        _setAnchored(false);
-        ihmCache.set("anchorWatch", anchorWatch).catch(() => { /* non-fatal */ });
-        // Notificacion info al bus SK para que la app/KIP/Telegram se entere.
-        try {
-          const d: Delta = { context: ("vessels." + app.selfId) as Context,
-            updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
-              path: "notifications.environment.anchor.mareasIhm.autoDisarm" as Path,
-              value: { state: "normal", method: ["visual"] as string[],
-                message: `Salida detectada (${_curSogKt.toFixed(1)} kt sostenido). Vigilancia de ancla desarmada automaticamente.` }
-            }] as any }] };
-          app.handleMessage(plugin.id, d);
-        } catch { /* non-critical */ }
-        _motoringStartMs = 0;
-        return;  // salir; en el siguiente tick, sin anchored, no entra en STAGE 2.
-      }
-    } else if (_curSogKt < 0.5) {
-      // Volvio a parar -> reset del contador.
-      _motoringStartMs = 0;
-    }
-    // Entre 0.5 y 3 kt mantenemos el contador (jitter aceptable).
-  } catch { /* defensive */ }
-
-  // Rev389: re-narrow para TypeScript. Mi bloque motoring puede haber puesto
-  // anchorPosition=null y returneado, pero TS pierde el narrowing inicial al
-  // ver una asignacion al objeto. Este guard re-establece el narrowing para
-  // todos los usos posteriores de anchorPosition.lat/lng en este evaluator.
+  // Rev883: re-narrow para TypeScript. `_autoLiftAnchorIntentional` más abajo
+  // puede haber puesto anchorPosition=null en un tick anterior (o el bloque
+  // Rev468/751 la limpiará justo después). Este guard re-establece el
+  // narrowing para todos los usos posteriores de anchorPosition.lat/lng.
   if (!anchorWatch.anchorPosition) return;
 
   const dist = haversineM(bowLat, bowLng, anchorWatch.anchorPosition.lat, anchorWatch.anchorPosition.lng);

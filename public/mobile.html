@@ -3714,6 +3714,48 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
 <div id="trk-pop"><h4 data-i18n="tracks_plugin">📡 Tracks Plugin</h4><p>Para ver histórico de rutas, instala <b>@signalk/tracks-plugin</b> desde el App Store de Signal K.</p><button class="popup-close" onclick="document.getElementById('trk-pop').style.display='none'">Entendido</button><label style="font-size:12px;opacity:.7"><input type="checkbox" onchange="dismissTrkTip(this.checked)"> No mostrar</label></div>
 <script>
 var B='/signalk-mareas-ihm',A=B+'/api',POLL=3000;
+/* Rev885 perf: dos helpers para tablets debiles.
+   _ihmWhenVisible(fn) — devuelve un callback que se salta cuando la pestana
+   esta oculta (document.hidden). Envuelve callbacks de setInterval que solo
+   refrescan UI (viento, wave, sensors, AIS, weather, shelter, build-check),
+   asi ~150 timers dejan de trabajar mientras la tab no se mira.
+   _ihmDedupFetch(url, opts) — dedupe de fetches en vuelo por metodo+URL(+body).
+   Si dos handlers UI piden lo mismo simultaneamente, reusa la misma Promise.
+   Solo GET/HEAD por defecto para no colapsar POSTs no-idempotentes. */
+var _IHM_INFLIGHT_FETCHES = Object.create(null);
+function _ihmWhenVisible(fn){
+  return function(){
+    try{ if (document.visibilityState === 'hidden' || document.hidden) return; }catch(_){}
+    return fn.apply(this, arguments);
+  };
+}
+function _ihmDedupFetch(url, opts){
+  var o = opts || {};
+  var m = (o.method || 'GET').toUpperCase();
+  /* Solo dedup GET/HEAD sin body — POST/PUT/DELETE son cambios de estado. */
+  if (m !== 'GET' && m !== 'HEAD') return _IHM_ORIG_FETCH(url, o);
+  var key = m + ' ' + url;
+  var cur = _IHM_INFLIGHT_FETCHES[key];
+  if (cur) return cur;
+  var p = _IHM_ORIG_FETCH(url, o).finally(function(){ try{ delete _IHM_INFLIGHT_FETCHES[key]; }catch(_){ _IHM_INFLIGHT_FETCHES[key] = null; } });
+  _IHM_INFLIGHT_FETCHES[key] = p;
+  return p;
+}
+/* Monkey-patch de fetch global. SOLO intercepta GET/HEAD que empiezan por
+   nuestro prefijo B ('/signalk-mareas-ihm/'). Externos (Navionics, Open-Meteo,
+   Windy, Nominatim, RainViewer, geocoding externos) van directos sin cambio.
+   POSTs y otros metodos passthrough sin dedup. */
+var _IHM_ORIG_FETCH = window.fetch.bind(window);
+window.fetch = function(input, init){
+  try{
+    var url = (typeof input === 'string') ? input : (input && input.url) || '';
+    var m = (init && init.method ? init.method : 'GET').toUpperCase();
+    if ((m === 'GET' || m === 'HEAD') && typeof url === 'string' && url.indexOf(B + '/') === 0) {
+      return _ihmDedupFetch(url, init);
+    }
+  }catch(_){}
+  return _IHM_ORIG_FETCH(input, init);
+};
 /* Rev343: kill zombie service workers de versiones viejas. Una rev anterior
    registró `sw-chart-cache.js` como SW bajo nuestro scope; ese SW intercepta
    tiles, falla con timeout 15-16s y degrada toda la carga a 20+ segundos.
@@ -7257,7 +7299,7 @@ function init(){
   /* Rev392: polling AIS 15s → 6s. Antes la primera linea del track tardaba
      hasta 30s en aparecer (necesita 2 puntos consecutivos). Con 6s aparece
      a los ~12s. Endpoint es read-only en SK in-memory, carga CPU despreciable. */
-  setTimeout(loadAIS,2000);setInterval(loadAIS,6000);
+  setTimeout(loadAIS,2000);setInterval(_ihmWhenVisible(loadAIS),6000);
   setTimeout(checkTracks,5000);
   applyLang(); /* Apply saved language on init */
   /* Rev158: cazar CUALQUIER interacción del usuario para desbloquear el
@@ -7307,7 +7349,7 @@ function init(){
       }).catch(function(){});
     }
     checkBuild();
-    setInterval(checkBuild,20000);
+    setInterval(_ihmWhenVisible(checkBuild),20000);
   })();
 }
 
@@ -9922,7 +9964,7 @@ function _wxRefreshChip(){
    so 60s on the visor is plenty fresh and lets the bar update soon after
    a manual /api/weather/refresh too). */
 setTimeout(_wxRefreshChip,1500);
-setInterval(_wxRefreshChip,60000);
+setInterval(_ihmWhenVisible(_wxRefreshChip),60000);
 
 /* ── Rev60 (Capitulo 4B): Shelter scoring UI ────────────────────────────
    Pulls /api/shelter (assessment + 16-sector mask). Updates:
@@ -10023,7 +10065,7 @@ function _refreshEnvSensors(){
   }).catch(function(){_envSensors=null;});
 }
 setTimeout(_refreshEnvSensors,1500);
-setInterval(_refreshEnvSensors,10000);
+setInterval(_ihmWhenVisible(_refreshEnvSensors),10000);
 /* Rev113: cache de wave real-time del barco. Polling cada 5s. Cuando hay dato
    fresco y el usuario ve AHORA, sobreescribe direction+period en la flecha de
    ola de la rosa (+ futuras integraciones en visor y wx-bar). Sin altura — eso
@@ -10099,7 +10141,7 @@ function _refreshBoatWave(){
   }).catch(function(){_boatWave=null;});
 }
 setTimeout(_refreshBoatWave,2400);
-setInterval(_refreshBoatWave,5000);
+setInterval(_ihmWhenVisible(_refreshBoatWave),5000);
 
 /* Rev125: histórico de ola por bins de 15 min desde anchor drop. Bar chart
    SVG dentro del popup de Información de Abrigo. Refrescado cuando el popup
@@ -10327,7 +10369,7 @@ function _refreshWaveHistory(){
     }
   }).catch(function(){wrap.style.display='none';});
 }
-setInterval(_refreshWaveHistory,30000);   /* cada 30 s mientras popup abierto */
+setInterval(_ihmWhenVisible(_refreshWaveHistory),30000);   /* cada 30 s mientras popup abierto Y tab visible */
 
 /* Rev130: render tabla con detalle por bin para el popup de info. */
 function _renderWaveHistInfo(){
@@ -10418,7 +10460,7 @@ function _refreshBoatWind(){
   }).catch(function(){_boatWind=null;});
 }
 setTimeout(_refreshBoatWind,1200);
-setInterval(_refreshBoatWind,3000);
+setInterval(_ihmWhenVisible(_refreshBoatWind),3000);
 
 /* Rev77: selección de hora. Click en celda del strip activa esa hora;
    donut y panel detalle se actualizan. _shelterSelectHour(null) vuelve
@@ -11467,7 +11509,7 @@ function shelterClearAll(){
 }
 /* Initial fetch + same 60s cadence as the wx-bar */
 setTimeout(_shelterFetchAndRender,1700);
-setInterval(_shelterFetchAndRender,60000);
+setInterval(_ihmWhenVisible(_shelterFetchAndRender),60000);
 
 /* ── Rev82: marcadores de viento + ola sobre el mapa ────────────────────
    DOS L.markers separados — la PUNTA del marker cae justo sobre el

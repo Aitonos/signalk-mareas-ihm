@@ -1,5 +1,69 @@
 # Changelog
 
+## [2.12.0] - 2026-09-23
+
+### English
+
+**Bug fix — false auto-lift + AIS ACK loss on GPS glitches (issue [#37](https://github.com/Aitonos/signalk-mareas-ihm/issues/37) side-thread, reported by [@ABS0lute-1](https://github.com/ABS0lute-1)).**
+
+A duplicated auto-lift block in the anchor-watch evaluator (an older code path from Rev389) was triggering on `SOG > 3 kn sustained 30 s` and wiping `anchorPosition` **without saving the AIS ACK list to the grace-period buffer**. Because that block returned before the newer unified auto-lift path (Rev468/751) had a chance to run, the ACK-preserving code never got called. On boats with unstable GPS (source switching, USB re-enumeration, brief loss of fix) a burst of ghost SOG samples could self-trigger the block, and the user would see their anchor position "move on its own" and all AIS ACKs cleared in the same event.
+
+Fix ([Rev883](https://github.com/Aitonos/signalk-mareas-ihm/blob/main/src/index.ts)):
+
+- Duplicated block removed from `evaluateAnchorWatch()`. Only the unified `_checkIntentionalDeparture` → `_autoLiftAnchorIntentional` path remains, which:
+  - Prefers engine + SOG as trigger (`propulsion.*.state="started"` or `revolutions>0` **and** `SOG > 0.5 kn`, sustained 30 s) — the intended "leaving anchor under power" case.
+  - Falls back to SOG-only trigger at `SOG > 3 kn sustained 60 s` (double the old 30 s window — much harder for a GPS glitch to satisfy end-to-end).
+  - Always calls `_saveAisAckPending()` before wiping. If you re-drop within 2 min and within 5 m of the previous position, ACKs are restored automatically from the grace-period buffer.
+- Notification path unified: `notifications.signalk-mareas-ihm.autoLift` with `state:"alert"` and a message explaining why the auto-lift fired (SOG-only vs motor+SOG).
+
+**Enhancement — heap diagnostics.**
+
+New `heapAudit` section under `/api/diagnostic` reporting live sizes of all in-memory collections owned by the plugin (`trackPoints`, `aisKnownDB`, `aisOnlineSeen`, `waveHistBins`, `activityLog`, `navtileRamCache`, …) plus V8 `external` and `arrayBuffers` totals. Discriminates between "the plugin holds too much" vs "leak lives elsewhere" without downloading a full heap snapshot.
+
+New `POST /api/heap-snapshot` endpoint (admin-only, guarded by `requireControlAccess`) that writes a `.heapsnapshot` file to `/tmp` via `v8.writeHeapSnapshot()`. Includes a **RAM safety guard**: if system `MemAvailable` is less than `heapUsed × 1.5`, the request is refused with HTTP 409 rather than risk swap thrashing or an OOM lockup during the dump. `?force=1` overrides it explicitly. Aimed at post-mortem debugging when the process has been running long enough to reveal slow leaks.
+
+**Performance — viewer smoothness on weaker tablets ([Rev885](https://github.com/Aitonos/signalk-mareas-ihm)).**
+
+Two surgical wrappers on top of `mobile.html`, no visible UI change:
+
+- `_ihmWhenVisible(fn)` — wraps 8 polling `setInterval` callbacks (loadAIS, checkBuild, wxRefreshChip, refreshEnvSensors, refreshBoatWave, refreshWaveHistory, refreshBoatWind, shelterFetchAndRender) so they no-op when `document.visibilityState === 'hidden'`. On a tablet with the viewer minimised or in another app, we skip ~15–30 fetches/minute and the associated DOM invalidations. Critical alarms are unaffected — they arrive by SSE and the audio path is separate.
+- `_ihmDedupFetch(url, opts)` — a `window.fetch` monkey-patch that reuses in-flight `GET`/`HEAD` Promises to endpoints under `/signalk-mareas-ihm/`. If two UI handlers race on the same GET (a common pattern with cascading SSE events), a single request is made and both callers await the same response. External endpoints (Navionics, Open-Meteo, Windy, Nominatim, RainViewer) and `POST`/`PUT`/`DELETE` pass through unchanged.
+
+12/12 isolated Node.js unit tests pass on both wrappers. On a physical tablet the improvement is most noticeable when returning to the viewer tab after a period in another app.
+
+---
+
+### Español
+
+**Bug fix — auto-lift falso + pérdida de ACKs AIS por glitches GPS (side-thread del issue [#37](https://github.com/Aitonos/signalk-mareas-ihm/issues/37), reportado por [@ABS0lute-1](https://github.com/ABS0lute-1)).**
+
+Un bloque duplicado de auto-lift en el evaluador de vigilancia de ancla (de un camino de código antiguo Rev389) disparaba con `SOG > 3 kn sostenido 30 s` y limpiaba `anchorPosition` **sin salvar la lista de ACKs AIS al buffer de gracia**. Como el bloque retornaba antes de que el auto-lift unificado nuevo (Rev468/751) tuviera oportunidad de ejecutarse, el código que sí preserva los ACKs nunca llegaba a correr. En barcos con GPS inestable (cambios de fuente, re-enumeración USB, pérdida breve de fix) una ráfaga de muestras fantasma de SOG podía disparar el bloque, y el usuario veía cómo "la posición del ancla se movía sola" y todos los ACKs AIS se limpiaban en el mismo evento.
+
+Fix ([Rev883](https://github.com/Aitonos/signalk-mareas-ihm/blob/main/src/index.ts)):
+
+- Bloque duplicado eliminado de `evaluateAnchorWatch()`. Solo queda el camino unificado `_checkIntentionalDeparture` → `_autoLiftAnchorIntentional`, que:
+  - Prefiere motor + SOG como trigger (`propulsion.*.state="started"` o `revolutions>0` **y** `SOG > 0.5 kn`, sostenido 30 s) — el caso pretendido "saliendo del fondeo con motor".
+  - Fallback SOG-only en `SOG > 3 kn sostenido 60 s` (el doble de los 30 s antiguos — mucho más difícil de satisfacer end-to-end para un glitch GPS).
+  - Siempre llama `_saveAisAckPending()` antes de wipe. Si vuelves a fondear en menos de 2 min y a menos de 5 m de la posición anterior, los ACKs se restauran automáticamente desde el buffer de gracia.
+- Ruta de notificación unificada: `notifications.signalk-mareas-ihm.autoLift` con `state:"alert"` y mensaje explicando por qué disparó el auto-lift (SOG-only vs motor+SOG).
+
+**Mejora — diagnósticos de heap.**
+
+Nueva sección `heapAudit` bajo `/api/diagnostic` reportando tamaños en vivo de todas las colecciones en memoria del plugin (`trackPoints`, `aisKnownDB`, `aisOnlineSeen`, `waveHistBins`, `activityLog`, `navtileRamCache`, …) más totales V8 `external` y `arrayBuffers`. Distingue entre "el plugin retiene demasiado" vs "el leak vive en otro sitio" sin necesidad de descargar un heap snapshot completo.
+
+Nuevo endpoint `POST /api/heap-snapshot` (admin-only, protegido por `requireControlAccess`) que escribe un fichero `.heapsnapshot` en `/tmp` vía `v8.writeHeapSnapshot()`. Incluye un **safety guard de RAM**: si `MemAvailable` del sistema es menor que `heapUsed × 1.5`, la petición se rechaza con HTTP 409 en vez de arriesgar swap thrashing u OOM durante el dump. `?force=1` lo salta explícitamente. Pensado para debugging post-mortem cuando el proceso lleva días vivo y hay que cazar leaks lentos.
+
+**Rendimiento — fluidez del visor en tablets débiles ([Rev885](https://github.com/Aitonos/signalk-mareas-ihm)).**
+
+Dos wrappers quirúrgicos sobre `mobile.html`, sin cambio visible de UI:
+
+- `_ihmWhenVisible(fn)` — envuelve 8 callbacks de `setInterval` de polling (loadAIS, checkBuild, wxRefreshChip, refreshEnvSensors, refreshBoatWave, refreshWaveHistory, refreshBoatWind, shelterFetchAndRender) para que no hagan nada cuando `document.visibilityState === 'hidden'`. En una tablet con el visor minimizado o en otra app, ahorramos ~15-30 fetches/minuto y sus invalidaciones DOM asociadas. Las alarmas críticas no se ven afectadas — llegan por SSE y el camino de audio es independiente.
+- `_ihmDedupFetch(url, opts)` — un monkey-patch de `window.fetch` que reusa Promises en vuelo de `GET`/`HEAD` a endpoints bajo `/signalk-mareas-ihm/`. Si dos handlers UI compiten sobre el mismo GET (patrón común con cascadas de eventos SSE), solo se hace una petición y ambos callers esperan la misma respuesta. Endpoints externos (Navionics, Open-Meteo, Windy, Nominatim, RainViewer) y `POST`/`PUT`/`DELETE` pasan sin cambio.
+
+12/12 tests unitarios aislados en Node.js pasan sobre ambos wrappers. En una tablet física la mejora es más notable al volver a la pestaña del visor tras un rato en otra app.
+
+---
+
 ## [2.11.8] - 2026-09-09
 
 ### English
