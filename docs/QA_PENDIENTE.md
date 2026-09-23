@@ -1,12 +1,42 @@
 # QA_PENDIENTE — validaciones en agua real antes del próximo publish
 
-Estado: **2026-08-16** (Rev874 / v2.11.6). Snapshots históricos:
+Estado: **2026-09-23** (Rev885 / v2.12.0). Snapshots históricos:
 - 2026-06-24 (bugs B-23 a B-26, wizard mandatorio M-02) → resuelto,
   archivo en [`archive/QA_PENDIENTE_2026-06-24_snapshot.md`](archive/QA_PENDIENTE_2026-06-24_snapshot.md).
 - 2026-07-21 (features 2.7 → 2.9 QA + auto-lift + AIS triple online +
   bottom-bar widgets) → **todo aprobado en agua real por Carlos
   (2026-08-02)**. Snapshot no archivado — el histórico vive en
   git log.
+
+---
+
+## 🌊 QA abierto — features 2.12.0 publicadas (2026-09-23)
+
+### Rev883 — Auto-lift MOTORING fix + ACKs preserved (issue [#37](https://github.com/Aitonos/signalk-mareas-ihm/issues/37))
+**En agua real**:
+1. Fondear + darle ACK a 1-2 vessels AIS cercanos.
+2. Motorizar saliendo: arrancar motor, SOG > 0.5 kn sostenido 30 s.
+3. Verificar en `activityLog` una entrada `auto-lift` con `trigger=motor`.
+4. Verificar notification `notifications.signalk-mareas-ihm.autoLift` con `state:"alert"` y mensaje explicando trigger.
+5. Volver al mismo sitio (< 5 m) en < 2 min y re-fondear.
+6. Los ACKs AIS deben restaurarse automáticamente (verificar en modal AIS que los vessels acked previamente aparecen ya con ACK).
+7. Repetir (2)-(6) pero con SOG-only (barco a vela, sin motor). Debe disparar al minuto (60 s), no a los 30 s como antes.
+
+### Rev885 — Perf visor en tablet real
+**En la tablet física (no laptop)**:
+1. Abrir visor. Pan/zoom del mapa con 100+ vessels AIS visibles — verificar que se siente fluido.
+2. Abrir modales varios (fondeo, mareas, AIS, meteo, wave, config) rápidamente. Sin lag notable.
+3. **Test del `_ihmWhenVisible`**: cambia a otra app de la tablet, espera 30-60 s, vuelve al visor. Al volver, verifica que el estado sigue coherente y no hubo "acumulación de trabajo" al reactivar. En DevTools remoto (si tienes), la Network debería mostrar hueco durante la ausencia.
+4. **Test del `_ihmDedupFetch`**: no se puede validar visualmente sin DevTools. Ya validado 12/12 unit tests aislados en Node local.
+
+### Rev884 — Endpoint `/api/heap-snapshot` (validado en localhost 2026-09-23)
+- **Ya probado**: POST devolvió 200 con RAM disponible × factor OK, generó `.heapsnapshot` en `/tmp` de 450 MB. Descargado a portátil por SCP, analizado con scripts Node aislados.
+- Aprendizaje: **el snapshot infla RSS a ~5× el heap durante el dump** (no 1.5× como asumí inicialmente). Guard actualizado a `available >= heapUsed × 1.5` es conservador — considerar subir a × 3 si algún día tumba al hacerlo con margen "aparente".
+
+### Cron restart auto (operacional, sin release)
+- Instalado 2026-09-23: `/etc/cron.d/signalk-restart` con `0 4 */3 * *`. Toggle en `~/Desktop/Toggle-SignalK-Restart.desktop`.
+- **Primera QA operacional**: mañana jueves 2026-09-24 04:00 CEST → verificar `sudo cat /var/log/signalk-restart.log` y que SK reinició sin problema.
+- **Vigilancia**: en 7 días revisar que el patrón "3 días up + restart limpio" mantiene RSS estable < 800 MB. Confirmar con `heapAudit` de `/api/diagnostic`.
 
 ---
 

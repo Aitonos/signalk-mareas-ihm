@@ -1,12 +1,10 @@
-# KNOWN_BUGS — bugs vigentes en Rev874 / v2.11.6
+# KNOWN_BUGS — bugs vigentes en Rev885 / v2.12.0
 
-Estado: **2026-08-16** — snapshot tras publicar 2.11.6 (batch de
-defense-in-depth + observabilidad + UX + docs sobre 2.11.5). Sin bugs
-abiertos confirmados hoy. Este es el primer release publicado por el
-nuevo workflow CI (auto-publish al pushear tag vX.Y.Z).
-Los 22 bugs B-01…B-22 del archivo Rev190 están todos resueltos y
-viven en `archive/KNOWN_BUGS_Rev190_snapshot.md` para referencia
-histórica.
+Estado: **2026-09-23** — snapshot tras publicar 2.12.0 (bug fix
+auto-lift MOTORING dup + heap diagnostics + perf visor). Un bug
+cosmético abierto (B-A1). Los 22 bugs B-01…B-22 del archivo Rev190
+están todos resueltos y viven en `archive/KNOWN_BUGS_Rev190_snapshot.md`
+para referencia histórica.
 
 Aquí solo bugs **confirmados por Carlos y aún vigentes** hoy.
 
@@ -14,7 +12,14 @@ Aquí solo bugs **confirmados por Carlos y aún vigentes** hoy.
 
 ## Vigentes
 
-_(vacío — sin bugs abiertos confirmados con caso reproducible en Rev860 / v2.11.3)_
+### B-A1 — TypeError `Cannot create property 'meta' on string 'FG8274'` al arrancar SK
+**Origen**: en `_applyBaseDeltaEdit()` ([src/index.ts:12654](../src/index.ts#L12654), y también en el loop `pathValues` en [src/index.ts:12662](../src/index.ts#L12662)) escribimos `setSelfValue("communication.callsignVhf", <string>)` (path punteado con value string). Al arrancar SK y aplicar `baseDeltas.json`, `fullsignalk.js:190` intenta `stringValue.meta = ...` sobre el string top-level y falla.
+
+**Confirmado por**: análisis del journal 2026-09-23. **1 chispazo por restart** de SK, no leak (compara con el bug de 'name' Rev861 que era 3914/hora). Sin impacto funcional — el callsign termina publicándose vía Envío 1 (`path:""` con object value) que sí es válido.
+
+**Fix pendiente**: envolver el value en objeto (patrón usado ya para `design.length`, `design.draft`, `design.aisShipType` en [src/index.ts:12659-12661](../src/index.ts#L12659-L12661)) o cambiar `publishAs` a `"self-root"` para el campo `callsign`. Requiere QA con admin UI SK para no romper la persistencia.
+
+**Prioridad**: baja (cosmético, log noise sin consecuencia). Agendar para próximo batch.
 
 ---
 
@@ -55,6 +60,8 @@ como limitación.
 
 ## Bugs y features resueltos recientemente (para no volver a abrir)
 
+- **Auto-lift MOTORING duplicado + ACKs perdidos** (Rev883 / v2.12.0, issue [#37](https://github.com/Aitonos/signalk-mareas-ihm/issues/37) side-thread @ABS0lute-1) — un segundo bloque auto-lift en `evaluateAnchorWatch()` (herencia Rev389) disparaba con SOG > 3 kn sostenido 30 s y limpiaba `anchorPosition` sin llamar `_saveAisAckPending()`. Corría 40 líneas antes del path nuevo unificado (`_checkIntentionalDeparture` → `_autoLiftAnchorIntentional`, Rev468/751) que sí salva ACKs. Con `return` prematuro, el path nuevo nunca corría en la práctica. En barcos con GPS inestable (glitches de fuente, USB re-enum), un burst de SOG fantasma disparaba: `anchorPosition` desaparecía, ACKs AIS se limpiaban en el mismo evento. Fix: bloque duplicado eliminado, solo queda el unificado con umbral SOG-only subido a 60 s.
+- **Heap V8 crece lento en Pi con muchos plugins** (Rev885 / v2.12.0, workaround operacional) — tras 3-4 días de uptime, RSS de SK crece a 900-1400 MB (heap V8 ~900 MB usado). El análisis de heap snapshot (450 MB) no reveló culpable único en nuestro plugin — el leak es cocktail de plugins ajenos (Dispatcher HTTP acumulando Contexts, FSWatcher entries, MetadataRegistry, swagger-ui, etc.) + acumulación del module system Node. Nuestro plugin contribuye ~10-15%. Solución operacional aplicada: **cron OS `/etc/cron.d/signalk-restart` que reinicia SK cada 3 días a las 04:00**, con toggle en el escritorio LXDE (`~/Desktop/Toggle-SignalK-Restart.desktop`) para desactivarlo puntualmente. Cero código nuevo en el plugin.
 - **AIS online rate-limit self-perpetuating loop** (Rev865 / v2.11.5,
   issue #40) — los 3 clientes AIS online (aisstream WebSocket, aishub
   y aisfriends HTTP polling) usaban interval/retry fijo cada ~60 s.

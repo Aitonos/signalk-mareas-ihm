@@ -1,6 +1,6 @@
 # SPRINTS — mapa histórico de trabajo por versión
 
-Estado: **2026-07-21** — reescrito desde cero. El plan de sprints 1-6
+Estado: **2026-09-23** (última actualización). Reescrito desde cero 2026-07-21. El plan de sprints 1-6
 original (mayo 2026, período B-01…B-22) está archivado en
 [`archive/SPRINTS_Rev190_snapshot.md`](archive/SPRINTS_Rev190_snapshot.md).
 
@@ -16,6 +16,10 @@ Para el trabajo pendiente ver [`BACKLOG.md`](BACKLOG.md).
 
 | Release | Ventana Rev | Highlights |
 |---|---|---|
+| **v2.12.0** | Rev883 → Rev885 | Bug fix auto-lift MOTORING duplicado (issue #37 side-thread @ABS0lute-1) que no salvaba ACKs AIS a pending. `heapAudit` en `/api/diagnostic` (sizes de estructuras internas) + endpoint `POST /api/heap-snapshot` (admin-only) con RAM safety guard. Perf visor: `_ihmWhenVisible` pausa 8 timers en tab oculta + `_ihmDedupFetch` monkey-patch dedupea GETs en vuelo al backend. 12/12 unit tests pass. Cron restart auto de SK cada 3d + toggle icon LXDE. |
+| **v2.11.8** | Rev876 → Rev882 | Bug fix Telegram startup msg lang (PR #41 @s991116). Migración workflow publish OIDC Trusted Publishing (sin NPM_TOKEN, provenance atestada). |
+| **v2.11.4 → v2.11.6** | Rev861 → Rev874 | Memory leak fix AIS republish `path:"name"` (issue #37 @ABS0lute-1). aisstream rate-limit backoff exponencial (issue #40). IMU watchdog auto-recovery. Defense-in-depth + observabilidad. |
+| **v2.11.0 → v2.11.3** | Rev800 → Rev860 | Cartas por Países configurables (IHM, IGN, NOAA, Kartverket, Traficom, CHS + PT/SHOM restringidos). Radar RainViewer con timeline animada. Buscador mundial de puertos (Nominatim). Shelter smart open + reset por movimiento. K-03 audio Pi 3 fases. K-04 voz cliente. Interop SK canonical (2.11.0 englobó lo de v2.8.0 pero renumerado). |
 | **v2.9.0** | Rev714 → Rev761 | Motor AIS online (aisstream + aishub + aisfriends) con dedupe simétrica y republish a `vessels.*`. Wizard "AIS por internet" con 3 tarjetas. Cache HTML busting agresivo. Auto-lift al arrancar motor (Rev751). Feedback modal con estilo nativo + botón "Copiar diagnóstico" integrado. |
 | **v2.8.0** | Rev720 → Rev722 | Interop canonical SK `navigation.anchor.*` + notifications espejadas + `method:["push"]` WilhelmSK. Crédito @jeyrb. |
 | **v2.7.0** | Rev710 → Rev719 | Sensor check wizard con 16 tiles, NEAPS LAT datum 365d, popup permisos paths SK, botón feedback. Renumerado desde 2.6.1 tras confusión SemVer. |

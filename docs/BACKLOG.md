@@ -1,9 +1,9 @@
-# BACKLOG — items abiertos en Rev860 / v2.11.3
+# BACKLOG — items abiertos en Rev885 / v2.12.0
 
-Estado: **2026-08-04** — actualizado tras publicar v2.11.3 (K-03 audio
-Pi hardening en 3 fases + K-04 voz "Ancla fondeada") y verificar que
-K-02 UTF-8 no es reproducible hoy. Los sprints 1-6 originales
-(B-01…B-22, Rev190) están todos resueltos y archivados en
+Estado: **2026-09-23** — actualizado tras publicar v2.12.0 (bug fix
+auto-lift MOTORING duplicado + heap diagnostics + perf visor).
+Los sprints 1-6 originales (B-01…B-22, Rev190) están todos resueltos
+y archivados en
 [`archive/BACKLOG_Rev190_snapshot.md`](archive/BACKLOG_Rev190_snapshot.md).
 
 Nota: no hay estructura de sprints activa. Trabajamos por feature
@@ -17,6 +17,8 @@ memorias están completados y viven como snapshot histórico en
 
 | Item | Prio | Ref |
 |---|---|---|
+| **Fix TypeError callsign `meta on string`** — bug cosmético en `_applyBaseDeltaEdit`, 1 error/restart SK. Envolver value en objeto para `communication.callsignVhf`. | Baja | Ver `KNOWN_BUGS.md` B-A1 |
+| **Vigilancia heap V8 tras cron restart armado** — dentro de 3-7 días revisar curva de crecimiento post-restart automático via `/api/diagnostic` `heapAudit`. Si se confirma que el cron cada 3d mantiene RSS < 800 MB, cerrar el tema. Si sigue subiendo tras restart fresco → hay leak nuevo que investigar. | Baja | Ver `KNOWN_BUGS.md` (workaround operacional) |
 | **Llamada de teléfono por Telegram** (nueva idea Carlos 2026-08-02) | Media | Ver sección "Ideas en incubación" abajo |
 
 ---
