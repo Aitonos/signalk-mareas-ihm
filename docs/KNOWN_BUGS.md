@@ -25,6 +25,24 @@ Aquí solo bugs **confirmados por Carlos y aún vigentes** hoy.
 
 ## Bugs de sistema externos (no arreglables desde aquí)
 
+### S-02 — `ais-forwarder@0.4.1` (Harri Kapanen) uncaughtException por DNS flaky
+**Origen**: `ais-forwarder` reenvía AIS por UDP a endpoints configurables. Crea el socket con `dgram.createSocket('udp4')` **sin registrar `socket.on('error')`**. Cuando un endpoint es hostname (típico: `ais.openwaters.io:10110`) y el DNS falla transitoriamente (router 4G TL-MR100 flaky), `getaddrinfo ENOTFOUND` surge como uncaughtException en el proceso SK.
+
+**Impacto observado** (Pi5 Tunatunes, 2026-09-30, boot -1 de 14 h):
+- **236 uncaught exceptions** de `ENOTFOUND ais.openwaters.io` durante la ventana 05:00 → 15:26.
+- ~4 KB de stack por evento → ~1 MB de log spam en journald.
+- I/O de journald saturado → **9 watchdog fails** de `systemd-journald` (13:04 → 15:25).
+- Cascada: tailscaled perdió conectividad → Pi inalcanzable remotamente → reset físico via relé de domótica a las 15:19.
+- **NO fue OOM** — RAM libre 6 GB de 8 GB. Fue crash-loop de logging.
+
+**Confirmado por**: análisis forense del journal + inspección del código de `ais-forwarder` (cero `.on('error'`, cero `try`/`catch`, cero `.catch(` en `node_modules/ais-forwarder/index.js`).
+
+**Fix operacional aplicado 2026-09-30**: `enabled: false` en `/home/pi/.signalk/plugin-config-data/ais-forwarder.json`. SK restart. 30 s post-restart: **0 uncaughts**. Silencio limpio.
+
+**Fix upstream propuesto**: [issue en GitHub](https://github.com/hkapanen/ais-forwarder) pidiendo `socket.on('error', ...)` de dos líneas. Borrador en scratchpad de sesión 2026-09-30 (`hkapanen-issue.md`) pendiente de OK de Carlos para postear.
+
+**Aprendizaje**: cuando llegue un uncaughtException reportado como "de nuestro plugin", verificar antes de codear (memoria `feedback_verify_before_fixing_reported_bug`). Nuestro plugin tiene 7 fetches, TODOS con try/catch + AbortController + timeout. Nuestro handler global `_ihmCrashLog` en `index.ts:1324` está registrado. Origen suele estar en plugins ajenos de OpenPlotter sin defensa.
+
 ### S-01 — `@signalk/set-system-time` corrompe IMU cada 60 s
 **Origen**: plugin oficial SK ajusta el reloj cada minuto → RTIMULib
 integra `dt` corrupto → bandazo attitude ±150° → "oleaje fuerte"
