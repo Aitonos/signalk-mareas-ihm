@@ -121,7 +121,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev887";
+const PLUGIN_REVISION = "Rev888";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -7050,9 +7050,29 @@ function _aisstreamRepublishToSK(u: _AisstreamMergePayload): void {
 // republicar lo mismo.
 const _AIS_IDENTITY_TICK_MS = 10_000;
 const _AIS_IDENTITY_MAX_PER_TICK = 50;
-const _AIS_IDENTITY_REPUB_MS = 10 * 60_000;
-const _aisIdentityLastPub: Map<string, number> = new Map();
-const _aisIdentityStats = { ticks: 0, published: 0, lastTickMs: 0 };
+// Rev888: tras la primera publicación, re-enviamos la misma identidad cada
+// 2 min durante 15 min. Los clientes suscritos con policy "fixed"
+// (Freeboard) solo reciben el ÚLTIMO valor de path "" por periodo, y el VHF
+// manda {mmsi} con cada posición (86 vs 4 {name} en 60 s, medido
+// 2026-10-14): un único envío se pierde casi siempre. Los clientes que se
+// conectan después lo reciben de la cache de SK y no necesitan esto.
+const _AIS_IDENTITY_HEARTBEAT_MS = 2 * 60_000;
+const _AIS_IDENTITY_HEARTBEAT_WINDOW_MS = 15 * 60_000;
+type _AisIdentityPub = { firstMs: number; lastMs: number; value: Record<string, unknown> };
+const _aisIdentityLastPub: Map<string, _AisIdentityPub> = new Map();
+const _aisIdentityStats = { ticks: 0, published: 0, heartbeats: 0, lastTickMs: 0 };
+function _aisIdentitySend(id: string, value: Record<string, unknown>): boolean {
+  try {
+    (app as any).handleMessage(plugin.id + ".aisdb", {
+      context: ("vessels." + id) as any,
+      updates: [{
+        timestamp: new Date().toISOString() as any,
+        values: [{ path: "" as any, value }],
+      }],
+    });
+    return true;
+  } catch { return false; }
+}
 function _aisIdentityEnrichTick(): void {
   const now = Date.now();
   _aisIdentityStats.ticks++;
@@ -7066,29 +7086,35 @@ function _aisIdentityEnrichTick(): void {
     if (!id.startsWith("urn:mrn:imo:mmsi:")) continue;
     const mmsi = _extractMmsi(id);
     if (!mmsi) continue;
-    const last = _aisIdentityLastPub.get(mmsi);
-    if (last && now - last < _AIS_IDENTITY_REPUB_MS) continue;
+    const prev = _aisIdentityLastPub.get(mmsi);
+    const bus = readBusIdentity(v);
     const db = _aisDBLookup(mmsi);
-    if (!db) continue;
-    const deltas = buildAisIdentityDeltas(mmsi, readBusIdentity(v), db, selfMmsi);
-    if (deltas.length === 0) continue;
-    try {
-      (app as any).handleMessage(plugin.id + ".aisdb", {
-        context: ("vessels." + id) as any,
-        updates: [{
-          timestamp: new Date().toISOString() as any,
-          values: deltas.map(d => ({ path: d.path as any, value: d.value })),
-        }],
-      });
-    } catch { continue; }
-    _aisIdentityLastPub.set(mmsi, now);
-    _aisIdentityStats.published++;
-    sent++;
+    const deltas = buildAisIdentityDeltas(mmsi, bus, db, selfMmsi);
+    if (deltas.length > 0) {
+      // Something is missing on the bus: fill it (first time or SK lost it).
+      if (prev && now - prev.lastMs < _AIS_IDENTITY_HEARTBEAT_MS) continue;
+      const value = deltas[0].value;
+      if (!_aisIdentitySend(id, value)) continue;
+      _aisIdentityLastPub.set(mmsi, { firstMs: prev?.firstMs ?? now, lastMs: now, value });
+      _aisIdentityStats.published++;
+      sent++;
+    } else if (prev
+        && now - prev.firstMs < _AIS_IDENTITY_HEARTBEAT_WINDOW_MS
+        && now - prev.lastMs >= _AIS_IDENTITY_HEARTBEAT_MS
+        && (prev.value.name == null || prev.value.name === bus.name)) {
+      // Heartbeat: bus already has OUR value; resend so fixed-policy
+      // subscribers connected before the first send get it. Skipped if a
+      // VHF static message replaced the name with a different one.
+      if (!_aisIdentitySend(id, prev.value)) continue;
+      prev.lastMs = now;
+      _aisIdentityStats.heartbeats++;
+      sent++;
+    }
   }
   // Poda: el Map no puede crecer sin límite en un puerto con mucho tráfico.
   if (_aisIdentityLastPub.size > 2000) {
-    for (const [k, t] of _aisIdentityLastPub) {
-      if (now - t > _AIS_IDENTITY_REPUB_MS) _aisIdentityLastPub.delete(k);
+    for (const [k, e] of _aisIdentityLastPub) {
+      if (now - e.lastMs > _AIS_IDENTITY_HEARTBEAT_WINDOW_MS) _aisIdentityLastPub.delete(k);
     }
   }
 }

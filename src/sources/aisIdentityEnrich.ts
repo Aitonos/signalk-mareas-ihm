@@ -59,9 +59,14 @@ export function isRealAisName(name: string | null | undefined, mmsi: string): bo
 }
 
 /**
- * Deltas filling ONLY the identity fields missing on the bus. Never
- * overwrites a value SK already has (fresh VHF static data wins).
- * Every delta uses `path: ""` — see header (Rev861 regression).
+ * ONE delta filling ONLY the identity fields missing on the bus, merged in
+ * a single `path: ""` object. Never overwrites a value SK already has
+ * (fresh VHF static data wins). Returns [] or a 1-element array.
+ *
+ * Rev888: merged instead of one delta per field. Clients subscribed with
+ * `policy: "fixed"` (Freeboard-SK) only get the LAST value per path per
+ * period; three `path: ""` values in one update meant the name was always
+ * dropped live (only `{registrations}` survived). Measured 2026-10-14.
  */
 export function buildAisIdentityDeltas(
   mmsi: string,
@@ -71,17 +76,17 @@ export function buildAisIdentityDeltas(
 ): AisIdentityDelta[] {
   if (!db || !mmsi) return [];
   if (selfMmsi && mmsi === selfMmsi) return [];
-  const out: AisIdentityDelta[] = [];
+  const value: Record<string, unknown> = {};
   if (!isRealAisName(bus.name, mmsi) && isRealAisName(db.name, mmsi)) {
-    out.push({ path: "", value: { name: String(db.name).trim() } });
+    value.name = String(db.name).trim();
   }
   if (!bus.callsign && db.callsign && String(db.callsign).trim() !== "") {
-    out.push({ path: "", value: { communication: { callsignVhf: String(db.callsign).trim() } } });
+    value.communication = { callsignVhf: String(db.callsign).trim() };
   }
   const dbImo = db.imo ? String(db.imo).replace(/^IMO\s*/i, "").trim() : "";
   if (!bus.imo && /^\d{7}$/.test(dbImo)) {
     // Same "IMO <n>" string the nmea0183 VDM parser stores.
-    out.push({ path: "", value: { registrations: { imo: `IMO ${dbImo}` } } });
+    value.registrations = { imo: `IMO ${dbImo}` };
   }
-  return out;
+  return Object.keys(value).length ? [{ path: "", value }] : [];
 }

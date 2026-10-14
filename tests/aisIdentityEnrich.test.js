@@ -18,22 +18,24 @@ import {
 
 const DB = { name: 'PELAGOS', callsign: 'EA1234', imo: '9976264' };
 
-test('REGRESSION Rev861/879/880: every delta uses path "" with object value', () => {
+test('REGRESSION Rev861/879/880: identity uses path "" with object value', () => {
   const deltas = buildAisIdentityDeltas('244060022', {}, DB, null);
-  assert.equal(deltas.length, 3);
   for (const d of deltas) {
     assert.equal(d.path, '');
     assert.equal(typeof d.value, 'object');
   }
 });
 
-test('canonical shapes match SK built-in parsers', () => {
+test('REGRESSION Rev888: a single merged delta (fixed-policy clients keep only the last "" value)', () => {
   const deltas = buildAisIdentityDeltas('244060022', {}, DB, null);
-  assert.deepEqual(deltas.map(d => d.value), [
-    { name: 'PELAGOS' },
-    { communication: { callsignVhf: 'EA1234' } },
-    { registrations: { imo: 'IMO 9976264' } },
-  ]);
+  assert.deepEqual(deltas, [{
+    path: '',
+    value: {
+      name: 'PELAGOS',
+      communication: { callsignVhf: 'EA1234' },
+      registrations: { imo: 'IMO 9976264' },
+    },
+  }]);
 });
 
 test('never overwrites identity already on the bus', () => {

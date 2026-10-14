@@ -137,3 +137,19 @@ Interacción con el código existente:
   había hecho el primer tick (30 s) y el VHF tarda ~6 min. Al mirar de
   nuevo, Carlos confirma que **todos los nombres salen en Freeboard**.
 - **Rev887**: tick bajado a 10 s para acortar esa ventana.
+
+## Rev888 — Freeboard tardaba en mostrar nombres en vivo
+
+Medido 2026-10-14 con una suscripción idéntica a la de Freeboard
+(`vessels.*`, `path: ""`, `policy: "fixed"`, `period: 1000`): con `fixed`, SK
+entrega por periodo solo el **último** valor de cada path. En 60 s, el `{mmsi}`
+que el VHF manda con cada posición aparece 86 veces frente a 4 `{name}`.
+Rev886 mandaba tres valores `""` en el mismo update (name, callsign, IMO) y
+el nombre siempre se perdía en vivo. Los clientes que se conectan después
+lo reciben bien (cache fusionada de SK); los ya conectados, no.
+
+Fix Rev888:
+1. Un único delta `path: ""` con la identidad fusionada.
+2. Heartbeat: se reenvía el mismo valor cada 2 min durante 15 min desde la
+   primera publicación (solo si el nombre del bus sigue siendo el nuestro).
+   Contador `heartbeats` en `heapAudit.aisIdentityEnrich`.
