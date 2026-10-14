@@ -121,7 +121,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev886";
+const PLUGIN_REVISION = "Rev887";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -7044,7 +7044,11 @@ function _aisstreamRepublishToSK(u: _AisstreamMergePayload): void {
    falta en el bus desde _aisKnownDB, con la forma canónica path:"" +
    objeto (la de los parsers built-in de SK). NUNCA path con puntos:
    ver Rev861/879/880 y tests/aisIdentityEnrich.test.js. */
-const _AIS_IDENTITY_TICK_MS = 30_000;
+// Rev887: 30 s -> 10 s. Tras un reinicio, Freeboard abierto en el primer
+// medio minuto pintaba MMSI hasta el siguiente tick (QA Carlos 2026-10-14).
+// Coste trivial (~100 vessels/tick); el throttle de 10 min por MMSI evita
+// republicar lo mismo.
+const _AIS_IDENTITY_TICK_MS = 10_000;
 const _AIS_IDENTITY_MAX_PER_TICK = 50;
 const _AIS_IDENTITY_REPUB_MS = 10 * 60_000;
 const _aisIdentityLastPub: Map<string, number> = new Map();

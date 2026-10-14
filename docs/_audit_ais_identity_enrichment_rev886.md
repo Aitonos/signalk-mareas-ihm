@@ -128,3 +128,12 @@ Interacción con el código existente:
 4. `/api/diagnostic` → `aisIdentityEnrich.published` sube en el primer
    tick y luego se estabiliza.
 5. Heap: la curva de `heapAudit` no cambia respecto a la de 2026-09-23.
+
+## Resultado QA (2026-10-14)
+
+- Tras el reinicio: 3 de 106 vessels sin nombre en SK (antes 43 de 77). Sin
+  errores `meta` nuevos en el journal (solo B-A1 `FG8274`).
+- Freeboard abierto 30 s después del reinicio pintaba MMSI: Mareas aún no
+  había hecho el primer tick (30 s) y el VHF tarda ~6 min. Al mirar de
+  nuevo, Carlos confirma que **todos los nombres salen en Freeboard**.
+- **Rev887**: tick bajado a 10 s para acortar esa ventana.
