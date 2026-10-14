@@ -41,6 +41,7 @@ import { approximateTideHeightAt } from "./calculations.js";
 import FileCache from "./cache.js";
 import { BackoffScheduler } from "./util/backoffScheduler.js";
 import { buildAisRepublishDeltas } from "./sources/aisRepublish.js";
+import { buildAisIdentityDeltas, readBusIdentity } from "./sources/aisIdentityEnrich.js";
 import {
   setSecurityLayerEnabled,
   getSecurityLayerEnabled,
@@ -120,7 +121,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev885";
+const PLUGIN_REVISION = "Rev886";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1264,6 +1265,8 @@ export default function (app: SignalKApp): Plugin {
   // ref, cada toggle disable/enable del plugin acumulaba un timer extra.
   let _gustSampleTimer: ReturnType<typeof setInterval> | null = null;
   let _pypilotSelfHealTimer: ReturnType<typeof setInterval> | null = null;
+  // Rev886: AIS identity enrichment of the SK vessels tree (cleared in stop()).
+  let _aisIdentityEnrichTimer: ReturnType<typeof setInterval> | null = null;
   // Rev147: ImuManager — auto-detect IMU source (SK / pypilot local / pypilot
   // remoto / raw I2C). Funciona en paralelo con el bridge pypilot legacy
   // (línea ~3760+) sin pisarlo — el bridge sigue alimentando _feedAccelSample
@@ -1372,6 +1375,7 @@ export default function (app: SignalKApp): Plugin {
       // cada disable/enable del plugin.
       if (_gustSampleTimer) { clearInterval(_gustSampleTimer); _gustSampleTimer = null; }
       if (_pypilotSelfHealTimer) { clearInterval(_pypilotSelfHealTimer); _pypilotSelfHealTimer = null; }
+      if (_aisIdentityEnrichTimer) { clearInterval(_aisIdentityEnrichTimer); _aisIdentityEnrichTimer = null; }
       // Rev146 (audit fix): quitar listeners de process para que no se
       // acumulen entre disable/enable.
       try { process.off("uncaughtException", _onUncaught); } catch { /* defensive */ }
@@ -4383,6 +4387,8 @@ try {
           (bag.runtime as any).heapAudit = {
             trackPoints: trackPoints.length,
             aisKnownDB: Object.keys(_aisKnownDB).length,
+            aisIdentityLastPub: _aisIdentityLastPub.size,  // Rev886
+            aisIdentityEnrich: { ..._aisIdentityStats },   // Rev886
             aisOnlineSeen: _aisOnlineSeen.size,
             aisFirstInZoneAt: _aisFirstInZoneAt.size,
             waveHistBins: _waveHistBins.length,
@@ -7031,6 +7037,62 @@ function _aisstreamRepublishToSK(u: _AisstreamMergePayload): void {
     });
   } catch { /* defensive */ }
 }
+/* Rev886: enriquecimiento de identidad AIS en el árbol SK vessels.*.
+   SK no persiste vessels.* entre reinicios; el nombre solo vuelve con el
+   siguiente mensaje estático AIS (tipo 5/24, ~6 min) y los targets online
+   nunca lo reciben. Cada _AIS_IDENTITY_TICK_MS rellenamos SOLO lo que
+   falta en el bus desde _aisKnownDB, con la forma canónica path:"" +
+   objeto (la de los parsers built-in de SK). NUNCA path con puntos:
+   ver Rev861/879/880 y tests/aisIdentityEnrich.test.js. */
+const _AIS_IDENTITY_TICK_MS = 30_000;
+const _AIS_IDENTITY_MAX_PER_TICK = 50;
+const _AIS_IDENTITY_REPUB_MS = 10 * 60_000;
+const _aisIdentityLastPub: Map<string, number> = new Map();
+const _aisIdentityStats = { ticks: 0, published: 0, lastTickMs: 0 };
+function _aisIdentityEnrichTick(): void {
+  const now = Date.now();
+  _aisIdentityStats.ticks++;
+  _aisIdentityStats.lastTickMs = now;
+  let vessels: Record<string, any> = {};
+  try { vessels = (app as any).getPath?.("vessels") ?? {}; } catch { return; }
+  const selfMmsi = _getSelfMmsi();
+  let sent = 0;
+  for (const [id, v] of Object.entries(vessels)) {
+    if (sent >= _AIS_IDENTITY_MAX_PER_TICK) break;
+    if (!id.startsWith("urn:mrn:imo:mmsi:")) continue;
+    const mmsi = _extractMmsi(id);
+    if (!mmsi) continue;
+    const last = _aisIdentityLastPub.get(mmsi);
+    if (last && now - last < _AIS_IDENTITY_REPUB_MS) continue;
+    const db = _aisDBLookup(mmsi);
+    if (!db) continue;
+    const deltas = buildAisIdentityDeltas(mmsi, readBusIdentity(v), db, selfMmsi);
+    if (deltas.length === 0) continue;
+    try {
+      (app as any).handleMessage(plugin.id + ".aisdb", {
+        context: ("vessels." + id) as any,
+        updates: [{
+          timestamp: new Date().toISOString() as any,
+          values: deltas.map(d => ({ path: d.path as any, value: d.value })),
+        }],
+      });
+    } catch { continue; }
+    _aisIdentityLastPub.set(mmsi, now);
+    _aisIdentityStats.published++;
+    sent++;
+  }
+  // Poda: el Map no puede crecer sin límite en un puerto con mucho tráfico.
+  if (_aisIdentityLastPub.size > 2000) {
+    for (const [k, t] of _aisIdentityLastPub) {
+      if (now - t > _AIS_IDENTITY_REPUB_MS) _aisIdentityLastPub.delete(k);
+    }
+  }
+}
+// Rev886: mismo patrón que _pypilotSelfHealTimer (ref limpiada en stop()).
+if (_aisIdentityEnrichTimer) clearInterval(_aisIdentityEnrichTimer);
+_aisIdentityEnrichTimer = setInterval(() => {
+  try { _aisIdentityEnrichTick(); } catch { /* never break plugin */ }
+}, _AIS_IDENTITY_TICK_MS);
 // Rev738: expuesta en globalThis para que el callback del cliente
 // aisstream (arrancado en start(), scope diferente) pueda invocarla.
 (globalThis as any)._aisstreamMergeUpdateFn = _aisstreamMergeUpdate;
