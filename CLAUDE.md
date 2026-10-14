@@ -1,6 +1,11 @@
 # CLAUDE.md — instrucciones para asistente AI
 
-> **Estado 2026-09-23 — Rev885 / v2.12.0**
+> **Estado 2026-10-15 — Rev888 / v2.13.0**
+>
+> Nuevo en 2.13.0: **nombres AIS en el árbol SK para todas las apps**
+> (`src/sources/aisIdentityEnrich.ts`, forma canónica `path: ""` + objeto,
+> tick 10 s + heartbeat 15 min). Ver
+> `docs/_audit_ais_identity_enrichment_rev886.md`.
 >
 > QA pendiente en agua real (validar antes del próximo publish):
 >  - **Rev883 auto-lift MOTORING fix + ACKs AIS preservados** en re-drop
@@ -41,8 +46,8 @@ y `docs/BOOTSTRAP_PROMPT.md`** antes de tocar nada.
   garreo, AIS anti-colisión (VHF + 3 motores online aisstream/aishub/aisfriends),
   abrigo, meteo, sonda, wave estimation IMU, log multi-usuario, wizard
   configurator completo, PIN master + invitados.
-- **Rev actual**: `Rev885` (en `src/index.ts` const `PLUGIN_REVISION`).
-- **Versión paquete**: `2.12.0` (`package.json`).
+- **Rev actual**: `Rev888` (en `src/index.ts` const `PLUGIN_REVISION`).
+- **Versión paquete**: `2.13.0` (`package.json`).
 
 ## Features nuevas 2.10.0 → 2.12.0 (última tanda)
 - **2.12.0** (Rev883 → Rev885, 2026-09-23):

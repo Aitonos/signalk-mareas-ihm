@@ -1,6 +1,6 @@
 # QA_PENDIENTE — validaciones en agua real antes del próximo publish
 
-Estado: **2026-09-23** (Rev885 / v2.12.0). Snapshots históricos:
+Estado: **2026-10-15** (Rev888 / v2.13.0). Snapshots históricos:
 - 2026-06-24 (bugs B-23 a B-26, wizard mandatorio M-02) → resuelto,
   archivo en [`archive/QA_PENDIENTE_2026-06-24_snapshot.md`](archive/QA_PENDIENTE_2026-06-24_snapshot.md).
 - 2026-07-21 (features 2.7 → 2.9 QA + auto-lift + AIS triple online +
@@ -9,6 +9,16 @@ Estado: **2026-09-23** (Rev885 / v2.12.0). Snapshots históricos:
   git log.
 
 ---
+
+## 🌊 QA — 2.13.0 (2026-10-15)
+
+### Rev886–888 — nombres AIS en el árbol SK para todas las apps
+**Validado por Carlos en puerto (Moaña, 2026-10-14)**: Freeboard muestra
+todos los nombres tras recargar; tras reiniciar SK, 3 de 106 vessels sin
+nombre (antes 43 de 77). Rev888 (heartbeat) verificado con un cliente
+`policy: "fixed"`: 64 nombres en vivo en 150 s (57 de Mareas).
+**Pendiente**: confirmar en Freeboard ya abierto (sin recargar) tras un
+reinicio de SK que los nombres aparecen en 1-2 min.
 
 ## 🌊 QA abierto — features 2.12.0 publicadas (2026-09-23)
 

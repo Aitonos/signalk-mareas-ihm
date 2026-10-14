@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.13.0] - 2026-10-15
+
+### English
+
+**New — AIS vessel names for every Signal K app ([Rev886](https://github.com/Aitonos/signalk-mareas-ihm/blob/main/src/sources/aisIdentityEnrich.ts) → Rev888).**
+
+Signal K does not persist the `vessels.*` tree: after every server restart a target's name only comes back with its next AIS static message (type 5 / 24, every ~6 min), and targets received from online feeds never get one. Measured on a real boat right after a restart: **43 of 77 vessels had no name**, and 42 of them were already known by this plugin's persistent AIS database.
+
+The plugin now fills the missing identity (name, VHF callsign, IMO) into the Signal K tree from that database every 10 s, so Freeboard-SK, KIP, signalk-collision-alerts, signalk-pypilot-newui and any other client show names instead of raw MMSIs. After the change: 3 of 106 vessels without name.
+
+- Only fields **missing** on the bus are filled; a fresh VHF static message always wins.
+- Published with the canonical Signal K shape used by the built-in AIS parsers: one `path: ""` delta with an object value (`{ name, communication: { callsignVhf }, registrations: { imo } }`). Never as dotted paths — that is what caused the `Cannot create property 'meta' on string` leak fixed in 2.11.4 / 2.11.6. A regression test fails the build if that ever changes.
+- One merged delta per vessel, re-sent every 2 min for 15 min after the first send: clients subscribed with `policy: "fixed"` (Freeboard-SK) keep only the last `path: ""` value per period, and the VHF `{ mmsi }` sent with every position report was masking the name.
+- Counters under `/api/diagnostic` → `heapAudit.aisIdentityEnrich` (`ticks`, `published`, `heartbeats`).
+
+### Español
+
+**Nuevo — nombres de barcos AIS para todas las apps de Signal K ([Rev886](https://github.com/Aitonos/signalk-mareas-ihm/blob/main/src/sources/aisIdentityEnrich.ts) → Rev888).**
+
+Signal K no guarda el árbol `vessels.*` entre reinicios: tras cada reinicio del servidor, el nombre de un barco solo vuelve con su siguiente mensaje AIS estático (tipo 5 / 24, cada ~6 min), y los barcos que llegan por las fuentes online no lo reciben nunca. Medido en un barco real justo después de un reinicio: **43 de 77 barcos sin nombre**, y 42 de ellos ya estaban en la base de datos AIS persistente de este plugin.
+
+Ahora el plugin rellena cada 10 s la identidad que falta (nombre, indicativo VHF, IMO) en el árbol de Signal K desde esa base de datos, así que Freeboard-SK, KIP, signalk-collision-alerts, signalk-pypilot-newui y cualquier otro cliente muestran nombres en vez de MMSI. Tras el cambio: 3 de 106 barcos sin nombre.
+
+- Solo se rellenan los campos que **faltan** en el bus; un mensaje estático VHF reciente siempre manda.
+- Se publica con la forma canónica de los parsers AIS integrados en Signal K: un único delta `path: ""` con un objeto (`{ name, communication: { callsignVhf }, registrations: { imo } }`). Nunca con paths con puntos, que era lo que provocaba el leak `Cannot create property 'meta' on string` arreglado en 2.11.4 / 2.11.6. Un test de regresión rompe la build si eso cambia.
+- Un único delta por barco, reenviado cada 2 min durante 15 min tras el primer envío: los clientes suscritos con `policy: "fixed"` (Freeboard-SK) solo reciben el último valor `path: ""` de cada periodo, y el `{ mmsi }` que el VHF manda con cada posición tapaba el nombre.
+- Contadores en `/api/diagnostic` → `heapAudit.aisIdentityEnrich` (`ticks`, `published`, `heartbeats`).
+
 ## [2.12.0] - 2026-09-23
 
 ### English

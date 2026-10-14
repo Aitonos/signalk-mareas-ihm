@@ -62,6 +62,7 @@ Most anchor watch apps are paid, closed source, single-device and tied to a vend
 
 #### AIS anti-collision system
 - **Persistent vessel database** for the last 72 h — name, length, beam, type, callsign, IMO. Boats appearing in the viewer already have their data filled in, no waiting for the next AIS static packet (which can take up to 6 minutes).
+- **Vessel names for every Signal K app** (2.13.0) — missing names, callsigns and IMOs are filled into the Signal K `vessels.*` tree from that database, so Freeboard-SK, KIP, collision-alert plugins and other clients show names instead of raw MMSIs right after a server restart.
 - **5-minute ghost cache** — when a target loses VHF reception briefly, it stays visible on the map with a discrete X mark indicating "estimated data".
 - **Configurable radius slider** (0.5–50 km) controls what you see on the map and in the list.
 - **5-criteria sorting**: by distance, name, favourites first, MMSI or vessel type.
@@ -276,6 +277,7 @@ La mayoría de apps de anchor watch son de pago, código cerrado, un solo dispos
 
 #### Sistema AIS anti-colisión
 - **Base de datos persistente de barcos** durante las últimas 72 h — nombre, eslora, manga, tipo, callsign, IMO. Los barcos aparecen ya con sus datos sin esperar al próximo paquete AIS estático (que tarda hasta 6 minutos).
+- **Nombres de barcos para todas las apps de Signal K** (2.13.0) — los nombres, indicativos e IMO que faltan se rellenan en el árbol `vessels.*` de Signal K desde esa base de datos, así que Freeboard-SK, KIP, los plugins de alertas de colisión y el resto de clientes muestran nombres en vez de MMSI justo después de reiniciar el servidor.
 - **Cache fantasma de 5 minutos** — cuando un target pierde recepción VHF brevemente, sigue visible en el mapa con una X discreta indicando "datos estimados".
 - **Slider de radio configurable** (0.5–50 km) controla qué barcos ves en mapa y en lista.
 - **5 criterios de ordenación**: distancia, nombre, favoritos primero, MMSI o tipo de barco.
