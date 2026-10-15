@@ -157,48 +157,11 @@ queda abierto:
 
 ## Memory files (persistente entre sesiones)
 
-Hay observaciones del usuario en
-`C:\Users\bybek\.claude\projects\c--Users-bybek-Downloads-signalk-mareas-ihm-Beta1-3-1-Rev40-signalk-mareas-ihm\memory\`.
-Leerlos al inicio (índice completo en `MEMORY.md`). Los más críticos
-para operar hoy:
-
-- `feedback_challenge_carlos_decisions.md` — rebatir cuando técnicamente proceda
-- `feedback_no_coauthor_attribution.md` — NO añadir Co-Authored-By en commits
-- `feedback_always_restart_deploy.md` — siempre `.\deploy.ps1 -Restart`
-- `feedback_deploy_automatically.md` — deploy automático tras batch
-- `feedback_no_permission_asks_for_recurrent_actions.md` — no pedir permiso para deploy/commit rutinario
-- `feedback_powershell_ascii.md` — ASCII en PS scripts
-- `feedback_powershell_exitcode.md` — check `$LASTEXITCODE`
-- `feedback_no_commercial_refs.md` — sin referencias comerciales
-- `feedback_no_hoekens_reference.md` — no mencionar Hoekens en público
-- `feedback_minimal_deps.md` — minimal external deps
-- `feedback_use_localhost.md` — localhost en URLs ejemplo
-- `feedback_nordvpn_breaks_tailscale.md` — NordVPN rompe deploy
-- `feedback_never_publish_without_explicit_ok.md` — publish requiere OK
-- `feedback_prepublish_checklist.md` — checklist antes de publish
-- `feedback_publish_npm_and_github.md` — publish = NPM + GitHub
-- `feedback_confirm_semver_before_publish.md` — confirmar patch/minor/major
-- `feedback_revision_bump_each_build.md` — Rev++ en cada build
-- `feedback_qa_always_state_version.md` — QA lleva "QA Rev<N>"
-- `feedback_qa_numbered.md` — QA numerado 1./2./3.
-- `feedback_stay_focused.md` — no iterar sin sentido
-- `feedback_3_strikes_then_gemini.md` — tras 3 fallos, prompt para Gemini
-- `feedback_backend_is_source_of_truth.md` — todos POSTean al mismo endpoint
-- `feedback_backlog_docs_are_stale.md` — advertir staleness antes de quotear
-- `feedback_batch_trivial_npm_publishes.md` — no publish trivial suelto
-- `feedback_less_is_more.md` — recortar antes que añadir
-- `feedback_no_heap_snapshot_on_tight_ram.md` — snapshot heap solo si `available >= heap × 5 + 500 MB` (incidente 2026-09-23: colgué la Pi)
-- `feedback_mobile_only_no_legacy.md` — mobile.html única, olvida `#panel` desktop
-- `project_audio_hardware_ceiling.md` — no más software gain Pi
-- `project_pi_connectivity.md` — Pi frágil (4G + EMI)
-- `project_pi_ssh_tailscale.md` — SSH via 100.127.222.27
-- `project_dev_environment.md` — laptop builds, Pi runs
-- `project_npm_2fa_windows_hello.md` — NPM Trusted Publishing OIDC (tag push → CI publica)
-- `project_ais_engine_resolved.md` — no re-abrir AIS engine ticket viejo
-- `project_bug_imu_60s_clock_glitch.md` — `@signalk/set-system-time` corrompe IMU cada 60 s
-
-Si una observación nueva contradice memoria existente, ACTUALIZAR
-memoria.
+Índice en `MEMORY.md` del directorio de memoria del proyecto (se carga
+solo). Índices secundarios no auto-cargados: `MEMORY_PYPILOT.md`
+(pypilot-newui) y `MEMORY_ARCHIVE.md` (sprints históricos / bugs
+resueltos). Si una observación nueva contradice memoria existente,
+ACTUALIZAR memoria.
 
 ## Idioma de trabajo
 
