@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const BASE = process.env.IHM_BASE_URL || 'http://100.127.222.27:3000/signalk-mareas-ihm/api';
+const BASE = process.env.IHM_BASE_URL || 'http://localhost:3000/signalk-mareas-ihm/api';
 const SKIP_IF_DOWN = process.env.IHM_TESTS_REQUIRE === 'true' ? false : true;
 
 async function withServer(testFn) {

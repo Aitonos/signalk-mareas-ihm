@@ -10,7 +10,7 @@ Plugin SignalK con UI híbrida:
 
 ## Problema 1 — Sigue cargando la "versión antigua" al arrancar el plugin en el visor
 
-Carlos abre el visor (URL `http://100.127.222.27:3000/signalk-mareas-ihm/viso...` — probablemente `/visorfondeo`) y ve **brevemente la versión antigua** (botones grandes "Previsión Meteo / Calc. Sonda / Calc. Fondeo / Curvas / Previsión Abrigo / Echar / Central / Favorito / Cartas / AIS / Abrigo / Meteo / Alarmas" + panel lateral izquierdo "SOG / Sonda / Marea / Dif. Bajamar / Prof. mín. / Cadena rec. / Dist. ancla / H. fondeo / Presión / Abrigo / Calidad / Nivel de Zoom 16") **antes de que cargue la actual** (mobile.html).
+Carlos abre el visor (URL `http://localhost:3000/signalk-mareas-ihm/viso...` — probablemente `/visorfondeo`) y ve **brevemente la versión antigua** (botones grandes "Previsión Meteo / Calc. Sonda / Calc. Fondeo / Curvas / Previsión Abrigo / Echar / Central / Favorito / Cartas / AIS / Abrigo / Meteo / Alarmas" + panel lateral izquierdo "SOG / Sonda / Marea / Dif. Bajamar / Prof. mín. / Cadena rec. / Dist. ancla / H. fondeo / Presión / Abrigo / Calidad / Nivel de Zoom 16") **antes de que cargue la actual** (mobile.html).
 
 Visualmente, la "versión antigua" claramente es `mapafondeo.html` (visor desktop legacy). Los elementos del layout (botones flotantes grandes + panel left con valores) son lo que tiene mapafondeo.html.
 
