@@ -165,7 +165,7 @@ export class PypilotKeyValueSource implements ImuSource {
     const now = Date.now();
     const age = this.lastSeen > 0 ? now - this.lastSeen : Infinity;
     // Tasa rolling
-    while (this._recentTs.length > 0 && now - this._recentTs[0] > 30_000) this._recentTs.shift();
+    this._pruneRecent(now);
     this.quality.sampleRateHz = Math.round((this._recentTs.length / 30) * 10) / 10;
     this.quality.ageMs = age;
     if (age > this.staleAfterMs) {
@@ -309,7 +309,26 @@ export class PypilotKeyValueSource implements ImuSource {
       this.currentSample.ts = now;
       this.lastSeen = now;
       this._recentTs.push(now);
+      // Rev889: prune on every push too. poll() only runs on the ACTIVE
+      // source; a standby pypilot source kept pushing ~110 ts/s and
+      // reached 8.7 M entries in 22 h, then its first poll() spent hours
+      // shift()-ing them one by one and froze Signal K (2026-10-23 05:01).
+      this._pruneRecent(now);
       this.status = "active";
     }
   }
+
+  /** Rev889: drop timestamps older than the 30 s rate window in ONE
+   *  splice (shift() in a loop is O(n^2) on a big array) and cap the
+   *  size, so a clock step back cannot let it grow either. */
+  private _pruneRecent(now: number): void {
+    const a = this._recentTs;
+    let k = 0;
+    while (k < a.length && now - a[k] > 30_000) k++;
+    if (k > 0) a.splice(0, k);
+    if (a.length > RECENT_TS_MAX) a.splice(0, a.length - RECENT_TS_MAX);
+  }
 }
+
+/** Rev889: 30 s window at up to ~200 updates/s. */
+const RECENT_TS_MAX = 6000;

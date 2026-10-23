@@ -219,6 +219,12 @@ export class SignalKAttitudeSource implements ImuSource {
     while (this._recentTs.length > 0 && now - this._recentTs[0] > 30_000) {
       this._recentTs.shift();
     }
+    // Rev889: hard cap (a clock step back would stop the age prune).
+    if (this._recentTs.length > 6000) this._recentTs.splice(0, this._recentTs.length - 6000);
+    if (this._invalidSampleTs.length > 6000) {
+      this._invalidSampleTs.splice(0, this._invalidSampleTs.length - 6000);
+      this._invalidCount30s = this._invalidSampleTs.length;
+    }
     const rate = this._recentTs.length / 30;
     this.quality = {
       sampleRateHz: Math.round(rate * 10) / 10,
