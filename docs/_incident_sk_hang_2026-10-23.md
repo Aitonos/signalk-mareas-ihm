@@ -84,11 +84,10 @@ Revisado sin fallo: `_aisKnownDB` (podado), `_aisIdentityLastPub` (podado),
 (tope 12000), `_activityLog` / `_audioAttemptHistory` (tope), E/S síncrona
 (solo en rutas y arranque), caché en disco (48 MB, escritura asíncrona).
 
-### Pendiente (no es cuelgue)
-- mareas abre **2 conexiones TCP** a la TinyPilot (fuente IMU remota y
-  bridge de olas) además de la de pypilot-newui: 3 sockets a la Pi Zero.
-  Unificar o parar la fuente IMU en reserva.
-- La fuente pypilot se marca `status = "active"` al recibir datos aunque no
-  sea la activa del gestor: estados confusos en `/api/imu/status`.
-- Sin histéresis en el failover IMU: un corte breve de la actitud SK cambia
-  de fuente y no vuelve hasta que la nueva falla.
+### Corregido en Rev891 (lo que quedaba pendiente)
+
+| Antes | Ahora |
+|---|---|
+| mareas abría **2 conexiones TCP** a la TinyPilot (fuente IMU remota + bridge de olas), las dos pidiendo `imu.*` a frecuencia completa. | La fuente IMU de ese host es **pasiva**: la alimenta el bridge (`ingestPypilot`). Verificado en la Pi: **1 socket** a 23322. El bridge vigila también `imu.heel`. |
+| La fuente pypilot se ponía `status = "active"` al recibir datos aunque el gestor no la usara. | Recibir datos = `available`; solo el gestor marca `active`. |
+| Sin vuelta atrás: unos segundos sin actitud SK pasaban a pypilot para siempre. | Cada 5 s se comprueban las fuentes de más prioridad; si una da datos frescos 30 s seguidos, se vuelve a ella. Simulado: SK sin datos → pypilot; SK sana 30 s → vuelve a SK. |

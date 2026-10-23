@@ -52,7 +52,13 @@ export interface ImuManagerOptions {
   onSample?: (sample: ImuSample, source: ImuSource) => void;
   /** Llamado cuando la fuente activa cambia. */
   onSourceChange?: (source: ImuSource | null, previous: ImuSource | null) => void;
+  /** Rev891: pypilot hosts the plugin's bridge is already connected to. Their
+   *  IMU source is passive (fed via ingestPypilot), no second socket. */
+  passivePypilotHosts?: string[];
 }
+
+/** Rev891: hold time before returning to a higher-priority IMU source. */
+const IMU_RETURN_HOLD_MS = 30_000;
 
 export class ImuManager {
   private app: SignalKApp;
@@ -76,6 +82,11 @@ export class ImuManager {
      reintenta cada 60 s hasta encontrar fuente. */
   private _lastAutoDetectMs = 0;
   private _lastWatchdogLogMs = 0;
+  /* Rev891: return to a higher-priority source once it has been healthy for
+     IMU_RETURN_HOLD_MS. Before, a few seconds without SK attitude switched
+     to pypilot for good (until pypilot itself failed). */
+  private _betterHealthySince = new Map<ImuSource, number>();
+  private _lastReturnCheckMs = 0;
 
   constructor(opts: ImuManagerOptions) {
     this.app = opts.app;
@@ -83,6 +94,16 @@ export class ImuManager {
     this.tickMs = opts.tickMs ?? 100;
     this.onSample = opts.onSample;
     this.onSourceChange = opts.onSourceChange;
+    this.passiveHosts = new Set((opts.passivePypilotHosts || []).filter(Boolean));
+  }
+
+  private passiveHosts: Set<string>;
+
+  /** Rev891: data from the plugin's pypilot bridge for `host`. */
+  ingestPypilot(host: string, name: string, value: unknown): void {
+    for (const s of this.sources) {
+      if (s instanceof PypilotKeyValueSource && s.passive && s.host === host) s.ingest(name, value);
+    }
   }
 
   /**
@@ -123,6 +144,7 @@ export class ImuManager {
         port: this.config.pypilot.port,
         isLocal: false,
         staleAfterMs: this.config.staleAfterSeconds * 1000,
+        passive: this.passiveHosts.has(host),
       }));
     }
 
@@ -293,6 +315,7 @@ export class ImuManager {
           this._setActive(fallback);
         }
       }
+      this._maybeReturnToBetter();
     } else {
       // Sin fuente activa — intentamos elegir una entre las disponibles
       const cand = this._chooseBestSource(null);
@@ -311,6 +334,30 @@ export class ImuManager {
         this._lastWatchdogLogMs = now;
       }
       this._autoDetect().catch(() => { /* defensive */ });
+    }
+  }
+
+  /** Rev891: every 5 s, check sources with a higher priority than the active
+   *  one; switch back when one has given fresh samples for 30 s. */
+  private _maybeReturnToBetter(): void {
+    const now = Date.now();
+    if (now - this._lastReturnCheckMs < 5_000 || !this.active) return;
+    this._lastReturnCheckMs = now;
+    const cur = this.active;
+    for (const s of this.sources) {
+      if (s === cur || s.priority <= cur.priority || s.status === "disabled") { this._betterHealthySince.delete(s); continue; }
+      let ok = false;
+      try { ok = !!s.poll(); } catch { ok = false; }
+      if (s.status === "active") s.status = "available";   // poll() marks itself active; only the manager decides
+      if (!ok) { this._betterHealthySince.delete(s); continue; }
+      const since = this._betterHealthySince.get(s) ?? now;
+      this._betterHealthySince.set(s, since);
+      if (now - since >= IMU_RETURN_HOLD_MS) {
+        this.app.debug?.(`[IMU] ${s.id} healthy for ${Math.round((now - since) / 1000)} s - back from ${cur.id}`);
+        this._betterHealthySince.clear();
+        this._setActive(s);
+        return;
+      }
     }
   }
 

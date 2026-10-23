@@ -121,7 +121,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev890";
+const PLUGIN_REVISION = "Rev891";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1271,6 +1271,9 @@ export default function (app: SignalKApp): Plugin {
   // de scope, y stop() también.
   let _pypilotDisconnectOuter: () => void = () => {};
   let _pypilotInitOuter: (props: any) => void = () => {};
+  // Rev891: host the pypilot bridge is connected to ("" = bridge off), for
+  // the IMU manager's passive pypilot source.
+  let _pypilotBridgeHostOuter: () => string = () => "";
   // Rev113: forward decl para parar el sampling de wave detection en stop().
   let _waveStopSamplingOuter: () => void = () => {};
   // Rev123: forward decl para parar el sampler del historial 15-min.
@@ -1805,6 +1808,8 @@ export default function (app: SignalKApp): Plugin {
       _imuManager = new ImuManager({
         app,
         config: imuCfg,
+        // Rev891: the bridge already reads imu.* from this host - share it.
+        passivePypilotHosts: _pypilotBridgeHostOuter() ? [_pypilotBridgeHostOuter()] : [],
         onSourceChange: (next, prev) => {
           app.debug(`[IMU-MANAGER] source change: ${prev?.id ?? "none"} → ${next?.id ?? "none"}`);
         },
@@ -11971,7 +11976,9 @@ _waveStopSamplingOuter = () => { _waveStopSampling(); _accelStopSampling(); _wav
 // debug: además de accel/gyro, pitch/roll/heading que SÍ existen seguro en
 // pypilot — si llegan estos sabemos que el protocolo es correcto y que las
 // que no llegan es porque pypilot no las publica (ej. accel en builds antiguos).
-const PYPILOT_WATCHES = ["imu.accel", "imu.gyro", "imu.pitch", "imu.roll", "imu.heading"];
+// Rev891: + imu.heel, which the IMU manager's pypilot source used to watch on
+// its own (second) socket; that source is now fed from here.
+const PYPILOT_WATCHES = ["imu.accel", "imu.gyro", "imu.pitch", "imu.roll", "imu.heading", "imu.heel"];
 const PYPILOT_RECONNECT_MS = 5_000;
 const PYPILOT_RAW_DEBUG_MS = 30_000;        // dump primeros 30 s de raw data al log
 let _pypilotSocket: Socket | null = null;
@@ -12061,6 +12068,8 @@ function _maybeBridgePushAttitude() {
 }
 function _pypilotHandleNameValue(name: string, value: any) {
   _pypilotLastMsgMs = Date.now();
+  // Rev891: feed the IMU manager's passive pypilot source (no 2nd socket).
+  try { _imuManager?.ingestPypilot(_pypilotHost, name, value); } catch { /* never break the bridge */ }
   const values: Array<{ path: string; value: any }> = [];
   if (name === "imu.accel") {
     // Rev120: alimenta DIRECTAMENTE la integración (sin round-trip por SK,
@@ -12408,6 +12417,7 @@ function _pypilotInit(props: any) {
 // Esto se evalúa una vez al cargar el módulo (cuando se ejecuta el try-block
 // expressApp). A partir de ahí, start() y stop() pueden invocar el bridge.
 _pypilotInitOuter = _pypilotInit;
+_pypilotBridgeHostOuter = () => (_pypilotEnabled && _pypilotHost) ? _pypilotHost : "";
 _pypilotDisconnectOuter = _pypilotDisconnect;
 
 expressApp.get("/signalk-mareas-ihm/api/pypilot/status", (_req: any, res: any) => {

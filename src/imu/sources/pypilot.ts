@@ -72,6 +72,8 @@ export class PypilotKeyValueSource implements ImuSource {
      socket está OPEN pero no llega data. Ambas capas son ortogonales
      y necesarias. */
   private _watchdogTimer: NodeJS.Timeout | null = null;
+  /** Rev891: see constructor. */
+  readonly passive: boolean;
 
   constructor(opts: {
     app: SignalKApp;
@@ -79,11 +81,16 @@ export class PypilotKeyValueSource implements ImuSource {
     port?: number;
     isLocal: boolean;
     staleAfterMs?: number;
+    /** Rev891: fed by the plugin's pypilot bridge (same host) through
+     *  ingest(); opens no socket of its own. One TCP connection to the
+     *  TinyPilot instead of two asking for the same imu.* at full rate. */
+    passive?: boolean;
   }) {
     this.app = opts.app;
     this.host = opts.host;
     this.port = opts.port ?? 23322;
     this.staleAfterMs = opts.staleAfterMs ?? 10_000;
+    this.passive = opts.passive === true;
     this.id = opts.isLocal ? "pypilot-local" : `pypilot-${this.host}`;
     this.type = opts.isLocal ? "pypilot-local" : "pypilot-network";
     // Local > remoto (latencia, fiabilidad de red).
@@ -97,6 +104,8 @@ export class PypilotKeyValueSource implements ImuSource {
    * para el flujo normal — usa una conexión efímera.
    */
   async probe(): Promise<boolean> {
+    // Rev891: a passive source is alive when the bridge fed it recently.
+    if (this.passive) return this.lastSeen > 0 && Date.now() - this.lastSeen < this.staleAfterMs;
     return new Promise<boolean>((resolve) => {
       const sock = new Socket();
       let resolved = false;
@@ -124,6 +133,12 @@ export class PypilotKeyValueSource implements ImuSource {
   }
 
   start(): void {
+    if (this.passive) {
+      // Rev891: no socket; data arrives through ingest().
+      if (this.status === "disabled") this.status = "available";
+      this.lastError = null;
+      return;
+    }
     if (this.socket || this.reconnectTimer) return;
     this.status = "available";
     this.lastError = null;
@@ -262,6 +277,12 @@ export class PypilotKeyValueSource implements ImuSource {
     }
   }
 
+  /** Rev891: one pypilot name/value from the plugin's bridge (passive mode). */
+  ingest(name: string, value: unknown): void {
+    if (!this.passive) return;
+    this._handleNameValue(name, value);
+  }
+
   private _handleNameValue(name: string, value: any): void {
     const now = Date.now();
     let updated = false;
@@ -315,7 +336,9 @@ export class PypilotKeyValueSource implements ImuSource {
       // reached 8.7 M entries in 22 h, then its first poll() spent hours
       // shift()-ing them one by one and froze Signal K (2026-10-23 05:01).
       this._pruneRecent(now);
-      this.status = "active";
+      // Rev891: receiving data makes it AVAILABLE; only the manager makes a
+      // source "active" (it used to claim "active" while on standby).
+      if (this.status !== "active") this.status = "available";
     }
   }
 
