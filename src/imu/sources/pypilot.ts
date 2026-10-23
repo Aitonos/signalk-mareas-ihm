@@ -232,6 +232,7 @@ export class PypilotKeyValueSource implements ImuSource {
 
   private _onData(chunk: string): void {
     this.buffer += chunk;
+    if (this.buffer.length > 256 * 1024) this.buffer = this.buffer.slice(-64 * 1024);   // Rev890
     let nl: number;
     while ((nl = this.buffer.indexOf("\n")) >= 0) {
       const line = this.buffer.slice(0, nl).trim();

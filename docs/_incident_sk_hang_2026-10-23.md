@@ -46,3 +46,49 @@ el proceso Node al **100 % de un núcleo**, el log parado.
   ya no puede colgar, pero conviene mirarlo.
 - El cron de reinicio cada 3 días (04:00) **no** protege de esto: el
   cuelgue fue 25 h después del último reinicio.
+
+---
+
+## Auditoría de mareas tras el incidente (Rev890)
+
+Objetivo: encontrar todo lo que pueda volver a bloquear Signal K o hacer
+crecer la memoria sin límite. Inventario de las ~40 colecciones de larga
+vida (arrays, Map, Set, diccionarios) y de los timers.
+
+### Por qué cambió de fuente IMU a las 05:01
+`ImuManager` solo llama `poll()` de la fuente ACTIVA, pero las demás siguen
+conectadas recibiendo datos. Secuencia probable:
+1. 22/10 04:00 (cron): al arrancar, la actitud SK aún no está → se elige
+   pypilot (TinyPilot) como activa.
+2. 22/10 ~06:47: pypilot sin datos un rato → failover a la fuente SK. La de
+   pypilot sigue conectada; al volver los datos acumula sin podar (primera
+   marca del array: 06:47).
+3. 23/10 05:01: la actitud SK para unos segundos → failover a pypilot →
+   primer `poll()` sobre 8.7 M → cuelgue.
+
+### Hallazgos
+
+| # | Gravedad | Dónde | Fallo | Arreglo |
+|---|---|---|---|---|
+| 1 | CRÍTICO (causó el incidente) | `imu/sources/pypilot.ts` | Ventana de 30 s podada solo en `poll()` (fuente activa) y con `shift()` en bucle. | Rev889: poda al recibir, `splice` único, tope 6000. |
+| 2 | **CRÍTICO (mismo patrón, latente)** | `_skPathsRateWindow` | Una entrada por cada delta publicado; podada SOLO al abrir `/api/sk-paths/stats` (página de paths del wizard). Crecía sin límite y la primera apertura habría congelado Signal K igual. Probable parte del +30 MB/h de RSS medido el 18-20/10. | Rev890: un cubo por segundo, poda en cada alta (máx ~61). |
+| 3 | Medio (fuga lenta) | `_aisOnlineSeen` | Una entrada por MMSI visto online (aisstream/aishub/aisfriends), nunca borrada. | Rev890: barrido cada minuto, borra los no vistos en 10 min. |
+| 4 | Medio (latente) | buffers por tiempo: racha, olas (x2), acelerómetro, posición, contexto nav, profundidad, auditoría IMU | Podan por edad al añadir; con el reloj atrasado (saltos de `set-system-time`) no podan y el recorte posterior es O(n²). | Rev890: tope de tamaño en todos (`_capArr`). |
+| 5 | Bajo | búfer TCP del bridge pypilot y de la fuente IMU | Sin tope si no llega `\n`. | Rev890: tope 256 KB. |
+| 6 | Diagnóstico | `heapAudit` | No vigilaba los arrays de las fuentes IMU ni la ventana de rate: el incidente no se veía venir. | Rev890: los incluye. |
+
+Revisado sin fallo: `_aisKnownDB` (podado), `_aisIdentityLastPub` (podado),
+`_aisFirstInZoneAt` (podado), `_navtileRamCache` (tope), `sseClients`
+(borrado al cerrar), `PUBLISHED_PATHS` (solo nombres de path),
+`COEF_TABLE_CACHE` (por año), cachés de audio (finitas), `trackPoints`
+(tope 12000), `_activityLog` / `_audioAttemptHistory` (tope), E/S síncrona
+(solo en rutas y arranque), caché en disco (48 MB, escritura asíncrona).
+
+### Pendiente (no es cuelgue)
+- mareas abre **2 conexiones TCP** a la TinyPilot (fuente IMU remota y
+  bridge de olas) además de la de pypilot-newui: 3 sockets a la Pi Zero.
+  Unificar o parar la fuente IMU en reserva.
+- La fuente pypilot se marca `status = "active"` al recibir datos aunque no
+  sea la activa del gestor: estados confusos en `/api/imu/status`.
+- Sin histéresis en el failover IMU: un corte breve de la actitud SK cambia
+  de fuente y no vuelve hasta que la nueva falla.

@@ -121,7 +121,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev889";
+const PLUGIN_REVISION = "Rev890";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -863,6 +863,28 @@ let _skPathsConfigCache: Record<string, boolean> | null = null;
 // /api/sk-paths/stats para mostrar "N paths activos · X deltas/seg" en la
 // cabecera del panel de paths SK del wizard.
 const _skPathsRateWindow: Array<{ t: number; n: number }> = [];
+/** Rev890 (audit after the 2026-10-23 freeze): this window was pushed on EVERY
+ *  published delta and pruned only when /api/sk-paths/stats was opened -
+ *  unbounded growth, and the first open would shift() it one by one and freeze
+ *  Signal K like the IMU source did. Now: one bucket per second, pruned on
+ *  every add (max ~61 entries). */
+function _skPathsRateAdd(n: number): void {
+  const now = Date.now();
+  const sec = Math.floor(now / 1000) * 1000;
+  const last = _skPathsRateWindow[_skPathsRateWindow.length - 1];
+  if (last && last.t === sec) last.n += n;
+  else _skPathsRateWindow.push({ t: sec, n });
+  let k = 0;
+  while (k < _skPathsRateWindow.length && now - _skPathsRateWindow[k].t > 60_000) k++;
+  if (k > 0) _skPathsRateWindow.splice(0, k);
+  _capArr(_skPathsRateWindow, 120);
+}
+/** Rev890: hard size cap for time-windowed buffers. Their age prune stops
+ *  working while the clock is behind (set-system-time steps): without a cap
+ *  they grow for as long as the step lasts and the prune after it is O(n^2). */
+function _capArr(a: unknown[], max: number): void {
+  if (a.length > max) a.splice(0, a.length - max);
+}
 /* Rev750 (feedback Carlos "detector de data y elegir fuente"): helpers
    para detectar otros plugins tide provider habilitados en el server y
    decidir si registrarnos como resource provider. Viven a nivel módulo
@@ -2241,9 +2263,7 @@ export default function (app: SignalKApp): Plugin {
                   // Sumamos values individuales que realmente salen (no
                   // el número de updates), para que la métrica cuadre con
                   // "cuántos deltas/seg publica el plugin".
-                  try {
-                    _skPathsRateWindow.push({ t: Date.now(), n: u.values.length });
-                  } catch { /* defensive */ }
+                  try { _skPathsRateAdd(u.values.length); } catch { /* defensive */ }
                 } else {
                   anyKept = true; // update sin values (meta, etc.) → dejarlo
                 }
@@ -4395,6 +4415,12 @@ try {
             waveBufferSize: _waveBuffer.length,
             activityLog: _activityLog.length,
             pypilotRawSamples: _pypilotRawSamples.length,
+            skPathsRateWindow: _skPathsRateWindow.length,    // Rev890
+            gustBuffer: _gustBuffer.length,                  // Rev890
+            accelBuffer: _accelBuffer.length,                // Rev890
+            navCtxBuffer: _navCtxBuffer.length,              // Rev890
+            depthHistory: depthHistory.length,               // Rev890
+            imuRecentTs: (() => { try { return (_imuManager as any)?.sources?.map((x: any) => (x._recentTs || []).length); } catch { return null; } })(),   // Rev890
             navtileRamCache: _navtileRamCache.size,
             navtileInFlight: _navtileInFlight.size,
             publishedPaths: PUBLISHED_PATHS.size,
@@ -5588,9 +5614,7 @@ try {
         }
         const now = Date.now();
         // Purga entradas > 60 s.
-        while (_skPathsRateWindow.length > 0 && (now - _skPathsRateWindow[0].t) > 60_000) {
-          _skPathsRateWindow.shift();
-        }
+        { let k = 0; while (k < _skPathsRateWindow.length && (now - _skPathsRateWindow[k].t) > 60_000) k++; if (k > 0) _skPathsRateWindow.splice(0, k); }
         let sum30 = 0, sum60 = 0;
         for (const e of _skPathsRateWindow) {
           const age = now - e.t;
@@ -6968,8 +6992,20 @@ function _aisMarkOnlineSeen(mmsi: string, source: _AisOnlineSource): void {
   if (selfMmsi && mmsi === selfMmsi) return;
   let m = _aisOnlineSeen.get(mmsi);
   if (!m) { m = new Map(); _aisOnlineSeen.set(mmsi, m); }
-  m.set(source, Date.now());
+  const nowS = Date.now();
+  m.set(source, nowS);
+  // Rev890: one entry per MMSI ever seen online was never deleted (slow
+  // leak: thousands of ships a day in a +-1 deg box). Sweep once a minute.
+  if (nowS - _aisOnlineSweepMs > 60_000) {
+    _aisOnlineSweepMs = nowS;
+    for (const [k, mm] of _aisOnlineSeen) {
+      let newest = 0;
+      for (const ts of mm.values()) if (ts > newest) newest = ts;
+      if (nowS - newest > 10 * 60_000) _aisOnlineSeen.delete(k);
+    }
+  }
 }
+let _aisOnlineSweepMs = 0;
 function _aisOnlineSourcesFor(mmsi: string): _AisOnlineSource[] {
   const m = _aisOnlineSeen.get(mmsi);
   if (!m) return [];
@@ -10633,6 +10669,7 @@ function _gustSample() {
   while (_gustBuffer.length > 0 && now - _gustBuffer[0].ts > _GUST_WINDOW_MS) {
     _gustBuffer.shift();
   }
+  _capArr(_gustBuffer, 6000);   // Rev890
 }
 function _getGustKt(): number | null {
   if (_gustBuffer.length === 0) return null;
@@ -10715,6 +10752,7 @@ function _waveStartSampling() {
     while (_waveBuffer.length > 0 && now - _waveBuffer[0].ts > _WAVE_BUFFER_DUR_MS) {
       _waveBuffer.shift();
     }
+    _capArr(_waveBuffer, 6000);   // Rev890
     // Rev640 (feedback Carlos + bug Pablo Rev636 "IMU Audit 0 samples"): con
     // Pypilot en modo "solo IMU" (OpenPlotter) el socket TCP 23322 no se
     // expone, y los buffers de audit sólo se alimentaban desde ese socket
@@ -10895,6 +10933,7 @@ function _feedAccelSample(ax: number, ay: number, az: number) {
   while (_accelBuffer.length > 0 && now - _accelBuffer[0].ts > _ACCEL_BUFFER_DUR_MS) {
     _accelBuffer.shift();
   }
+  _capArr(_accelBuffer, 4000);   // Rev890
   // Bootstrap: primeros N samples → media simple (acelera convergencia).
   if (!_meanInitialized) {
     _meanInitSamples++;
@@ -10941,6 +10980,7 @@ function _feedAccelSample(ax: number, ay: number, az: number) {
   while (_posBuffer.length > 0 && now - _posBuffer[0].ts > _POS_BUFFER_DUR_MS) {
     _posBuffer.shift();
   }
+  _capArr(_posBuffer, 2000);   // Rev890
 }
 function _accelStopSampling() {
   if (_accelSampleTimer) { clearInterval(_accelSampleTimer); _accelSampleTimer = null; }
@@ -11141,6 +11181,7 @@ const _imuAuditGyr: ImuChan3[] = [];
 const _IMU_AUDIT_DUR_MS = 30_000;
 function _trimImuAudit<T extends { ts: number }>(arr: T[], now: number): void {
   while (arr.length > 0 && now - arr[0].ts > _IMU_AUDIT_DUR_MS) arr.shift();
+  _capArr(arr, 3000);   // Rev890
 }
 function _recordImuAtt(pitchDeg: number, rollDeg: number, headingDeg: number): void {
   const now = Date.now();
@@ -11492,6 +11533,7 @@ function _navCtxStartSampling() {
       yawRateRadS,
     });
     while (_navCtxBuffer.length > 0 && now - _navCtxBuffer[0].ts > _NAV_CTX_DUR_MS) _navCtxBuffer.shift();
+    _capArr(_navCtxBuffer, 3000);   // Rev890
   }, _NAV_CTX_SAMPLE_MS);
 }
 function _navCtxStopSampling() {
@@ -12015,6 +12057,7 @@ function _maybeBridgePushAttitude() {
   while (_waveBuffer.length > 0 && now - _waveBuffer[0].ts > _WAVE_BUFFER_DUR_MS) {
     _waveBuffer.shift();
   }
+  _capArr(_waveBuffer, 6000);   // Rev890
 }
 function _pypilotHandleNameValue(name: string, value: any) {
   _pypilotLastMsgMs = Date.now();
@@ -12184,6 +12227,7 @@ function _pypilotConnect() {
       }
     }
     _pypilotBuffer += txt;
+    if (_pypilotBuffer.length > 256 * 1024) _pypilotBuffer = _pypilotBuffer.slice(-64 * 1024);   // Rev890: no newline ever -> bounded
     const parts = _pypilotBuffer.split("\n");
     _pypilotBuffer = parts.pop() || "";
     for (const line of parts) {
@@ -17382,6 +17426,7 @@ function isDepthReliable(depthNow: number | null, sourcePath: string = "unknown"
   // C-01: ventana temporal, no cap por tamaño.
   const cutoff = now - DEPTH_HISTORY_WINDOW_MS;
   while (depthHistory.length > 0 && depthHistory[0].ts < cutoff) depthHistory.shift();
+  _capArr(depthHistory, 3000);   // Rev890
 
   if (depthHistory.length < 4) return { reliable: true, reason: "ok" };
 
