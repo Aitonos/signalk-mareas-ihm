@@ -1,6 +1,6 @@
 # QA_PENDIENTE — validaciones en agua real antes del próximo publish
 
-Estado: **2026-10-15** (Rev888 / v2.13.0). Snapshots históricos:
+Estado: **2026-10-26** (Rev892 / v2.13.1). Snapshots históricos:
 - 2026-06-24 (bugs B-23 a B-26, wizard mandatorio M-02) → resuelto,
   archivo en [`archive/QA_PENDIENTE_2026-06-24_snapshot.md`](archive/QA_PENDIENTE_2026-06-24_snapshot.md).
 - 2026-07-21 (features 2.7 → 2.9 QA + auto-lift + AIS triple online +
@@ -9,6 +9,16 @@ Estado: **2026-10-15** (Rev888 / v2.13.0). Snapshots históricos:
   git log.
 
 ---
+
+## QA — 2.13.1 (2026-10-26)
+
+### Rev889–891 — bloqueo de Signal K por la ventana IMU (incidente 2026-10-23)
+Desplegado en la Pi el 23-10; RSS de SK pasó de ~+30 MB/h a ~+4.5 MB/h.
+Ver [`_incident_sk_hang_2026-10-23.md`](_incident_sk_hang_2026-10-23.md).
+**Pendiente**:
+1. Una semana sin bloqueos; `heapAudit` con las ventanas IMU / tasa acotadas.
+2. Con el AP navegando, la fuente IMU pypilot (pasiva, por el puente) da roll/pitch/olas y en `/api/imu/status` solo una fuente figura `active`.
+3. Apagar la TinyPilot 1 min y encenderla: el gestor vuelve a pypilot tras 30 s estable.
 
 ## 🌊 QA — 2.13.0 (2026-10-15)
 

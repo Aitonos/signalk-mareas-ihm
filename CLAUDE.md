@@ -1,6 +1,11 @@
 # CLAUDE.md — instrucciones para asistente AI
 
-> **Estado 2026-10-15 — Rev888 / v2.13.0**
+> **Estado 2026-10-26 — Rev892 / v2.13.1**
+>
+> 2.13.1: fix del **bloqueo de Signal K 5 h** (2026-10-23) por la ventana
+> de tasa de la fuente IMU pypilot (Rev889-891, ventanas temporales
+> acotadas, una sola conexión TCP a la TinyPilot). Ver
+> `docs/_incident_sk_hang_2026-10-23.md`.
 >
 > Nuevo en 2.13.0: **nombres AIS en el árbol SK para todas las apps**
 > (`src/sources/aisIdentityEnrich.ts`, forma canónica `path: ""` + objeto,
@@ -46,8 +51,8 @@ y `docs/BOOTSTRAP_PROMPT.md`** antes de tocar nada.
   garreo, AIS anti-colisión (VHF + 3 motores online aisstream/aishub/aisfriends),
   abrigo, meteo, sonda, wave estimation IMU, log multi-usuario, wizard
   configurator completo, PIN master + invitados.
-- **Rev actual**: `Rev888` (en `src/index.ts` const `PLUGIN_REVISION`).
-- **Versión paquete**: `2.13.0` (`package.json`).
+- **Rev actual**: `Rev892` (en `src/index.ts` const `PLUGIN_REVISION`).
+- **Versión paquete**: `2.13.1` (`package.json`).
 
 ## Features nuevas 2.10.0 → 2.12.0 (última tanda)
 - **2.12.0** (Rev883 → Rev885, 2026-09-23):

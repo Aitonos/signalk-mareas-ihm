@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.13.1] - 2026-10-26
+
+### English
+
+**Fixed — Signal K froze for 5 hours (Rev889 → Rev891).** On 2026-10-23 the whole Signal K server stopped answering (admin, apps, websocket) for 5 h. Cause, found with the Node inspector on the live process: the pypilot IMU source pruned its 30 s rate window only while it was the active source, and with `shift()` in a loop. As a standby source it grew to 8.7 million timestamps; its first poll as active removed them one by one and blocked the event loop.
+
+- Every time-windowed buffer is now pruned when a value is added, with one `splice`, and has a size cap (also when the clock steps back). Same fix for the Signal K paths rate window (it was pruned only when its stats page was opened), the online AIS "seen" map and the TCP line buffers.
+- The pypilot IMU source is fed by the plugin's own pypilot bridge: one TCP connection to the TinyPilot instead of two. A standby source no longer reports itself as active, and the IMU manager returns to a higher-priority source after it has been healthy for 30 s.
+- `/api/diagnostic` → `heapAudit` also reports the size of the IMU and rate windows.
+- App Store: recommends `signalk-pypilot-newui`.
+
+### Español
+
+**Arreglado — Signal K bloqueado 5 horas (Rev889 → Rev891).** El 23-10-2026 todo el servidor Signal K dejó de responder (panel, apps, websocket) durante 5 h. Causa, encontrada con el inspector de Node sobre el proceso en marcha: la fuente IMU pypilot limpiaba su ventana de tasa de 30 s solo mientras era la fuente activa, y con `shift()` en bucle. En reserva llegó a 8,7 millones de marcas de tiempo; su primera lectura como activa las borró una a una y bloqueó el bucle de eventos.
+
+- Todas las ventanas temporales se limpian al añadir un valor, con un único `splice`, y tienen tamaño máximo (también si el reloj salta hacia atrás). Mismo arreglo en la ventana de tasa de los paths de Signal K (solo se limpiaba al abrir su página de estadísticas), el mapa de barcos vistos del AIS online y los buffers de línea TCP.
+- La fuente IMU pypilot recibe los datos por el puente pypilot del propio plugin: una conexión TCP con la TinyPilot en vez de dos. Una fuente en reserva ya no se declara activa, y el gestor IMU vuelve a la fuente de mayor prioridad tras 30 s estable.
+- `/api/diagnostic` → `heapAudit` muestra también el tamaño de las ventanas IMU y de tasa.
+- App Store: recomienda `signalk-pypilot-newui`.
+
 ## [2.13.0] - 2026-10-15
 
 ### English
