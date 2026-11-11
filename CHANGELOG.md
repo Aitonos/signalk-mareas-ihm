@@ -1,14 +1,14 @@
 # Changelog
 
-## [Unreleased]
+## [2.13.2] - 2026-11-11
 
 ### English
 
-**Fixed — "Cannot create property 'meta' on string" at every Signal K start (Rev893).** The vessel data step wrote the call sign twice to Signal K's base data: once inside the root object, as the Signal K admin does, and once as a separate `communication.callsignVhf` text entry, which made Signal K fail when it loaded the file. The call sign is now written only the way the admin writes it. Length, draft and AIS ship type always go in Signal K's own shape. On start, the plugin moves the old entries to that shape and removes them, so the next start is clean.
+**Fixed — "Cannot create property 'meta' on string" at every Signal K start (Rev893-894).** The vessel data step wrote the call sign twice to Signal K's base data: once inside the root object, as the Signal K admin does, and once as a separate `communication.callsignVhf` text entry, which made Signal K fail when it loaded the file. The call sign is now written only the way the admin writes it. Length, draft and AIS ship type always go in Signal K's own shape. On start, the plugin moves the old entries to that shape and removes them, so the next start is clean.
 
 ### Español
 
-**Arreglado — "Cannot create property 'meta' on string" en cada arranque de Signal K (Rev893).** El paso de datos del barco escribía el indicativo dos veces en los datos base de Signal K: una dentro del objeto raíz, como el panel de Signal K, y otra como entrada de texto aparte `communication.callsignVhf`, con la que Signal K fallaba al cargar el fichero. Ahora el indicativo se escribe solo como lo escribe el panel. Eslora, calado y tipo de barco AIS van siempre en la forma propia de Signal K. Al arrancar, el plugin pasa las entradas antiguas a esa forma y las borra, así que el arranque siguiente sale limpio.
+**Arreglado — "Cannot create property 'meta' on string" en cada arranque de Signal K (Rev893-894).** El paso de datos del barco escribía el indicativo dos veces en los datos base de Signal K: una dentro del objeto raíz, como el panel de Signal K, y otra como entrada de texto aparte `communication.callsignVhf`, con la que Signal K fallaba al cargar el fichero. Ahora el indicativo se escribe solo como lo escribe el panel. Eslora, calado y tipo de barco AIS van siempre en la forma propia de Signal K. Al arrancar, el plugin pasa las entradas antiguas a esa forma y las borra, así que el arranque siguiente sale limpio.
 
 ## [2.13.1] - 2026-10-26
 

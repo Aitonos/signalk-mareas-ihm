@@ -54,8 +54,8 @@ las alarmas.
 - **Verificado en la Pi:** copia previa en
   `~/.signalk/baseDeltas.json.bak-rev893`. El primer arranque limpió el
   fichero; el segundo, 0 errores, y el indicativo sigue en SK.
-- **No probado en real:** guardar los datos del barco desde el wizard
-  (POST vessel-base). Lo cubre la build, no un test.
+- POST vessel-base probado en la Pi (Rev894): 0 errores, fichero con la
+  forma del admin.
 
 ---
 

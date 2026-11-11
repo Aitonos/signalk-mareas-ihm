@@ -1,6 +1,9 @@
 # CLAUDE.md — instrucciones para asistente AI
 
-> **Estado 2026-10-26 — Rev892 / v2.13.1**
+> **Estado 2026-11-11 — Rev894 / v2.13.2**
+>
+> 2.13.2: fix B-A1 (callsign duplicado en baseDeltas.json, TypeError en
+> cada arranque de SK).
 >
 > 2.13.1: fix del **bloqueo de Signal K 5 h** (2026-10-23) por la ventana
 > de tasa de la fuente IMU pypilot (Rev889-891, ventanas temporales
@@ -52,8 +55,8 @@ y `docs/BOOTSTRAP_PROMPT.md`** antes de tocar nada.
   garreo, AIS anti-colisión (VHF + 3 motores online aisstream/aishub/aisfriends),
   abrigo, meteo, sonda, wave estimation IMU, log multi-usuario, wizard
   configurator completo, PIN master + invitados.
-- **Rev actual**: `Rev893` (en `src/index.ts` const `PLUGIN_REVISION`).
-- **Versión paquete**: `2.13.1` (`package.json`).
+- **Rev actual**: `Rev894` (en `src/index.ts` const `PLUGIN_REVISION`).
+- **Versión paquete**: `2.13.2` (`package.json`).
 
 ## Features nuevas 2.10.0 → 2.12.0 (última tanda)
 - **2.12.0** (Rev883 → Rev885, 2026-09-23):
