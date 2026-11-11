@@ -33,9 +33,10 @@
 >  - ✅ K-01 smoothing sonda (aprobado agua real 2026-08-02).
 >  - ✅ Auto-lift al arrancar motor (Rev751).
 >
-> Un bug cosmético vigente: **TypeError meta on string** al arrancar SK
-> (1 chispazo/restart, sin impacto funcional, ver `docs/KNOWN_BUGS.md`
-> B-A1).
+> B-A1 (TypeError meta on string al arrancar SK) resuelto en Rev893
+> (2026-11-11). Abierto **B-A2**: la eslora de SK no llega al cálculo de
+> fondeo (radio de borneo sin LOA); pendiente de decisión de Carlos, ver
+> `docs/KNOWN_BUGS.md`.
 >
 > No proponer `npm publish` por iniciativa propia, y NO heredar
 > autorización de sesiones anteriores: cada publish requiere OK
@@ -51,7 +52,7 @@ y `docs/BOOTSTRAP_PROMPT.md`** antes de tocar nada.
   garreo, AIS anti-colisión (VHF + 3 motores online aisstream/aishub/aisfriends),
   abrigo, meteo, sonda, wave estimation IMU, log multi-usuario, wizard
   configurator completo, PIN master + invitados.
-- **Rev actual**: `Rev892` (en `src/index.ts` const `PLUGIN_REVISION`).
+- **Rev actual**: `Rev893` (en `src/index.ts` const `PLUGIN_REVISION`).
 - **Versión paquete**: `2.13.1` (`package.json`).
 
 ## Features nuevas 2.10.0 → 2.12.0 (última tanda)
@@ -146,8 +147,8 @@ queda abierto:
 - **Vigilancia heap V8 post-cron** — verificar en 7 días que el restart
   cada 3 días mantiene RSS estable < 800 MB. Comparar curva de
   `heapAudit` con la de 2026-09-23.
-- **Fix TypeError callsign** (B-A1 en KNOWN_BUGS) — bug cosmético
-  1/restart, sin urgencia.
+- **B-A2** (KNOWN_BUGS): eslora de SK fuera del cálculo de fondeo —
+  decidir con Carlos.
 - **Feature "llamada Telegram"** en incubación — decidir vía MTProto
   vs alternativa antes de arrancar código.
 - **Fase 2 forwarder embebido** de aisfriends/aishub como paused.

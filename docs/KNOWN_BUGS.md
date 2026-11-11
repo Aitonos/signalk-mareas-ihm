@@ -1,8 +1,7 @@
-# KNOWN_BUGS — bugs vigentes en Rev885 / v2.12.0
+# KNOWN_BUGS — bugs vigentes en Rev893 / v2.13.1
 
-Estado: **2026-09-23** — snapshot tras publicar 2.12.0 (bug fix
-auto-lift MOTORING dup + heap diagnostics + perf visor). Un bug
-cosmético abierto (B-A1). Los 22 bugs B-01…B-22 del archivo Rev190
+Estado: **2026-11-11** — B-A1 resuelto en Rev893 (ver abajo). Abierto
+B-A2 (eslora de SK fuera del cálculo de fondeo), pendiente de decisión. Los 22 bugs B-01…B-22 del archivo Rev190
 están todos resueltos y viven en `archive/KNOWN_BUGS_Rev190_snapshot.md`
 para referencia histórica.
 
@@ -12,14 +11,51 @@ Aquí solo bugs **confirmados por Carlos y aún vigentes** hoy.
 
 ## Vigentes
 
-### B-A1 — TypeError `Cannot create property 'meta' on string 'FG8274'` al arrancar SK
-**Origen**: en `_applyBaseDeltaEdit()` ([src/index.ts:12654](../src/index.ts#L12654), y también en el loop `pathValues` en [src/index.ts:12662](../src/index.ts#L12662)) escribimos `setSelfValue("communication.callsignVhf", <string>)` (path punteado con value string). Al arrancar SK y aplicar `baseDeltas.json`, `fullsignalk.js:190` intenta `stringValue.meta = ...` sobre el string top-level y falla.
+### B-A2 — La eslora de Signal K no llega al cálculo de fondeo (encontrado 2026-11-11, sin tocar)
 
-**Confirmado por**: análisis del journal 2026-09-23. **1 chispazo por restart** de SK, no leak (compara con el bug de 'name' Rev861 que era 3914/hora). Sin impacto funcional — el callsign termina publicándose vía Envío 1 (`path:""` con object value) que sí es válido.
+**Dónde:** `readSkNumber("design.length.overall")` en el cálculo de fondeo
+([src/index.ts:6385](../src/index.ts#L6385)).
 
-**Fix pendiente**: envolver el value en objeto (patrón usado ya para `design.length`, `design.draft`, `design.aisShipType` en [src/index.ts:12659-12661](../src/index.ts#L12659-L12661)) o cambiar `publishAs` a `"self-root"` para el campo `callsign`. Requiere QA con admin UI SK para no romper la persistencia.
+**Qué pasa:**
+- En Signal K la eslora está como `design.length` = `{overall: 9}`; el
+  path `design.length.overall` no existe.
+- `readSkNumber` prueba `design.length.overall.value` y
+  `design.length.overall`, y los dos devuelven nada.
+- Resultado: `loaOverall` llega `null` a `computeAnchoring`, y
+  `swingRadiusNow` / `swingRadiusMax` salen **sin sumar la eslora** (9 m
+  menos en el Tunatunes). `swingRadiusMaxStern` y `swingDiameter` quedan
+  vacíos.
 
-**Prioridad**: baja (cosmético, log noise sin consecuencia). Agendar para próximo batch.
+**Pendiente de decisión de Carlos:** afecta al radio de borneo, que es zona
+crítica. El arreglo sería leer `design.length` y sacar `.overall` (como hace
+`_skReadPath`). Antes hay que mirar qué consumidores usan `swingRadius*`
+(anillo, alarma de garreo, visor) para saber qué cambia en pantalla y en
+las alarmas.
+
+---
+
+## Resueltos recientes
+
+### B-A1 — TypeError `Cannot create property 'meta' on string 'FG8274'` al arrancar SK — resuelto Rev893 (2026-11-11)
+- **Causa:** mareas guardaba en `baseDeltas.json`, además de la raíz que
+  escribe el admin UI (`path: ""` → `communication: {callsignVhf}`), una
+  entrada punteada `communication.callsignVhf` = string. Al arrancar, SK
+  funde primero la raíz (deja `callsignVhf` como texto) y luego, al aplicar
+  la entrada punteada, intenta poner `meta` sobre ese texto.
+- La eslora iba también a `design.length.overall` = número: el wrap
+  comparaba con `design.length` y no se aplicaba nunca.
+- **Arreglo:**
+  - El indicativo se escribe como el admin (`setSelfValue("communication",
+    {callsignVhf})`) y en vivo dentro del objeto raíz.
+  - Eslora, calado y tipo AIS van siempre en forma canónica
+    (`_vbdCanonical`).
+  - En el arranque, las dos entradas antiguas se pasan a esa forma y se
+    borran del fichero.
+- **Verificado en la Pi:** copia previa en
+  `~/.signalk/baseDeltas.json.bak-rev893`. El primer arranque limpió el
+  fichero; el segundo, 0 errores, y el indicativo sigue en SK.
+- **No probado en real:** guardar los datos del barco desde el wizard
+  (POST vessel-base). Lo cubre la build, no un test.
 
 ---
 

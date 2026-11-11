@@ -121,7 +121,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev892";
+const PLUGIN_REVISION = "Rev893";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -12682,7 +12682,7 @@ type _VbdFieldSpec = { key: string; skPath: string; type: "string" | "number"; p
 const _VBD_FIELDS: _VbdFieldSpec[] = [
   { key: "name",       skPath: "name",                       type: "string", publishAs: "self-root" },
   { key: "mmsi",       skPath: "mmsi",                       type: "string", publishAs: "self-root" },
-  { key: "callsign",   skPath: "communication.callsignVhf",  type: "string" },
+  { key: "callsign",   skPath: "communication.callsignVhf",  type: "string", publishAs: "self-root" },
   { key: "shipType",   skPath: "design.aisShipType",         type: "number" },
   { key: "draft",      skPath: "design.draft",               type: "number" },
   { key: "length",     skPath: "design.length.overall",      type: "number" },
@@ -12776,6 +12776,17 @@ function _aisShipTypeCanonName(code: number): string {
   if (code >= 80 && code <= 89) return "Tanker";
   return "Other";
 }
+/* Rev893 (B-A1): forma canónica SK de cada campo, la misma que escribe el
+   admin UI (serverroutes.js): eslora {overall}, calado {maximum}, tipo AIS
+   {id, name}. Antes la eslora iba a 'design.length.overall' = número (el
+   wrap comparaba con 'design.length' y no se aplicaba nunca) y el calado y
+   el tipo salían sin envolver en el delta en vivo. */
+function _vbdCanonical(skPath: string, value: any): { path: string; value: any } {
+  if (skPath === "design.length.overall") return { path: "design.length", value: { overall: value } };
+  if (skPath === "design.draft") return { path: "design.draft", value: { maximum: value } };
+  if (skPath === "design.aisShipType") return { path: "design.aisShipType", value: { id: value, name: _aisShipTypeCanonName(value) } };
+  return { path: skPath, value };
+}
 /* Aplica los cambios al baseDeltaEditor del server (in-memory) + persiste
    al archivo + re-emite al bus con source 'defaults'. Todo atómico. */
 async function _applyBaseDeltaEdit(
@@ -12793,19 +12804,17 @@ async function _applyBaseDeltaEdit(
   if (selfRootValues.name != null) editor.setSelfValue("name", selfRootValues.name);
   if (selfRootValues.mmsi != null) editor.setSelfValue("mmsi", selfRootValues.mmsi);
   if (selfRootValues.callsign != null) {
-    /* communication.callsignVhf: setSelfValue con path punteado escribe como
-       delta con path='communication.callsignVhf' y value=string, que es el
-       formato correcto. Alternativamente el admin UI lo escribe anidado bajo
-       el path='' — probamos punteado que es más simple. */
-    editor.setSelfValue("communication.callsignVhf", selfRootValues.callsign);
+    /* Rev893 (B-A1): como el admin UI de SK - "communication" sin punto va
+       al objeto raíz (path ''). La entrada punteada antigua
+       'communication.callsignVhf' = string chocaba al arrancar con la de la
+       raíz ("Cannot create property 'meta' on string"): se quita. */
+    editor.setSelfValue("communication", { callsignVhf: selfRootValues.callsign });
+    editor.removeSelfValue("communication.callsignVhf");
   }
-  /* --- Path values con wrap para paths anidados. --- */
+  /* --- Path values, ya en forma canónica (_vbdCanonical). --- */
   for (const pv of pathValues) {
-    let toSet: any = pv.value;
-    if (pv.path === "design.length") toSet = { overall: pv.value };
-    else if (pv.path === "design.draft") toSet = { maximum: pv.value };
-    else if (pv.path === "design.aisShipType") toSet = { id: pv.value, name: _aisShipTypeCanonName(pv.value) };
-    editor.setSelfValue(pv.path, toSet);
+    editor.setSelfValue(pv.path, pv.value);
+    if (pv.path === "design.length") editor.removeSelfValue("design.length.overall");   // Rev893
   }
   /* Rev843: usar el propio módulo config.js de signalk-server (misma función
      interna que llama admin UI). handleMessage("defaults", …) hecho desde el
@@ -12887,18 +12896,24 @@ expressApp.post("/signalk-mareas-ihm/api/config/vessel-base", requireControlAcce
     if (f.publishAs === "self-root") {
       selfRootValues[f.key] = raw;
     } else {
-      pathValues.push({ path: f.skPath, value: raw });
+      pathValues.push(_vbdCanonical(f.skPath, raw));
     }
     applied.push(f.key);
   }
-  /* Envío 1 (runtime, inmediato): valores en la raíz self (name, mmsi). */
+  /* Envío 1 (runtime, inmediato): valores en la raíz self (name, mmsi,
+     callsign). Rev893: el indicativo va como communication.callsignVhf
+     dentro del objeto raíz (identidad SK = path "" + objeto). */
   if (Object.keys(selfRootValues).length > 0) {
     try {
+      const rootValue: Record<string, any> = {};
+      if (selfRootValues.name != null) rootValue.name = selfRootValues.name;
+      if (selfRootValues.mmsi != null) rootValue.mmsi = selfRootValues.mmsi;
+      if (selfRootValues.callsign != null) rootValue.communication = { callsignVhf: selfRootValues.callsign };
       const d: any = {
         context: ("vessels." + app.selfId),
         updates: [{
           timestamp: new Date().toISOString(),
-          values: [{ path: "", value: selfRootValues }],
+          values: [{ path: "", value: rootValue }],
         }],
       };
       app.handleMessage(plugin.id, d);
@@ -12941,6 +12956,41 @@ expressApp.post("/signalk-mareas-ihm/api/config/vessel-base", requireControlAcce
   }
   res.json({ ok: true, applied, skipped });
 });
+/* Rev893 (B-A1): versiones anteriores dejaron en baseDeltas.json
+   'communication.callsignVhf' = string y 'design.length.overall' = número.
+   SK funde antes el objeto raíz (communication: {callsignVhf}) y al aplicar
+   la entrada punteada revienta con "Cannot create property 'meta' on string"
+   en cada arranque. Se pasan a la forma del admin UI y se quitan; el
+   arranque siguiente ya sale limpio. */
+(() => {
+  try {
+    const editor: any = (app as any)?.config?.baseDeltaEditor;
+    if (!editor || typeof editor.getSelfValue !== "function" || typeof editor.removeSelfValue !== "function") return;
+    const fixed: string[] = [];
+    const cs = editor.getSelfValue("communication.callsignVhf");
+    if (cs != null) {
+      const comm = editor.getSelfValue("communication");
+      const commObj = comm && typeof comm === "object" ? comm : {};
+      if (!commObj.callsignVhf) editor.setSelfValue("communication", { ...commObj, callsignVhf: String(cs) });
+      editor.removeSelfValue("communication.callsignVhf");
+      fixed.push("communication.callsignVhf");
+    }
+    const lo = editor.getSelfValue("design.length.overall");
+    if (lo != null) {
+      const len = editor.getSelfValue("design.length");
+      const lenObj = len && typeof len === "object" ? len : {};
+      if (lenObj.overall == null && isFinite(Number(lo))) editor.setSelfValue("design.length", { ...lenObj, overall: Number(lo) });
+      editor.removeSelfValue("design.length.overall");
+      fixed.push("design.length.overall");
+    }
+    if (!fixed.length) return;
+    const file = _skBaseDeltasPath();
+    if (typeof editor.saveSync === "function" && fs.existsSync(file)) editor.saveSync(file);
+    console.log(`[IHM-VBD] baseDeltas.json: ${fixed.join(", ")} moved to the admin UI shape (B-A1)`);
+  } catch (e: any) {
+    app.debug(`[IHM-VBD] baseDeltas migration failed: ${e?.message ?? e}`);
+  }
+})();
 
 // Rev60 (4B): shelter assessment + mask editing endpoints.
 expressApp.get("/signalk-mareas-ihm/api/shelter", (_req: any, res: any) => {
