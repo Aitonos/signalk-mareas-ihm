@@ -1,7 +1,9 @@
 # CLAUDE.md — instrucciones para asistente AI
 
-> **Estado 2026-11-11 — Rev894 / v2.13.2**
+> **Estado 2026-11-11 — Rev896 / v2.13.3**
 >
+> 2.13.3: fix B-A2 (el radio de borneo y la alarma de garreo no contaban
+> la eslora de SK; calado sin desenvolver en 3 lectores).
 > 2.13.2: fix B-A1 (callsign duplicado en baseDeltas.json, TypeError en
 > cada arranque de SK).
 >
@@ -36,10 +38,9 @@
 >  - ✅ K-01 smoothing sonda (aprobado agua real 2026-08-02).
 >  - ✅ Auto-lift al arrancar motor (Rev751).
 >
-> B-A1 (TypeError meta on string al arrancar SK) resuelto en Rev893
-> (2026-11-11). Abierto **B-A2**: la eslora de SK no llega al cálculo de
-> fondeo (radio de borneo sin LOA); pendiente de decisión de Carlos, ver
-> `docs/KNOWN_BUGS.md`.
+> B-A1 (Rev893) y B-A2 (Rev895) resueltos el 2026-11-11. QA en agua
+> pendiente: el anillo y la alarma de garreo pasan a ser 1 eslora más
+> grandes en el próximo fondeo.
 >
 > No proponer `npm publish` por iniciativa propia, y NO heredar
 > autorización de sesiones anteriores: cada publish requiere OK
@@ -55,8 +56,8 @@ y `docs/BOOTSTRAP_PROMPT.md`** antes de tocar nada.
   garreo, AIS anti-colisión (VHF + 3 motores online aisstream/aishub/aisfriends),
   abrigo, meteo, sonda, wave estimation IMU, log multi-usuario, wizard
   configurator completo, PIN master + invitados.
-- **Rev actual**: `Rev894` (en `src/index.ts` const `PLUGIN_REVISION`).
-- **Versión paquete**: `2.13.2` (`package.json`).
+- **Rev actual**: `Rev896` (en `src/index.ts` const `PLUGIN_REVISION`).
+- **Versión paquete**: `2.13.3` (`package.json`).
 
 ## Features nuevas 2.10.0 → 2.12.0 (última tanda)
 - **2.12.0** (Rev883 → Rev885, 2026-09-23):
@@ -150,8 +151,8 @@ queda abierto:
 - **Vigilancia heap V8 post-cron** — verificar en 7 días que el restart
   cada 3 días mantiene RSS estable < 800 MB. Comparar curva de
   `heapAudit` con la de 2026-09-23.
-- **B-A2** (KNOWN_BUGS): eslora de SK fuera del cálculo de fondeo —
-  decidir con Carlos.
+- **QA agua Rev895** (B-A2): en el próximo fondeo, el anillo de borneo y
+  la alarma de garreo deben salir 1 eslora (9 m) más grandes que antes.
 - **Feature "llamada Telegram"** en incubación — decidir vía MTProto
   vs alternativa antes de arrancar código.
 - **Fase 2 forwarder embebido** de aisfriends/aishub como paused.

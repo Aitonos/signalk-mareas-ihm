@@ -1,7 +1,7 @@
-# KNOWN_BUGS — bugs vigentes en Rev893 / v2.13.1
+# KNOWN_BUGS — bugs vigentes en Rev896 / v2.13.3
 
-Estado: **2026-11-11** — B-A1 resuelto en Rev893 (ver abajo). Abierto
-B-A2 (eslora de SK fuera del cálculo de fondeo), pendiente de decisión. Los 22 bugs B-01…B-22 del archivo Rev190
+Estado: **2026-11-11** — B-A1 (Rev893) y B-A2 (Rev895) resueltos. Sin
+bugs vigentes propios. Los 22 bugs B-01…B-22 del archivo Rev190
 están todos resueltos y viven en `archive/KNOWN_BUGS_Rev190_snapshot.md`
 para referencia histórica.
 
@@ -11,30 +11,29 @@ Aquí solo bugs **confirmados por Carlos y aún vigentes** hoy.
 
 ## Vigentes
 
-### B-A2 — La eslora de Signal K no llega al cálculo de fondeo (encontrado 2026-11-11, sin tocar)
-
-**Dónde:** `readSkNumber("design.length.overall")` en el cálculo de fondeo
-([src/index.ts:6385](../src/index.ts#L6385)).
-
-**Qué pasa:**
-- En Signal K la eslora está como `design.length` = `{overall: 9}`; el
-  path `design.length.overall` no existe.
-- `readSkNumber` prueba `design.length.overall.value` y
-  `design.length.overall`, y los dos devuelven nada.
-- Resultado: `loaOverall` llega `null` a `computeAnchoring`, y
-  `swingRadiusNow` / `swingRadiusMax` salen **sin sumar la eslora** (9 m
-  menos en el Tunatunes). `swingRadiusMaxStern` y `swingDiameter` quedan
-  vacíos.
-
-**Pendiente de decisión de Carlos:** afecta al radio de borneo, que es zona
-crítica. El arreglo sería leer `design.length` y sacar `.overall` (como hace
-`_skReadPath`). Antes hay que mirar qué consumidores usan `swingRadius*`
-(anillo, alarma de garreo, visor) para saber qué cambia en pantalla y en
-las alarmas.
-
----
-
 ## Resueltos recientes
+
+### B-A2 — La eslora de SK no llegaba al cálculo de fondeo — resuelto Rev895 (2026-11-11)
+- **Causa:** se leía `design.length.overall`, pero en SK la eslora está
+  como `design.length` = `{overall}`. `loaOverall` llegaba `null` y
+  `swingRadiusMax` salía igual al radio desde la proa.
+- **Impacto:** ese radio siembra `swingRadiusOverride` (prioridad 1 del
+  anillo y de la alarma) al fondear: la alarma tenía 1 eslora menos de
+  margen.
+- **Mismo fallo en otros lectores:**
+  - el deslizador de cadena usaba la eslora por defecto de 12 m y el calado
+    de la caché;
+  - `draftEffective` del cálculo salía `null`;
+  - `environment.tide.vessel.draft` no se publicaba.
+- **Verificado en la Pi** con sonda manual de 5 m: `loa` 9;
+  `swingRadiusMax` de 29,42 a 38,42; radio por popa y diámetro rellenos;
+  `draftEffective` 1,85.
+- **Estado limpiado:** las pruebas sembraron `swingRadiusOverride` = 29,4
+  con el ancla arriba. Se devolvió a `null` con SK parado (copia en
+  `ihm/anchorWatch.json.bak-rev895`).
+- **Observación aparte, no cambiada:** fondear no borra
+  `swingRadiusOverride`, solo levar. Un cálculo hecho con el ancla arriba
+  deja ese valor para el siguiente fondeo.
 
 ### B-A1 — TypeError `Cannot create property 'meta' on string 'FG8274'` al arrancar SK — resuelto Rev893 (2026-11-11)
 - **Causa:** mareas guardaba en `baseDeltas.json`, además de la raíz que

@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.13.3] - 2026-11-11
+
+### English
+
+**Fixed — the swing radius left out the boat's length (Rev895-896).** Signal K holds the length as `design.length` = `{overall}`, but the anchoring calculation read `design.length.overall`, which does not exist. The swing radius came out one boat length short (9 m on a 9 m boat). That radius seeds the swing ring and the drag alarm when you anchor, so the alarm had less margin than intended, and "stern radius" and "swing diameter" were blank. The same unwrapping fix applies to:
+- the chain slider, which used a default 12 m instead of the real length;
+- the effective draft in the calculation, which was always blank;
+- `environment.tide.vessel.draft`, which was never published.
+
+### Español
+
+**Arreglado — el radio de borneo no contaba la eslora (Rev895-896).** Signal K guarda la eslora como `design.length` = `{overall}`, pero el cálculo de fondeo leía `design.length.overall`, que no existe. El radio de borneo salía una eslora más corto (9 m en un barco de 9 m). Ese radio es el que se toma al fondear para el anillo de borneo y la alarma de garreo, así que la alarma tenía menos margen del previsto, y "radio por popa" y "diámetro de borneo" salían vacíos. El mismo arreglo se aplica a:
+- el deslizador de cadena, que usaba 12 m por defecto en vez de la eslora real;
+- el calado efectivo del cálculo, que salía siempre vacío;
+- `environment.tide.vessel.draft`, que no se publicaba nunca.
+
 ## [2.13.2] - 2026-11-11
 
 ### English

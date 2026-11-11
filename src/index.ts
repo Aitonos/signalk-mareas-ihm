@@ -121,7 +121,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev894";
+const PLUGIN_REVISION = "Rev896";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -6382,7 +6382,16 @@ expressApp.post("/signalk-mareas-ihm/api/anchor/calc", requireControlAccess, asy
     const skNextHighT = (() => { try { const v = app.getSelfPath("environment.tide.timeNextHigh.value"); return typeof v === "string" ? Date.parse(v) : null; } catch { return null; } })();
     const skNextLowH = readSkNumber("environment.tide.heightNextLow");
     const skNextLowT = (() => { try { const v = app.getSelfPath("environment.tide.timeNextLow.value"); return typeof v === "string" ? Date.parse(v) : null; } catch { return null; } })();
-    const skLoa = readSkNumber("design.length.overall");
+    /* Rev895 (B-A2): SK tiene la eslora como design.length = {overall}; el
+       path design.length.overall no existe, así que el radio de borneo salía
+       sin LOA (y sembraba el override del anillo y la alarma 1 eslora más
+       corto). Misma lectura que el borneo predictivo. */
+    const skLoa = (() => {
+      try {
+        const v: any = app.getSelfPath("design.length");
+        return toNum(typeof v === "object" && v ? (v.value?.overall ?? v.overall) : v);
+      } catch { return null; }
+    })();
     const skTendency = (() => { try { const v = app.getSelfPath("environment.tide.tendencypercentage.value"); return typeof v === "string" ? v : null; } catch { return null; } })();
 
     const nowMs = Date.now();
@@ -6394,7 +6403,8 @@ expressApp.post("/signalk-mareas-ihm/api/anchor/calc", requireControlAccess, asy
     const tNow = result.tNow;
     const depthMax = Number.isFinite(dNow) && Number.isFinite(tNow) ? Math.round((dNow + (result.tMax - tNow)) * 100) / 100 : null;
     const depthMin = Number.isFinite(dNow) && Number.isFinite(tNow) ? Math.round((dNow + (result.tMin - tNow)) * 100) / 100 : null;
-    const skDraft = (() => { try { const v = app.getSelfPath("design.draft.value"); return typeof v === "number" ? v : null; } catch { return null; } })();
+    // Rev895 (B-A2): design.draft es {maximum}; sin desenvolver salía siempre null.
+    const skDraft = (() => { try { const v: any = app.getSelfPath("design.draft.value"); const n = typeof v === "object" && v ? v.maximum : v; return typeof n === "number" ? n : null; } catch { return null; } })();
     // Rev146 (audit fix): la clave correcta es "caladoConfig" (fuente única
     // del draft/margin). Antes leía "alarma" — clave inexistente → safetyMargin
     // siempre era 0.5 (default), ignorando lo configurado por el usuario.
@@ -15763,7 +15773,12 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/chain-deployed", requireCo
     const chain = anchorWatch.chainDeployed;
     const readSk = (p: string): number | null => {
       try {
-        const raw = app.getSelfPath(p + ".value"); const n = Number(raw);
+        /* Rev895 (B-A2): design.length / design.draft son objetos
+           {overall} / {maximum}; sin desenvolver, la eslora caía al 12 por
+           defecto y el calado al de la caché. */
+        let raw: any = app.getSelfPath(p + ".value");
+        if (raw && typeof raw === "object") raw = raw.overall ?? raw.maximum;
+        const n = Number(raw);
         if (isFinite(n) && n > 0) return n;
         const rawObj = app.getSelfPath(p);
         if (typeof rawObj === "number" && isFinite(rawObj) && rawObj > 0) return rawObj;
@@ -18580,7 +18595,9 @@ const utcOffsetStr = utcOffset === 0 ? "0" : (utcOffset > 0 ? `+${utcOffset}` : 
 values.push({ path: "environment.time.utcOffsetHours" as Path, value: utcOffsetStr });
 
 // Draft (calado) - leer de SignalK
-const skDraft = app.getSelfPath("design.draft.value") || app.getSelfPath("design.draft");
+// Rev895 (B-A2): design.draft es {maximum}; sin desenvolver no se publicaba nunca.
+const skDraftRaw: any = app.getSelfPath("design.draft.value") || app.getSelfPath("design.draft");
+const skDraft = skDraftRaw && typeof skDraftRaw === "object" ? (skDraftRaw.maximum ?? skDraftRaw.value?.maximum) : skDraftRaw;
 if (typeof skDraft === "number" && skDraft > 0) {
   values.push({ path: "environment.tide.vessel.draft" as Path, value: skDraft });
 }

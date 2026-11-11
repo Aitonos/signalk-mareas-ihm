@@ -1,12 +1,30 @@
 # QA_PENDIENTE — validaciones en agua real antes del próximo publish
 
-Estado: **2026-10-26** (Rev892 / v2.13.1). Snapshots históricos:
+Estado: **2026-11-11** (Rev896 / v2.13.3). Snapshots históricos:
 - 2026-06-24 (bugs B-23 a B-26, wizard mandatorio M-02) → resuelto,
   archivo en [`archive/QA_PENDIENTE_2026-06-24_snapshot.md`](archive/QA_PENDIENTE_2026-06-24_snapshot.md).
 - 2026-07-21 (features 2.7 → 2.9 QA + auto-lift + AIS triple online +
   bottom-bar widgets) → **todo aprobado en agua real por Carlos
   (2026-08-02)**. Snapshot no archivado — el histórico vive en
   git log.
+
+---
+
+## QA Rev896 — 2.13.3 (2026-11-11)
+
+### Rev895 — la eslora entra en el radio de borneo (B-A2)
+
+1. Fondear como siempre (sonda válida). En el modal de cálculo, «Borneo»
+   debe salir **unos 9 m más** que en fondeos anteriores con la misma
+   cadena y sonda.
+2. El anillo de borneo y la alarma de garreo del visor parten de ese
+   radio. Comprobar que no salta la alarma estando bien fondeado y que el
+   anillo cubre la popa al bornear.
+3. Mover el deslizador de cadena: el radio debe sumar 9 m (antes sumaba
+   12, el valor por defecto).
+4. Levar: el radio guardado se borra como siempre.
+
+Resultado esperado: 1 OK / 2 OK / 3 OK / 4 OK.
 
 ---
 
