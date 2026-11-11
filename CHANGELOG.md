@@ -1599,7 +1599,7 @@ The Notifications viewer showed `signalk-mareas-ihm.weatherAdvisory` state=warn 
 
 **Session table typography (Rev620-Rev621)**
 
-The user reported one entry "Carlos (tu sesión actual) — Windows · Firefox · 100.82.158.116 — Sin caducidad" only occupied 160×35 px on a 2880-wide display. Rebuilt the inline styles inside `m_loadPinsList` and `m_loadSessionsList` — the id-scoped CSS was being overridden by nested inline `font-size`. Sizes now 20-24 px inline, matches the modal typography.
+The user reported one entry "Carlos (tu sesión actual) — Windows · Firefox · 100.x.x.x — Sin caducidad" only occupied 160×35 px on a 2880-wide display. Rebuilt the inline styles inside `m_loadPinsList` and `m_loadSessionsList` — the id-scoped CSS was being overridden by nested inline `font-size`. Sizes now 20-24 px inline, matches the modal typography.
 
 **Wind widget** — "racha" renamed to "Racha" (Rev615) — proper capitalisation as gust label.
 
@@ -1666,7 +1666,7 @@ Nueva sección **"Tracks"** al principio del panel Cartas y Capas:
 
 **Tipografía tabla de sesiones (Rev620-Rev621)**
 
-El usuario reportó que una entrada "Carlos (tu sesión actual) — Windows · Firefox · 100.82.158.116 — Sin caducidad" ocupaba sólo 160×35 px en un display de 2880 de ancho. Los inline styles dentro de `m_loadPinsList` y `m_loadSessionsList` estaban ganando al CSS externo por id. Ahora los tamaños se fijan inline en 20-24 px, coherentes con la tipografía del modal.
+El usuario reportó que una entrada "Carlos (tu sesión actual) — Windows · Firefox · 100.x.x.x — Sin caducidad" ocupaba sólo 160×35 px en un display de 2880 de ancho. Los inline styles dentro de `m_loadPinsList` y `m_loadSessionsList` estaban ganando al CSS externo por id. Ahora los tamaños se fijan inline en 20-24 px, coherentes con la tipografía del modal.
 
 **Widget viento** — "racha" renombrado a "Racha" (Rev615) — mayúscula inicial como etiqueta.
 

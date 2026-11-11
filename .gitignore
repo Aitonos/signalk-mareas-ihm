@@ -59,3 +59,9 @@ deploy.ps1
 
 # Tarballs from npm pack
 *.tgz
+
+# Internal notes live in the private repo Aitonos/tunatunes-notes (docs/ is a local link to it; CLAUDE.md imports docs/CLAUDE.md)
+docs/
+CLAUDE.md
+AGENTS.md
+SPRINTS_NEXT.md
