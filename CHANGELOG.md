@@ -1,5 +1,47 @@
 # Changelog
 
+## [2.13.4] - 2026-11-14
+
+### English
+
+**Fixed — no IHM tides on new installs (Rev897).** Since 2.8.0 the IHM address is no longer a setting, so installs after 2.8.0 never had it saved. The IHM source read it with no default, asked the IHM for nothing and returned a station with no id ("undefined") and no tides. It now uses the IHM address directly. Thanks to the user who reported it with a detailed diagnosis.
+
+**Fixed — Telegram (Rev897-899).** Several silent failures:
+- "Test alarms" did not send anything to Telegram, although it says it does. It does now.
+- The chat was only looked up when the plugin started; a `/start` sent later was never picked up.
+- A bot token saved from the viewer was not used until the plugin restarted.
+- The "chat connected" message had an unpaired `_`, so Telegram always rejected it.
+- A real grounding alarm did not send Telegram.
+- If the first connection to Telegram fails (it happens on 4G), the message is retried once.
+
+**New — guided Telegram setup (Rev898).** The wizard step "Mobile push alerts (Telegram)" now goes step by step: open @BotFather, paste the token (the plugin checks it with Telegram and saves it), open your bot and tap Start (the plugin detects the chat and sends a message), test. "Test Telegram" shows Telegram's own error if something fails. The manual chat ID stays under "Advanced", for groups.
+
+**Fixed — signalk-tides detection (Rev897).** The wizard looked for signalk-tides under the wrong plugin id (it is `tides`), and counted a plugin as installed if its settings file was left behind after uninstalling. It now checks the installed package. Payloads from signalk-tides 2.5 (new tide engine: `datum` may be missing, station ids are not always `noaa/` or `ticon/`) are accepted, and levels in feet are converted to metres.
+
+**New — warning when the Pi has no sound card (Rev897).** If PulseAudio only has its null output (`auto_null`), alarms play nowhere while everything looks fine. The plugin now publishes `notifications.security.audioNoOutput`.
+
+**Fixed — published builds marked "+dirty" (Rev897).** CI's `npm install` rewrites `package-lock.json`; the build stamp now ignores it.
+
+### Español
+
+**Arreglado — sin mareas del IHM en instalaciones nuevas (Rev897).** Desde la 2.8.0 la dirección del IHM ya no es un ajuste, así que ninguna instalación posterior la tenía guardada. La fuente del IHM la leía sin valor por defecto, no pedía nada al IHM y devolvía una estación sin id ("undefined") y sin mareas. Ahora usa la dirección del IHM directamente. Gracias al usuario que lo reportó con un diagnóstico detallado.
+
+**Arreglado — Telegram (Rev897-899).** Varios fallos que no avisaban:
+- «Probar alarmas» no mandaba nada a Telegram, aunque lo dice. Ahora sí.
+- El chat solo se buscaba al arrancar el plugin; un `/start` mandado después no se detectaba nunca.
+- El token del bot guardado desde el visor no se usaba hasta reiniciar el plugin.
+- El mensaje «chat conectado» llevaba un `_` suelto y Telegram lo rechazaba siempre.
+- La alarma real de varada no mandaba Telegram.
+- Si falla la primera conexión con Telegram (pasa con 4G), el mensaje se reintenta una vez.
+
+**Nuevo — configuración guiada de Telegram (Rev898).** El paso «Alertas al móvil (Telegram)» del asistente va paso a paso: abrir @BotFather, pegar el token (el plugin lo comprueba con Telegram y lo guarda), abrir tu bot y pulsar Iniciar (el plugin detecta el chat y te manda un mensaje), probar. «Probar Telegram» enseña el error de Telegram si algo falla. El Chat ID manual queda en «Avanzado», para grupos.
+
+**Arreglado — detección de signalk-tides (Rev897).** El asistente buscaba signalk-tides con un id de plugin equivocado (es `tides`) y daba un plugin por instalado si quedaba su fichero de ajustes tras desinstalarlo. Ahora mira el paquete instalado. Se aceptan las respuestas de signalk-tides 2.5 (motor de mareas nuevo: puede faltar `datum` y los ids de estación no siempre empiezan por `noaa/` o `ticon/`), y los niveles en pies se pasan a metros.
+
+**Nuevo — aviso cuando la Pi no tiene tarjeta de sonido (Rev897).** Si PulseAudio solo tiene la salida nula (`auto_null`), las alarmas no suenan en ningún sitio aunque todo parezca ir bien. El plugin publica ahora `notifications.security.audioNoOutput`.
+
+**Arreglado — versiones publicadas marcadas «+dirty» (Rev897).** El `npm install` del CI reescribe `package-lock.json`; la marca de la versión ya lo ignora.
+
 ## [2.13.3] - 2026-11-11
 
 ### English

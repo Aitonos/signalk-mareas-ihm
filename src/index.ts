@@ -122,7 +122,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev898";
+const PLUGIN_REVISION = "Rev899";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -9498,6 +9498,10 @@ expressApp.post("/signalk-mareas-ihm/api/telegram/wait-chat", requireControlAcce
     return res.status(400).json({ error: en ? "No bot token saved." : "No hay token del bot guardado." });
   }
   const r = await _telegramFindChat(_telegramBotToken, 20, "setup");
+  // Telegram admite una sola espera a la vez: si el plugin acaba de
+  // reiniciarse tras guardar el token está buscando el chat y contesta
+  // "Conflict". No es un fallo: el visor vuelve a llamar.
+  if (r.error && /conflict/i.test(r.error)) return res.json({ ok: false });
   if (r.error) return res.status(502).json({ error: `Telegram: ${r.error}` });
   if (!r.chat) return res.json({ ok: false });
   _telegramChatIdCached = r.chat.id;

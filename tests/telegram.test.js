@@ -167,7 +167,7 @@ function send(sendTelegram, httpsRequest) {
   return new Promise((resolve) => {
     sendTelegram({
       botToken: 't', chatId: '1', kind: 'test', text: 'x', lastSent: {},
-      httpsRequest, onResult: resolve,
+      httpsRequest, onResult: resolve, retryDelayMs: 0,
     });
   });
 }
@@ -209,4 +209,24 @@ test('telegram: alarm test names the simulated alarm', async () => {
   const { formatTelegramMessage } = await loadTelegram();
   assert.match(formatTelegramMessage('test_alarm', { revision: 'Rev897', alarm: 'grounding' }, 'es'), /\(varada\).*Rev897/);
   assert.match(formatTelegramMessage('test_alarm', { revision: 'Rev897', alarm: 'garreo' }, 'en'), /\(anchor drag\)/);
+});
+
+test('telegram: a connection error is retried once and the retry can succeed', async () => {
+  const { sendTelegram } = await loadTelegram();
+  let calls = 0;
+  const flaky = (url, opts, cb) => {
+    calls++;
+    return mockRequest(200, '{"ok":true}', calls === 1 ? { error: 'ETIMEDOUT' } : {})(url, opts, cb);
+  };
+  const r = await send(sendTelegram, flaky);
+  assert.equal(r.ok, true);
+  assert.equal(calls, 2);
+});
+
+test('telegram: an HTTP error from Telegram is not retried', async () => {
+  const { sendTelegram } = await loadTelegram();
+  let calls = 0;
+  const counted = (url, opts, cb) => { calls++; return mockRequest(400, '{"ok":false,"description":"x"}')(url, opts, cb); };
+  await send(sendTelegram, counted);
+  assert.equal(calls, 1);
 });

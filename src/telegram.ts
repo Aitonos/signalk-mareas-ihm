@@ -47,6 +47,8 @@ export interface TelegramSendOptions {
   onResult?: (r: TelegramResult) => void;
   /** Injectable clock for throttle tests. */
   nowMs?: () => number;
+  /** Rev899: wait before the single retry after a connection error. */
+  retryDelayMs?: number;
 }
 
 export interface TelegramResult {
@@ -93,38 +95,50 @@ export function sendTelegram(opts: TelegramSendOptions): boolean {
     try { opts.onResult?.(r); } catch { /* caller bug — ignore */ }
   };
 
-  const req = request(
-    url,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(payload).toString(),
+  const attempt = (retry: boolean): void => {
+    let gotResponse = false;
+    const req = request(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(payload).toString(),
+        },
+        timeout: 8000,
       },
-      timeout: 8000,
-    },
-    (res: IncomingMessage) => {
-      const status = res.statusCode ?? 0;
-      let body = "";
-      res.on("data", (c: Buffer | string) => { if (body.length < 2000) body += c; });
-      res.on("end", () => {
-        let description: string | null = null;
-        try { description = JSON.parse(body)?.description ?? null; } catch { /* not JSON */ }
-        if (status >= 400) debug(`[IHM-TELEGRAM] sendMessage HTTP ${status}: ${description ?? ""}`);
-        report({ ok: status > 0 && status < 400, status, description });
-      });
-    },
-  );
-  req.on("error", (e: Error) => {
-    debug(`[IHM-TELEGRAM] send failed: ${e?.message || e}`);
-    report({ ok: false, status: null, description: String(e?.message || e) });
-  });
-  req.on("timeout", () => {
-    report({ ok: false, status: null, description: "timeout" });
-    try { req.destroy(); } catch { /* ignore */ }
-  });
-  req.write(payload);
-  req.end();
+      (res: IncomingMessage) => {
+        gotResponse = true;
+        const status = res.statusCode ?? 0;
+        let body = "";
+        res.on("data", (c: Buffer | string) => { if (body.length < 2000) body += c; });
+        res.on("end", () => {
+          let description: string | null = null;
+          try { description = JSON.parse(body)?.description ?? null; } catch { /* not JSON */ }
+          if (status >= 400) debug(`[IHM-TELEGRAM] sendMessage HTTP ${status}: ${description ?? ""}`);
+          report({ ok: status > 0 && status < 400, status, description });
+        });
+      },
+    );
+    req.on("error", (e: Error) => {
+      debug(`[IHM-TELEGRAM] send failed: ${e?.message || e}`);
+      // Rev899: on the boat's 4G the first connection sometimes fails at once
+      // and the next one works. Retry once if Telegram never answered (the
+      // message was not delivered); an alarm must not be lost to that.
+      if (retry && !gotResponse && !reported) {
+        setTimeout(() => attempt(false), opts.retryDelayMs ?? 2000);
+        return;
+      }
+      report({ ok: false, status: null, description: String(e?.message || e) });
+    });
+    req.on("timeout", () => {
+      report({ ok: false, status: null, description: "timeout" });
+      try { req.destroy(); } catch { /* ignore */ }
+    });
+    req.write(payload);
+    req.end();
+  };
+  attempt(true);
   return true;
 }
 

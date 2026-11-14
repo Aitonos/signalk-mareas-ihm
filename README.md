@@ -106,6 +106,7 @@ Most anchor watch apps are paid, closed source, single-device and tied to a vend
 - **60 s user-mute window** — if you mute manually, even anchor drag cannot override for 60 s.
 - **Visibility-aware**: when phone screen wakes from sleep, the audio context resumes automatically.
 - **Vibration fallback** on Android when autoplay policy blocks audio.
+- **Telegram alerts** — anchor drag, AIS and grounding reach your phone when you are off the boat. The setup wizard walks you through it: create the bot in @BotFather, paste the token (checked with Telegram), tap Start in your bot and you get a test message.
 
 #### Charts & layers
 - **Base layers**: Esri Satellite, Bing Hybrid, Esri Clarity, Google Satellite, OpenStreetMap.
@@ -321,6 +322,7 @@ La mayoría de apps de anchor watch son de pago, código cerrado, un solo dispos
 - **Ventana mute-usuario 60 s** — si silencias manualmente, ni el garreo crítico puede reactivar el audio durante 60 s.
 - **Consciente de visibilidad**: cuando la pantalla del móvil despierta, el audio se reanuda automáticamente.
 - **Vibración fallback** en Android cuando la política de autoplay bloquea el audio.
+- **Alertas por Telegram** — garreo, AIS y varada te llegan al móvil cuando no estás a bordo. El asistente te guía: creas el bot en @BotFather, pegas el token (se comprueba con Telegram), pulsas Iniciar en tu bot y te llega un mensaje de prueba.
 
 #### Cartas y capas
 - **Capas base**: Satélite Esri, Bing Hybrid, Esri Clarity, Google Satélite, OpenStreetMap.

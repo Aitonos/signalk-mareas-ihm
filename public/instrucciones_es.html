@@ -245,6 +245,15 @@ profundidad_futura = profundidad_actual + (marea_actual − marea_futura)
 <h3>10. Audio multidispositivo</h3>
 <p>El ordenador del barco es la salida primaria de seguridad. Reproduce sirena sintética y voz pregrabada (archivos OGG) en el idioma elegido. Si no hay OGG instalado, fallback automático a TTS (espeak). La salida se selecciona automáticamente en orden: USB → analógica → HDMI.</p>
 <p>Las alarmas se replican también en los dispositivos cliente conectados (móvil, tableta) si su pestaña está abierta y han autorizado el audio. Esta réplica es complementaria; no debe considerarse más fiable que el audio local del barco.</p>
+<p>Si el ordenador del barco no detecta ninguna tarjeta de sonido (PulseAudio solo tiene la salida nula <code>auto_null</code>), las alarmas no suenan a bordo aunque todo parezca ir bien. Desde 2.13.4 el plugin lo avisa en Signal K (<code>notifications.security.audioNoOutput</code>). Revisa la salida de audio en OpenPlotter o con <code>pactl list sinks</code>.</p>
+<p><strong>Alertas por Telegram.</strong> Garreo, AIS y varada pueden llegarte al móvil cuando no estás a bordo. Menú ☰ → Configuración → Asistente → <em>Alertas al móvil (Telegram)</em>:</p>
+<ol>
+  <li><strong>Crea tu bot</strong>: en Telegram, mándale <code>/newbot</code> a @BotFather, elige un nombre y un usuario acabado en <code>bot</code>, y copia el token que te da.</li>
+  <li><strong>Pega el token</strong> y pulsa <em>Comprobar y guardar</em>. El plugin lo comprueba con Telegram al momento.</li>
+  <li>Pulsa <strong>Abrir mi bot</strong> y, en Telegram, <strong>Iniciar</strong>. El plugin lo detecta y te manda un mensaje.</li>
+  <li><strong>Probar Telegram</strong> y <strong>Probar alarmas</strong> (misma pantalla) mandan mensajes de prueba. Si algo falla, el visor enseña lo que contesta Telegram.</li>
+</ol>
+<p>Hace falta internet a bordo. Telegram es complementario: no sustituye al audio del barco.</p>
 
 <!-- ---------------------------------------------------------------- -->
 <h3>11. Mapa y capas</h3>
