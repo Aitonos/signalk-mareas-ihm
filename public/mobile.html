@@ -17249,6 +17249,29 @@ window.m_aisfriendsStatsCheck = function(){
 };
 
 /* Rev737 (Hoekens catch-up): dispara alarma de prueba durante 10 s. */
+window.m_telegramTest = function(){
+  var st = document.getElementById('m-telegram-test-status');
+  if (st){ st.textContent = (_lang==='en')?'⏳ Sending…':'⏳ Enviando…'; st.style.color = '#9ad'; }
+  fetch(A+'/telegram/test',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){ return r.json().then(function(j){return {ok:r.ok,status:r.status,j:j};},function(){return {ok:r.ok,status:r.status,j:null};}); })
+    .catch(function(){ return {ok:false,status:0,j:null}; })
+    .then(function(res){
+      if (!st) return;
+      if (res.status === 401){
+        if (typeof m_cfgSkPathsAuthPopup === 'function') m_cfgSkPathsAuthPopup('/api/telegram/test');
+        st.textContent = (_lang==='en')?'🔒 Permission required':'🔒 Permisos requeridos';
+        st.style.color = '#e53935';
+        return;
+      }
+      if (!res.ok || !res.j || !res.j.ok){
+        st.textContent = '✗ ' + ((res.j && res.j.error) || ((_lang==='en')?'Failed':'Falló'));
+        st.style.color = '#e53935';
+        return;
+      }
+      st.textContent = (_lang==='en')?'✓ Sent — check Telegram on your phone':'✓ Enviado — mira Telegram en el móvil';
+      st.style.color = '#3aa856';
+    });
+};
 window.m_testAlarmFire = function(kind){
   var st = document.getElementById('m-testalarm-status');
   if (st){ st.textContent = (_lang==='en')?'⏳ Firing…':'⏳ Disparando…'; st.style.color = '#9ad'; }
@@ -18761,6 +18784,10 @@ window.m_wizPluginOptsRenderHtml = function(o, scope, hostId){
     } else {
       html += '<div style="'+hint+'">'+(isEn?'Leave blank and send /start to your bot from Telegram — the plugin auto-detects it.':'Deja vacío y envía /start al bot desde Telegram — el plugin lo auto-detecta.')+'</div>';
     }
+    /* Rev897 (feedback Diego): probar Telegram de verdad y enseñar la
+       respuesta de Telegram si falla. */
+    html += '<button onclick="m_telegramTest()" style="width:100%;margin-top:14px;padding:14px;background:rgba(255,178,63,.15);color:#ffb23f;border:1.5px solid #ffb23f;border-radius:10px;font-weight:800;cursor:pointer;font-size:17px">📲 '+(isEn?'Test Telegram (save first)':'Probar Telegram (guarda antes)')+'</button>';
+    html += '<div id="m-telegram-test-status" style="margin-top:10px;font-size:15px;font-weight:700;min-height:22px;text-align:center"></div>';
     html += '</div>';
     /* Rev741: bloque aisstream.io movido a su propio scope 'aisstream'
        (step "🚢 AIS por internet" del wizard). Menos ruido en Alertas

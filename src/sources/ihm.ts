@@ -162,6 +162,7 @@ export const HARDCODED_STATIONS: IhmStation[] = [
 
 // IHM stations list endpoint (always UTC and may change over time).
 // Keep this separate from the baseUrl setting so the dropdown list stays up to date.
+const IHM_DEFAULT_BASE_URL = "https://ideihm.covam.es/api-ihm/getmarea";
 const IHM_GETLIST_URL =
   "https://ideihm.covam.es/api-ihm/getmarea?request=getlist&format=json";
 
@@ -175,7 +176,7 @@ export default function (app: SignalKApp): TideSource {
         type: "string",
         description:
           "Base URL of the getmarea service. Example: https://ideihm.covam.es/api-ihm/getmarea",
-        default: "https://ideihm.covam.es/api-ihm/getmarea",
+        default: IHM_DEFAULT_BASE_URL,
       },
       cacheRefreshHours: {
         title: "Cache refresh (hours)",
@@ -191,13 +192,11 @@ export default function (app: SignalKApp): TideSource {
       },
     },
     async start(props) {
-      const baseUrl = (props.ihmBaseUrl || "").replace(/\/$/, "");
-      if (!baseUrl) {
-        // Plugin stays inactive until configured.
-        app.error("IHM: falta configurar 'IHM base URL' (plugin inactivo hasta que lo configures)");
-        // Return an updater that does nothing (so the plugin doesn't crash Signal K).
-        return async () => ({ station: { name: "IHM" }, extremes: [] } as any);
-      }
+      // Rev897 (feedback Diego): el plugin viene activado por defecto; si
+      // nadie guarda su config desde el admin de SK no hay ihmBaseUrl y la
+      // fuente se quedaba parada (sin mareas, stationId "undefined"). La URL
+      // es fija: usamos la de por defecto.
+      const baseUrl = String(props.ihmBaseUrl || IHM_DEFAULT_BASE_URL).trim().replace(/\/$/, "");
 
       const refreshHours = props.cacheRefreshHours ?? DEFAULT_REFRESH_HOURS;
       const gpsMaxAgeMinutes = props.gpsMaxAgeMinutes ?? DEFAULT_GPS_MAX_AGE_MINUTES;

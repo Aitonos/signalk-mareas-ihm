@@ -72,6 +72,7 @@ import {
   sendTelegram as sendTelegramMessage,
   formatTelegramMessage,
   TELEGRAM_THROTTLE_MS,
+  type TelegramResult,
 } from "./telegram.js";
 import { resolveBoatLang } from "./langSettings.js";
 
@@ -121,7 +122,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev896";
+const PLUGIN_REVISION = "Rev897";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -890,25 +891,47 @@ function _capArr(a: unknown[], max: number): void {
    decidir si registrarnos como resource provider. Viven a nivel módulo
    para que el endpoint /api/tide/providers-detected y el POST plugin-
    options los reutilicen sin re-scan. */
-const _OTHER_TIDE_PROVIDERS = [
-  "signalk-opentide",
-  "signalk-tides",
-  "signalk-tidal-currents",
-] as const;
+// Rev897 (feedback Diego): el config de SK va por id de plugin, no por
+// nombre npm. signalk-tides se registra como "tides" (y el antiguo
+// signalk-tides-api como "tides-api"): buscar "signalk-tides.json" no lo
+// encontraba nunca. Instalado = existe el paquete en node_modules (el .json
+// se queda tras desinstalar).
+const _OTHER_TIDE_PROVIDERS: ReadonlyArray<{ id: string; pkg: string }> = [
+  { id: "signalk-opentide", pkg: "signalk-opentide" },
+  { id: "tides", pkg: "signalk-tides" },
+  { id: "tides-api", pkg: "signalk-tides-api" },
+  { id: "signalk-tidal-currents", pkg: "signalk-tidal-currents" },
+];
+function _skConfigDir(): string {
+  try {
+    const dd = _appRef?.getDataDirPath?.();
+    if (dd) return path.dirname(path.dirname(dd)); // <conf>/plugin-config-data/<id>
+  } catch { /* fallback */ }
+  return process.env.SIGNALK_NODE_CONF_DIR || "/home/pi/.signalk";
+}
 function _detectOtherTideProviders(): Array<{ id: string; enabled: boolean; installed: boolean }> {
   const out: Array<{ id: string; enabled: boolean; installed: boolean }> = [];
   try {
-    const pcd = "/home/pi/.signalk/plugin-config-data";
-    for (const id of _OTHER_TIDE_PROVIDERS) {
+    const conf = _skConfigDir();
+    const pcd = path.join(conf, "plugin-config-data");
+    for (const { id, pkg } of _OTHER_TIDE_PROVIDERS) {
       const f = path.join(pcd, `${id}.json`);
-      let installed = false, enabled = false;
-      if (fs.existsSync(f)) {
-        installed = true;
+      const pkgFile = path.join(conf, "node_modules", pkg, "package.json");
+      const installed = fs.existsSync(pkgFile);
+      let enabled = false;
+      if (installed && fs.existsSync(f)) {
         try {
           const raw = fs.readFileSync(f, "utf8");
           const j = JSON.parse(raw);
           enabled = !!(j && j.enabled === true);
         } catch { /* json parse — leave enabled=false */ }
+      } else if (installed) {
+        // Sin config guardada: SK lo arranca si el paquete lo pide
+        // (signalk-tides trae "signalk-plugin-enabled-by-default").
+        try {
+          const pj = JSON.parse(fs.readFileSync(pkgFile, "utf8"));
+          enabled = pj?.["signalk-plugin-enabled-by-default"] === true;
+        } catch { /* leave enabled=false */ }
       }
       out.push({ id, installed, enabled });
     }
@@ -1552,8 +1575,8 @@ export default function (app: SignalKApp): Plugin {
 
   // Rev765: thin wrapper around extracted sendTelegram() so unit tests can
   // exercise the POST path without booting the full plugin.
-  function _sendTelegram(kind: string, text: string) {
-    sendTelegramMessage({
+  function _sendTelegram(kind: string, text: string, onResult?: (r: TelegramResult) => void) {
+    return sendTelegramMessage({
       botToken: _telegramBotToken,
       chatId: _telegramEffectiveChatId(),
       kind,
@@ -1562,6 +1585,7 @@ export default function (app: SignalKApp): Plugin {
       throttleMs: TELEGRAM_THROTTLE_MS,
       httpsRequest: https.request.bind(https) as any,
       onDebug: (m) => app.debug(m),
+      onResult,
     });
   }
   function _telegramDiscoverChatId(reason: string): Promise<string | null> {
@@ -5857,6 +5881,19 @@ try {
             if (applied.includes("aisfriendsToken") && _aisfriendsStartIfConfigured) {
               _aisfriendsStartIfConfigured(cur).catch(() => { /* logged in helper */ });
             }
+            // Rev897 (feedback Diego): Telegram también en caliente. Si SK no
+            // reiniciaba el plugin, el token nuevo no se usaba hasta reiniciar.
+            if (applied.includes("telegramBotToken") || applied.includes("telegramChatId")) {
+              _telegramBotToken = String(cur.telegramBotToken || "").trim();
+              _telegramChatId = String(cur.telegramChatId || "").trim();
+              if (_telegramBotToken && !_telegramEffectiveChatId()) {
+                _telegramDiscoverChatId("options saved").then((id) => {
+                  if (!id) return;
+                  _telegramChatIdCached = id;
+                  ihmCache.set("telegramChatIdAuto", id).catch(() => { /* best effort */ });
+                }).catch(() => { /* logged in helper */ });
+              }
+            }
             /* Rev750: si cambia tidePublishToSk, el registerResourceProvider
                es one-shot al start() — no se puede unregister/reregister
                en caliente vía SK API 2.x. Marcamos flag para la respuesta
@@ -9402,14 +9439,38 @@ expressApp.get("/signalk-mareas-ihm/api/telegram/status", (_req: any, res: any) 
     tokenSet: !!_telegramBotToken,
   });
 });
-expressApp.post("/signalk-mareas-ihm/api/telegram/test", requireControlAccess, (_req: any, res: any) => {
-  if (!_telegramBotToken || !_telegramEffectiveChatId()) {
-    return res.status(400).json({ error: "Telegram no configurado. Falta token o chat_id." });
+expressApp.post("/signalk-mareas-ihm/api/telegram/test", requireControlAccess, async (_req: any, res: any) => {
+  const en = _currentLang === "en";
+  if (!_telegramBotToken) {
+    return res.status(400).json({ error: en ? "No bot token saved." : "No hay token del bot guardado." });
+  }
+  // Rev897: el chat ID solo se buscaba al arrancar el plugin. Si el usuario
+  // manda /start después, lo buscamos aquí.
+  if (!_telegramEffectiveChatId()) {
+    const id = await _telegramDiscoverChatId("test");
+    if (!id) {
+      return res.status(400).json({ error: en
+        ? "No chat found. Send /start to your bot from Telegram and test again."
+        : "No hay chat. Manda /start a tu bot desde Telegram y vuelve a probar." });
+    }
+    _telegramChatIdCached = id;
+    try { await ihmCache.set("telegramChatIdAuto", id); } catch { /* ignore */ }
   }
   // Bypass throttle for explicit user test
   delete _telegramLastSent["test"];
-  _sendTelegram("test", formatTelegramMessage("test", { revision: PLUGIN_REVISION }, _currentLang));
-  res.json({ ok: true });
+  // Rev897 (feedback Diego): esperar la respuesta de Telegram. Antes
+  // contestaba ok aunque Telegram rechazara el envío (token malo, chat sin
+  // /start, bot bloqueado) y el usuario no sabía por qué no llegaba nada.
+  let done = false;
+  const finish = (r: TelegramResult) => {
+    if (done) return;
+    done = true;
+    console.log(`[IHM-TELEGRAM] test: ${r.ok ? "OK" : `FAILED ${r.status ?? ""} ${r.description ?? ""}`}`);
+    if (r.ok) res.json({ ok: true });
+    else res.status(502).json({ ok: false, error: `Telegram: ${r.description || "sin respuesta"}`, status: r.status });
+  };
+  _sendTelegram("test", formatTelegramMessage("test", { revision: PLUGIN_REVISION }, _currentLang), finish);
+  setTimeout(() => finish({ ok: false, status: null, description: "timeout" }), 10_000);
 });
 // Force re-discover of chat_id by polling getUpdates. Llama el móvil después
 // de que el usuario mande /start al bot.
@@ -14651,6 +14712,33 @@ function _piAnchorDropConfirm() {
   });
 })();
 
+/* Rev897 (feedback Diego): si PulseAudio no detecta ninguna tarjeta solo
+   ofrece `auto_null` (salida nula). paplay contesta OK y no suena nada, así
+   que lo avisamos como notification en vez de dar el audio por bueno. */
+let _audioNullOnly: boolean | null = null;
+function _checkAudioNullSink(): void {
+  _probeSinksList().then((sinks) => {
+    if (!sinks.length) return; // pactl no responde: lo cubren los otros avisos
+    const nullOnly = sinks.every((s) => s === "auto_null");
+    if (nullOnly === _audioNullOnly) return;
+    _audioNullOnly = nullOnly;
+    if (nullOnly) console.error("[IHM-PI-AUDIO] PulseAudio only has auto_null (no sound card detected): Pi alarms will be silent");
+    try {
+      app.handleMessage(plugin.id, {
+        context: ("vessels." + app.selfId) as Context,
+        updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
+          path: "notifications.security.audioNoOutput" as any,
+          value: nullOnly
+            ? { state: "warn", method: ["visual"], message: "Pi audio: no sound card detected (PulseAudio auto_null). Alarms will not sound on the Pi; check HDMI / jack / USB output." }
+            : { state: "normal", method: [] as string[], message: "Pi audio output detected" },
+        }]}],
+      });
+    } catch { /* non-critical */ }
+  }).catch(() => { /* non-critical */ });
+}
+setTimeout(_checkAudioNullSink, 60_000);
+setInterval(_checkAudioNullSink, 10 * 60_000);
+
 // Rev106: el init del bridge pypilot vive ahora en start() para tener acceso
 // a `props`. El forward-decl `_pypilotInitOuter` se asignó arriba a la función
 // real. No hacemos nada aquí adicional.
@@ -16817,7 +16905,17 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/test-alarm", requireContro
         value: { state, method: ["visual", "sound", "push"], message },
       }]}],
     });
-    console.log(`[IHM-TEST-ALARM] fired ${kind} for 10 s (audio Pi + delta SK + espejo canónico)`);
+    // Rev897 (feedback Diego): el texto promete push y Telegram pero la
+    // prueba no mandaba nada a Telegram. Lo mandamos y dejamos el resultado
+    // en el log.
+    let tgNote = "Telegram off";
+    if (_telegramBotToken && _telegramEffectiveChatId()) {
+      delete _telegramLastSent["test_alarm"];
+      tgNote = "Telegram sent";
+      _sendTelegram("test_alarm", formatTelegramMessage("test_alarm", { revision: PLUGIN_REVISION, alarm: kind }, _currentLang),
+        (r) => console.log(`[IHM-TEST-ALARM] Telegram: ${r.ok ? "OK" : `FAILED ${r.status ?? ""} ${r.description ?? ""}`}`));
+    }
+    console.log(`[IHM-TEST-ALARM] fired ${kind} for 10 s (audio Pi + delta SK + espejo canónico + ${tgNote})`);
     // Auto-clear tras 10 s.
     setTimeout(() => {
       try {
@@ -18090,6 +18188,9 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
       };
       app.handleMessage(plugin.id, notifDelta);
       lastGroundingNotifState = "alarm";
+      // Rev897: el mensaje de arranque de Telegram promete garreo/AIS/varada,
+      // pero la varada nunca se mandaba.
+      try { _sendTelegram("grounding", formatTelegramMessage("grounding", { detail: String(message ?? "") }, _currentLang)); } catch { /* non-critical */ }
     } else if (!shouldNotify && lastGroundingNotifState !== "normal") {
       // TRANSITION → clear: covers both "alarm"→"normal" AND "cleared"→"normal" (startup)
       const clearDelta: Delta = {

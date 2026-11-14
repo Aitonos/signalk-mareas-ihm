@@ -206,7 +206,10 @@ function getGitHash() {
 }
 function getGitDirty() {
   try {
-    const out = execSync('git status --porcelain', { cwd: projectRoot, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    // Rev897: CI runs `npm install`, which rewrites package-lock.json; that
+    // made every published build say "+dirty" (a user's diagnosis read it as
+    // a modified install).
+    const out = execSync('git status --porcelain -- . ":(exclude)package-lock.json"', { cwd: projectRoot, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
     return out.length > 0;
   } catch { return false; }
 }

@@ -142,3 +142,71 @@ test('plugin start loads persisted lang before Telegram startup send', () => {
     'Telegram init must run after lang refresh so startup message uses the setting',
   );
 });
+
+// Rev897 (feedback Diego): Telegram answers are reported, Markdown is safe.
+import { EventEmitter } from 'node:events';
+
+function mockRequest(statusCode, body, { error } = {}) {
+  return (_url, _opts, cb) => {
+    const req = new EventEmitter();
+    req.write = () => {};
+    req.destroy = () => {};
+    req.end = () => setImmediate(() => {
+      if (error) { req.emit('error', new Error(error)); return; }
+      const res = new EventEmitter();
+      res.statusCode = statusCode;
+      cb(res);
+      res.emit('data', body);
+      res.emit('end');
+    });
+    return req;
+  };
+}
+
+function send(sendTelegram, httpsRequest) {
+  return new Promise((resolve) => {
+    sendTelegram({
+      botToken: 't', chatId: '1', kind: 'test', text: 'x', lastSent: {},
+      httpsRequest, onResult: resolve,
+    });
+  });
+}
+
+test('telegram: a rejected send reports Telegram\'s error text', async () => {
+  const { sendTelegram } = await loadTelegram();
+  const r = await send(sendTelegram, mockRequest(400, '{"ok":false,"description":"Bad Request: chat not found"}'));
+  assert.deepEqual(r, { ok: false, status: 400, description: 'Bad Request: chat not found' });
+});
+
+test('telegram: an accepted send reports ok', async () => {
+  const { sendTelegram } = await loadTelegram();
+  const r = await send(sendTelegram, mockRequest(200, '{"ok":true}'));
+  assert.equal(r.ok, true);
+});
+
+test('telegram: a network error reports the error', async () => {
+  const { sendTelegram } = await loadTelegram();
+  const r = await send(sendTelegram, mockRequest(0, '', { error: 'ENOTFOUND api.telegram.org' }));
+  assert.equal(r.ok, false);
+  assert.match(r.description, /ENOTFOUND/);
+});
+
+test('telegram: no unpaired underscore outside code in the connected message', async () => {
+  const { formatTelegramMessage } = await loadTelegram();
+  for (const lang of ['es', 'en']) {
+    const t = formatTelegramMessage('startup_connected', { chatId: '12345' }, lang).replace(/`[^`]*`/g, '');
+    assert.ok(!t.includes('_'), t);
+  }
+});
+
+test('telegram: grounding detail is escaped for Markdown', async () => {
+  const { formatTelegramMessage } = await loadTelegram();
+  const t = formatTelegramMessage('grounding', { detail: 'depth_now *1.2 m*' }, 'es');
+  assert.equal(t, '⚠️ *RIESGO DE VARADA*.\ndepth\\_now \\*1.2 m\\*');
+});
+
+test('telegram: alarm test names the simulated alarm', async () => {
+  const { formatTelegramMessage } = await loadTelegram();
+  assert.match(formatTelegramMessage('test_alarm', { revision: 'Rev897', alarm: 'grounding' }, 'es'), /\(varada\).*Rev897/);
+  assert.match(formatTelegramMessage('test_alarm', { revision: 'Rev897', alarm: 'garreo' }, 'en'), /\(anchor drag\)/);
+});

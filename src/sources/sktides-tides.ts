@@ -102,11 +102,13 @@ function looksLikeOfficialSktidesPayload(j: any): boolean {
   const hasFlatLatLon = typeof j.station.latitude === "number" && typeof j.station.longitude === "number";
   const hasNestedPosition = j.station.position && typeof j.station.position === "object";
   if (!hasFlatLatLon || hasNestedPosition) return false;
-  // Discriminante 2: `datum` y `units` son campos que sólo emite el oficial.
-  if (typeof j.datum !== "string" || typeof j.units !== "string") return false;
-  // Discriminante 3: el id emitido por el oficial trae prefijo de fuente NEAPS.
-  const stationId = String(j.station.id ?? "");
-  if (!/^(noaa|ticon|tcon)\//i.test(stationId)) return false;
+  // Discriminante 2: `units` sólo lo emite el oficial.
+  // Rev897: desde la 2.5 (motor Slackwater) `datum` falta si la estación no
+  // tiene datum de carta, y los ids ya no son siempre noaa/ o ticon/. Ya no
+  // los exigimos: lat/lon planos + units + high/low bastan para no
+  // confundirlo con nuestro propio provider.
+  if (typeof j.units !== "string") return false;
+  if (!String(j.station.id ?? "")) return false;
   // Discriminante 4: la forma de los extremes del oficial trae `high` y `low`
   // como booleanos, y `time` como string ISO (nuestros llevan `time` y `type`).
   const first = j.extremes[0];
@@ -180,6 +182,10 @@ export async function sktidesTideForecast(
     // El endpoint del plugin oficial devuelve niveles referenciados al datum
     // (MLLW/LAT), que ya suele ser ~0 en bajamar. Aún así aplicamos un ligero
     // offset para no mostrar valores negativos por convención.
+    const toM = j.units === "feet" ? 0.3048 : 1;
+    for (const e of j.extremes as any[]) {
+      if (e && typeof e.level === "number") e.level *= toM;
+    }
     const finiteLevels = (j.extremes as any[])
       .map(e => Number(e.level))
       .filter(v => Number.isFinite(v)) as number[];

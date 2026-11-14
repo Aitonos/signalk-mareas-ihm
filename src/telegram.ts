@@ -21,7 +21,9 @@ export type TelegramKind =
   | "autolift"
   | "garreo"
   | "ais"
-  | "test";
+  | "grounding"
+  | "test"
+  | "test_alarm";
 
 /** Injectable https.request for tests. */
 export type TelegramHttpsRequest = (
@@ -40,8 +42,23 @@ export interface TelegramSendOptions {
   /** Defaults to https.request. Pass a mock in unit tests. */
   httpsRequest?: TelegramHttpsRequest;
   onDebug?: (msg: string) => void;
+  /** Rev897: Telegram's answer (ok, HTTP status, its error text), so a test
+   *  can tell the user why nothing arrived instead of "OK". */
+  onResult?: (r: TelegramResult) => void;
   /** Injectable clock for throttle tests. */
   nowMs?: () => number;
+}
+
+export interface TelegramResult {
+  ok: boolean;
+  status: number | null;
+  description: string | null;
+}
+
+/** Escape user/sensor text for legacy Markdown (an unpaired _ or * makes
+ *  Telegram reject the whole message with HTTP 400). */
+export function escapeTelegramMarkdown(s: string): string {
+  return String(s).replace(/([_*`[])/g, "\\$1");
 }
 
 /**
@@ -69,6 +86,12 @@ export function sendTelegram(opts: TelegramSendOptions): boolean {
   });
   const request = opts.httpsRequest || (https.request.bind(https) as TelegramHttpsRequest);
   const debug = opts.onDebug || (() => { /* no-op */ });
+  let reported = false;
+  const report = (r: TelegramResult) => {
+    if (reported) return;
+    reported = true;
+    try { opts.onResult?.(r); } catch { /* caller bug — ignore */ }
+  };
 
   const req = request(
     url,
@@ -81,14 +104,23 @@ export function sendTelegram(opts: TelegramSendOptions): boolean {
       timeout: 8000,
     },
     (res: IncomingMessage) => {
-      if ((res.statusCode ?? 0) >= 400) {
-        debug(`[IHM-TELEGRAM] sendMessage HTTP ${res.statusCode}`);
-      }
-      res.on("data", () => { /* drain */ });
+      const status = res.statusCode ?? 0;
+      let body = "";
+      res.on("data", (c: Buffer | string) => { if (body.length < 2000) body += c; });
+      res.on("end", () => {
+        let description: string | null = null;
+        try { description = JSON.parse(body)?.description ?? null; } catch { /* not JSON */ }
+        if (status >= 400) debug(`[IHM-TELEGRAM] sendMessage HTTP ${status}: ${description ?? ""}`);
+        report({ ok: status > 0 && status < 400, status, description });
+      });
     },
   );
-  req.on("error", (e: Error) => debug(`[IHM-TELEGRAM] send failed: ${e?.message || e}`));
+  req.on("error", (e: Error) => {
+    debug(`[IHM-TELEGRAM] send failed: ${e?.message || e}`);
+    report({ ok: false, status: null, description: String(e?.message || e) });
+  });
   req.on("timeout", () => {
+    report({ ok: false, status: null, description: "timeout" });
     try { req.destroy(); } catch { /* ignore */ }
   });
   req.write(payload);
@@ -104,6 +136,10 @@ export type TelegramMessageParams = {
   sogKt?: number;
   distM?: number;
   radM?: number;
+  /** grounding: alarm text from the depth/tide evaluation (escaped here). */
+  detail?: string;
+  /** test_alarm: which alarm was simulated (garreo / grounding / ais). */
+  alarm?: string;
 };
 
 /**
@@ -148,8 +184,8 @@ export function formatTelegramMessage(
         );
     case "startup_connected":
       return en
-        ? `🔗 Chat connected to Mareas IHM. chat_id=\`${chatId}\``
-        : `🔗 Chat conectado a Mareas IHM. chat_id=\`${chatId}\``;
+        ? `🔗 Chat connected to Mareas IHM. Chat ID: \`${chatId}\``
+        : `🔗 Chat conectado a Mareas IHM. Chat ID: \`${chatId}\``;
     case "gps_lost":
       return en
         ? (
@@ -186,6 +222,21 @@ export function formatTelegramMessage(
       return en
         ? `🚢 *AIS target* inside the swing circle. Possible collision.`
         : `🚢 *Target AIS* dentro del radio de fondeo. Posible colisión.`;
+    case "grounding": {
+      const detail = params.detail ? `\n${escapeTelegramMarkdown(params.detail)}` : "";
+      return en
+        ? `⚠️ *GROUNDING RISK*.${detail}`
+        : `⚠️ *RIESGO DE VARADA*.${detail}`;
+    }
+    case "test_alarm": {
+      const a = params.alarm ?? "";
+      const name = en
+        ? (a === "garreo" ? "anchor drag" : a === "grounding" ? "grounding" : "AIS")
+        : (a === "garreo" ? "garreo" : a === "grounding" ? "varada" : "AIS");
+      return en
+        ? `🧪 *Alarm test* (${name}) from Mareas IHM ${revision}.\nReal alarms will arrive here too.`
+        : `🧪 *Prueba de alarma* (${name}) desde Mareas IHM ${revision}.\nLas alarmas reales también llegarán aquí.`;
+    }
     case "test":
       return en
         ? (
