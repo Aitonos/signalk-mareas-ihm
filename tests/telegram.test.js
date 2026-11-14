@@ -230,3 +230,17 @@ test('telegram: an HTTP error from Telegram is not retried', async () => {
   await send(sendTelegram, counted);
   assert.equal(calls, 1);
 });
+
+// Rev900 (audit A1): auto-lift must not silence a real drag. No speed-only
+// trigger (a dragging boat drifts at 3-4 kn in a gale), and no auto-lift
+// while the drag alarm is sounding or silenced.
+test('auto-lift: motor only, never during a drag alarm', () => {
+  const src = readFileSync(indexTs, 'utf8');
+  const start = src.indexOf('function _checkIntentionalDeparture(');
+  const body = src.slice(start, src.indexOf('\n}\n', start));
+  assert.ok(start >= 0, 'expected _checkIntentionalDeparture');
+  assert.match(body, /anchorDragAlarmActive/);
+  assert.match(body, /_isGarreoSilenced\(\)/);
+  assert.match(body, /_isAnyMotorRunning\(\) === true/);
+  assert.doesNotMatch(src, /_INTENTIONAL_DEP_SOG_KT/);
+});

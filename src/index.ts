@@ -122,7 +122,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev899";
+const PLUGIN_REVISION = "Rev900";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -7996,22 +7996,20 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
 }
 
 // Rev468: estado interno para detectar salida intencional por motorizado.
-// Se considera salida intencional si SOG > _INTENTIONAL_DEP_SOG_KT sostenido
-// durante > _INTENTIONAL_DEP_DUR_MS estando anchored. Si la velocidad baja
-// del umbral en cualquier tick, se resetea el contador (debouncing).
 // Rev751 (feedback Carlos "si salimos de fondeo con motor arrancado auto
-// lift anchor, hay un path especifico en SK para motor encendido"): añade
-// trigger primario por motor running (propulsion.*.state="started" o
-// revolutions>0) sostenido durante MOTOR_DUR_MS y con SOG > MOTOR_MIN_SOG_KT
-// (evita disparar con motor en ralentí atado a pantalán). SOG-only sigue
-// como fallback cuando no hay path de motor publicado.
-const _INTENTIONAL_DEP_SOG_KT = 3.0;
-const _INTENTIONAL_DEP_DUR_MS = 60_000;
+// lift anchor, hay un path especifico en SK para motor encendido"): trigger
+// por motor running (propulsion.*.state="started" o revolutions>0)
+// sostenido durante MOTOR_DUR_MS y con SOG > MOTOR_MIN_SOG_KT (evita
+// disparar con motor en ralentí atado a pantalán).
+// Rev900 (auditoría 2026-11-14, A1): quitado el disparador solo por SOG
+// (> 3 kn durante 60 s) para barcos sin motor en SK. Un barco que garrea en
+// un temporal deriva a 3-4 kn y ese disparador levaba el ancla y apagaba la
+// alarma de garreo al minuto. Sin motor en SK no hay auto-lift: se leva a
+// mano. Y nunca con la alarma de garreo sonando (motor arrancado para
+// luchar contra el garreo), tampoco con el garreo silenciado.
 const _INTENTIONAL_MOTOR_DUR_MS = 30_000;   // motor running sostenido
 const _INTENTIONAL_MOTOR_MIN_SOG_KT = 0.5;  // + barco ya moviéndose (no ralentí atado)
-let _intentionalDepartureSinceMs: number | null = null;
 let _intentionalMotorSinceMs: number | null = null;
-let _lastIntentionalTrigger: "sog" | "motor" | null = null;
 /* Rev751: escanea propulsion.* en el árbol SK para detectar cualquier
    motor arrancado. Devuelve:
    - true → hay al menos un motor con state="started" o revolutions>0.
@@ -8037,52 +8035,27 @@ function _isAnyMotorRunning(): boolean | null {
   } catch { return null; }
 }
 function _checkIntentionalDeparture(sogKt: number): boolean {
-  if (!anchorWatch.anchored) {
-    _intentionalDepartureSinceMs = null;
+  if (!anchorWatch.anchored || anchorDragAlarmActive || _isGarreoSilenced()) {
     _intentionalMotorSinceMs = null;
     return false;
   }
   const nowMs = Date.now();
-  // Trigger primario: motor running + barco moviéndose (>0.5 kn).
-  const motorRunning = _isAnyMotorRunning();
-  if (motorRunning === true && sogKt > _INTENTIONAL_MOTOR_MIN_SOG_KT) {
+  if (_isAnyMotorRunning() === true && sogKt > _INTENTIONAL_MOTOR_MIN_SOG_KT) {
     if (_intentionalMotorSinceMs == null) _intentionalMotorSinceMs = nowMs;
-    if ((nowMs - _intentionalMotorSinceMs) >= _INTENTIONAL_MOTOR_DUR_MS) {
-      _lastIntentionalTrigger = "motor";
-      return true;
-    }
-  } else {
-    _intentionalMotorSinceMs = null;
+    return (nowMs - _intentionalMotorSinceMs) >= _INTENTIONAL_MOTOR_DUR_MS;
   }
-  // Fallback SOG-only (barco sin path de motor, o motor apagado y salimos
-  // por vela o corriente): comportamiento histórico Rev468.
-  if (sogKt > _INTENTIONAL_DEP_SOG_KT) {
-    if (_intentionalDepartureSinceMs == null) {
-      _intentionalDepartureSinceMs = nowMs;
-      return false;
-    }
-    if ((nowMs - _intentionalDepartureSinceMs) >= _INTENTIONAL_DEP_DUR_MS) {
-      _lastIntentionalTrigger = "sog";
-      return true;
-    }
-    return false;
-  } else {
-    _intentionalDepartureSinceMs = null;
-    return false;
-  }
+  _intentionalMotorSinceMs = null;
+  return false;
 }
 async function _autoLiftAnchorIntentional(sogKt: number) {
-  /* Rev751: log claro del trigger real (SOG-only vs motor+SOG). */
-  const trig = _lastIntentionalTrigger ?? "sog";
-  const trigMs = trig === "motor" ? _INTENTIONAL_MOTOR_DUR_MS : _INTENTIONAL_DEP_DUR_MS;
-  app.debug(`[IHM-AUTOLIFT] Salida intencional detectada (trigger=${trig}): SOG=${sogKt.toFixed(2)} kn sostenido >${trigMs / 1000}s → auto-lift`);
+  app.debug(`[IHM-AUTOLIFT] Salida a motor detectada: SOG=${sogKt.toFixed(2)} kn con motor >${_INTENTIONAL_MOTOR_DUR_MS / 1000}s → auto-lift`);
   // Replica el flujo de POST /api/anchor-watch/lift sin response HTTP.
   _saveAisAckPending();
   /* Rev736: registrar en activityLog antes de limpiar la posición. Sin req
      (es una acción interna disparada por el evaluador). userAlias = null
      porque nadie manualmente pidió la salida — fue el sistema. */
   const _prevPos = anchorWatch.anchorPosition ? { lat: anchorWatch.anchorPosition.lat, lng: anchorWatch.anchorPosition.lng } : null;
-  _pushActivity({ action: "auto-lift", userAlias: null, position: _prevPos, note: `trigger=${trig} SOG ${sogKt.toFixed(1)} kn sostenido` });
+  _pushActivity({ action: "auto-lift", userAlias: null, position: _prevPos, note: `motor + SOG ${sogKt.toFixed(1)} kn sostenido` });
   _setAnchored(false);
   anchorWatch.anchorPosition = null;
   anchorWatch.anchorOwnerAlias = null;       // Rev592
@@ -8092,7 +8065,7 @@ async function _autoLiftAnchorIntentional(sogKt: number) {
   anchorWatch.aisAlarmEnabled = false;
   anchorWatch.garreoAlarmEnabled = false;
   _lastAisNotifSig = null;
-  _intentionalDepartureSinceMs = null;
+  _intentionalMotorSinceMs = null;
   _restartAnchorWatchTimer();
   _restartGustTimer();
   try { await ihmCache.set("anchorWatch", anchorWatch); } catch { /* persist non-critical */ }

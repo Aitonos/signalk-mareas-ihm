@@ -56,7 +56,7 @@ Most anchor watch apps are paid, closed source, single-device and tied to a vend
 - **Predictive swing radius** combining depth, chain deployed and tide cycle for the actual swing area over the next 12 h — not a static circle.
 - **Two chain calculation methods**: classic ratio and the Vicente method (15 + 2 × depth).
 - **Drag detection** with audible siren that bypasses user mute for safety.
-- **Auto-disarm when leaving under engine**: if SOG stays above 3 kt for 30 s the watch disarms automatically. No more sirens when you forgot to lift in the app.
+- **Auto-disarm when leaving under engine**: if Signal K reports the engine running and the boat moves above 0.5 kt for 30 s, the watch disarms automatically. Never while the drag alarm is sounding or silenced, and never on speed alone: a dragging boat can drift at 3-4 kt in a gale. Without engine data in Signal K, lift in the app.
 - **GPS track** with time-gradient colouring so you can see exactly where the boat has been.
 - **Favourite anchorages** saved with a custom name (or auto-named from geolocation), synced across all your devices via the backend.
 
@@ -272,7 +272,7 @@ La mayoría de apps de anchor watch son de pago, código cerrado, un solo dispos
 - **Radio de borneo predictivo**: combina sonda, cadena largada y ciclo de marea para predecir el área real de borneo en las próximas 12 h — no un círculo estático.
 - **Dos métodos de cálculo de cadena**: ratio clásico y método Vicente (15 + 2 × sonda).
 - **Detección de garreo** con sirena audible que bypassa el mute del usuario por seguridad.
-- **Auto-desarme al salir a motor**: si el SOG se mantiene >3 kn durante 30 s, la vigilancia se desarma sola. No más sirenas cuando olvidas "levar" en la app.
+- **Auto-desarme al salir a motor**: si Signal K dice que el motor está en marcha y el barco va a más de 0,5 kn durante 30 s, la vigilancia se desarma sola. Nunca con la alarma de garreo sonando o silenciada, y nunca solo por velocidad: un barco que garrea en un temporal puede derivar a 3-4 kn. Sin datos del motor en Signal K, leva en la app.
 - **Track GPS** con coloreado por gradiente temporal para ver exactamente por dónde ha pasado el barco.
 - **Fondeos favoritos** guardados con nombre personalizado (o auto-nombrados por geolocalización), sincronizados entre todos tus dispositivos vía backend.
 
