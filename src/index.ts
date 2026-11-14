@@ -122,7 +122,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev897";
+const PLUGIN_REVISION = "Rev898";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1521,6 +1521,7 @@ export default function (app: SignalKApp): Plugin {
   let _telegramBotToken: string = "";
   let _telegramChatId: string = "";              // del schema (manual)
   let _telegramChatIdCached: string = "";        // de ihmCache (auto-detect)
+  let _telegramBotUsername: string = "";         // Rev898: getMe, para el enlace al bot
   const _telegramLastSent: Record<string, number> = {};
   function _telegramEffectiveChatId(): string {
     return _telegramChatId || _telegramChatIdCached || "";
@@ -1588,39 +1589,44 @@ export default function (app: SignalKApp): Plugin {
       onResult,
     });
   }
-  function _telegramDiscoverChatId(reason: string): Promise<string | null> {
+  /* Rev898: GET a la Bot API. Devuelve el JSON de Telegram ({ok, result}
+     o {ok:false, description}) o null si no contesta. */
+  function _telegramApi(token: string, method: string, query: string, timeoutMs: number): Promise<any | null> {
     return new Promise((resolve) => {
-      if (!_telegramBotToken) { resolve(null); return; }
-      const url = `https://api.telegram.org/bot${encodeURIComponent(_telegramBotToken)}/getUpdates?limit=50&timeout=2`;
-      const req = https.get(url, { timeout: 8000 }, (res: any) => {
+      const url = `https://api.telegram.org/bot${encodeURIComponent(token)}/${method}${query ? "?" + query : ""}`;
+      const req = https.get(url, { timeout: timeoutMs }, (res: any) => {
         let chunks = "";
         res.on("data", (c: any) => { chunks += c; });
         res.on("end", () => {
-          try {
-            const body = JSON.parse(chunks);
-            if (!body?.ok || !Array.isArray(body.result)) {
-              app.debug(`[IHM-TELEGRAM] getUpdates not ok: ${chunks.slice(0,200)}`);
-              return resolve(null);
-            }
-            for (let i = body.result.length - 1; i >= 0; i--) {
-              const upd = body.result[i];
-              const chatId = upd?.message?.chat?.id ?? upd?.edited_message?.chat?.id;
-              if (chatId != null) {
-                const idStr = String(chatId);
-                app.debug(`[IHM-TELEGRAM] auto-detected chat_id=${idStr} (${reason})`);
-                return resolve(idStr);
-              }
-            }
-            resolve(null);
-          } catch (e: any) {
-            app.debug(`[IHM-TELEGRAM] getUpdates parse failed: ${e?.message || e}`);
-            resolve(null);
-          }
+          try { resolve(JSON.parse(chunks)); }
+          catch (e: any) { app.debug(`[IHM-TELEGRAM] ${method} parse failed: ${e?.message || e}`); resolve(null); }
         });
       });
-      req.on("error", (e: any) => { app.debug(`[IHM-TELEGRAM] getUpdates HTTP failed: ${e?.message || e}`); resolve(null); });
+      req.on("error", (e: any) => { app.debug(`[IHM-TELEGRAM] ${method} HTTP failed: ${e?.message || e}`); resolve(null); });
       req.on("timeout", () => { try { req.destroy(); } catch { /* ignore */ } resolve(null); });
     });
+  }
+  /* Último chat que escribió al bot (el /start), con su nombre para el
+     asistente. pollSeconds > 0 deja a Telegram esperar un mensaje nuevo. */
+  async function _telegramFindChat(token: string, pollSeconds: number, reason: string): Promise<{ chat: { id: string; name: string } | null; error: string | null }> {
+    const body = await _telegramApi(token, "getUpdates", `limit=50&timeout=${pollSeconds}`, (pollSeconds + 6) * 1000);
+    if (!body) return { chat: null, error: null };
+    if (!body.ok || !Array.isArray(body.result)) {
+      app.debug(`[IHM-TELEGRAM] getUpdates not ok: ${JSON.stringify(body).slice(0, 200)}`);
+      return { chat: null, error: String(body.description ?? "getUpdates") };
+    }
+    for (let i = body.result.length - 1; i >= 0; i--) {
+      const chat = body.result[i]?.message?.chat ?? body.result[i]?.edited_message?.chat;
+      if (chat?.id != null) {
+        app.debug(`[IHM-TELEGRAM] auto-detected chat_id=${chat.id} (${reason})`);
+        return { chat: { id: String(chat.id), name: String(chat.first_name ?? chat.title ?? chat.username ?? "") }, error: null };
+      }
+    }
+    return { chat: null, error: null };
+  }
+  function _telegramDiscoverChatId(reason: string): Promise<string | null> {
+    if (!_telegramBotToken) return Promise.resolve(null);
+    return _telegramFindChat(_telegramBotToken, 2, reason).then((r) => r.chat?.id ?? null);
   }
 
   async function start(props: Config) {
@@ -2101,6 +2107,7 @@ export default function (app: SignalKApp): Plugin {
     _aisfriendsStartIfConfigured(props);
     await _refreshCurrentLang(props);
     _telegramBotToken = String((props as any)?.telegramBotToken || "").trim();
+    _telegramBotUsername = "";
     _telegramChatId   = String((props as any)?.telegramChatId   || "").trim();
     try {
       const cached = await ihmCache.get("telegramChatIdAuto");
@@ -5884,6 +5891,7 @@ try {
             // Rev897 (feedback Diego): Telegram también en caliente. Si SK no
             // reiniciaba el plugin, el token nuevo no se usaba hasta reiniciar.
             if (applied.includes("telegramBotToken") || applied.includes("telegramChatId")) {
+              if (String(cur.telegramBotToken || "").trim() !== _telegramBotToken) _telegramBotUsername = "";
               _telegramBotToken = String(cur.telegramBotToken || "").trim();
               _telegramChatId = String(cur.telegramChatId || "").trim();
               if (_telegramBotToken && !_telegramEffectiveChatId()) {
@@ -9430,14 +9438,74 @@ expressApp.get("/signalk-mareas-ihm/instrucciones_es.html", (_req: any, res: any
 // Rev166: Telegram diagnose + test endpoint. Permite que el frontend
 // (móvil) muestre "Telegram OK" o "no configurado" y mande un mensaje
 // de prueba sin esperar a una alarma real.
-expressApp.get("/signalk-mareas-ihm/api/telegram/status", (_req: any, res: any) => {
+expressApp.get("/signalk-mareas-ihm/api/telegram/status", async (_req: any, res: any) => {
+  // Rev898: el asistente necesita el usuario del bot para el enlace «Abrir mi bot».
+  if (_telegramBotToken && !_telegramBotUsername) {
+    const me = await _telegramApi(_telegramBotToken, "getMe", "", 6000);
+    if (me?.ok) _telegramBotUsername = String(me.result?.username ?? "");
+  }
   const eff = _telegramEffectiveChatId();
   res.json({
     configured: !!(_telegramBotToken && eff),
     chatIdSet: !!eff,
     chatIdSource: _telegramChatId ? "schema" : (_telegramChatIdCached ? "auto-detect" : null),
     tokenSet: !!_telegramBotToken,
+    botUsername: _telegramBotUsername || null,
   });
+});
+// Rev898: asistente del bot, paso 2. Comprueba el token con Telegram (getMe)
+// y lo guarda; así el usuario sabe al momento si lo copió bien.
+expressApp.post("/signalk-mareas-ihm/api/telegram/setup-token", requireControlAccess, async (req: any, res: any) => {
+  const en = _currentLang === "en";
+  const token = String(req?.body?.token ?? "").trim();
+  if (!/^\d+:[\w-]{20,}$/.test(token)) {
+    return res.status(400).json({ error: en
+      ? "That doesn't look like a bot token. Copy the whole line BotFather gives you (numbers:letters)."
+      : "Eso no parece un token de bot. Copia la línea entera que te da BotFather (números:letras)." });
+  }
+  const me = await _telegramApi(token, "getMe", "", 8000);
+  if (!me) {
+    return res.status(502).json({ error: en
+      ? "Telegram doesn't answer. Check the boat's internet connection."
+      : "Telegram no contesta. Revisa la conexión a internet del barco." });
+  }
+  if (!me.ok) {
+    return res.status(400).json({ error: (en ? "Telegram rejects this token: " : "Telegram rechaza este token: ") + String(me.description ?? "") });
+  }
+  if (typeof (app as any).savePluginOptions !== "function") {
+    return res.status(500).json({ error: "SK server too old — savePluginOptions API unavailable" });
+  }
+  const rp = (app as any).readPluginOptions?.() ?? {};
+  const cfg = { ...(rp.configuration ?? {}), telegramBotToken: token };
+  (app as any).savePluginOptions({ ...cfg, enabled: rp.enabled !== false }, async (err: any) => {
+    if (err) { res.status(500).json({ error: String(err?.message ?? err) }); return; }
+    // Bot nuevo: el chat detectado era del anterior; hay que volver a conectar.
+    if (token !== _telegramBotToken) {
+      _telegramChatIdCached = "";
+      try { await ihmCache.set("telegramChatIdAuto", ""); } catch { /* ignore */ }
+    }
+    _telegramBotToken = token;
+    _telegramBotUsername = String(me.result?.username ?? "");
+    console.log(`[IHM-TELEGRAM] setup: token OK, bot @${_telegramBotUsername}`);
+    res.json({ ok: true, username: _telegramBotUsername, name: String(me.result?.first_name ?? "") });
+  });
+});
+// Rev898: asistente del bot, paso 3. Espera (long poll de 20 s) a que el
+// usuario pulse Iniciar en su bot; el visor la vuelve a llamar hasta 2 min.
+expressApp.post("/signalk-mareas-ihm/api/telegram/wait-chat", requireControlAccess, async (_req: any, res: any) => {
+  const en = _currentLang === "en";
+  if (!_telegramBotToken) {
+    return res.status(400).json({ error: en ? "No bot token saved." : "No hay token del bot guardado." });
+  }
+  const r = await _telegramFindChat(_telegramBotToken, 20, "setup");
+  if (r.error) return res.status(502).json({ error: `Telegram: ${r.error}` });
+  if (!r.chat) return res.json({ ok: false });
+  _telegramChatIdCached = r.chat.id;
+  try { await ihmCache.set("telegramChatIdAuto", r.chat.id); } catch { /* ignore */ }
+  console.log(`[IHM-TELEGRAM] setup: chat connected (${r.chat.name || r.chat.id})`);
+  delete _telegramLastSent["startup"];
+  _sendTelegram("startup", formatTelegramMessage("startup_connected", { chatId: r.chat.id }, _currentLang));
+  res.json({ ok: true, chatId: r.chat.id, name: r.chat.name });
 });
 expressApp.post("/signalk-mareas-ihm/api/telegram/test", requireControlAccess, async (_req: any, res: any) => {
   const en = _currentLang === "en";

@@ -17248,30 +17248,98 @@ window.m_aisfriendsStatsCheck = function(){
     });
 };
 
-/* Rev737 (Hoekens catch-up): dispara alarma de prueba durante 10 s. */
-window.m_telegramTest = function(){
-  var st = document.getElementById('m-telegram-test-status');
-  if (st){ st.textContent = (_lang==='en')?'⏳ Sending…':'⏳ Enviando…'; st.style.color = '#9ad'; }
-  fetch(A+'/telegram/test',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'})
+/* Rev898: POST a una ruta de Telegram. Pinta en `st` el 401 (abre el
+   popup de permisos), el error o "sin respuesta". */
+function _m_tgPost(path, body, st){
+  return fetch(A+path,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})
     .then(function(r){ return r.json().then(function(j){return {ok:r.ok,status:r.status,j:j};},function(){return {ok:r.ok,status:r.status,j:null};}); })
     .catch(function(){ return {ok:false,status:0,j:null}; })
     .then(function(res){
-      if (!st) return;
+      if (!st) return res;
       if (res.status === 401){
-        if (typeof m_cfgSkPathsAuthPopup === 'function') m_cfgSkPathsAuthPopup('/api/telegram/test');
-        st.textContent = (_lang==='en')?'🔒 Permission required':'🔒 Permisos requeridos';
-        st.style.color = '#e53935';
-        return;
+        if (typeof m_cfgSkPathsAuthPopup === 'function') m_cfgSkPathsAuthPopup('/api'+path);
+        st.textContent = (_lang==='en')?'🔒 Permission required':'🔒 Permisos requeridos'; st.style.color = '#e53935';
+      } else if (res.status !== 0 && (!res.ok || !res.j || res.j.error)){
+        st.textContent = '✗ ' + ((res.j && res.j.error) || ((_lang==='en')?'Failed':'Falló')); st.style.color = '#e53935';
       }
-      if (!res.ok || !res.j || !res.j.ok){
-        st.textContent = '✗ ' + ((res.j && res.j.error) || ((_lang==='en')?'Failed':'Falló'));
-        st.style.color = '#e53935';
-        return;
-      }
-      st.textContent = (_lang==='en')?'✓ Sent — check Telegram on your phone':'✓ Enviado — mira Telegram en el móvil';
-      st.style.color = '#3aa856';
+      return res;
     });
+}
+function _m_tgSay(st, text, color){
+  if (st){ st.textContent = text; st.style.color = color; }
+}
+function m_telegramShowBotLink(username){
+  var a = document.getElementById('m-telegram-open-bot');
+  if (!a || !username) return;
+  a.href = 'https://t.me/' + encodeURIComponent(username) + '?start=mareas';
+  a.textContent = ((_lang==='en')?'Open my bot':'Abrir mi bot') + ' (@' + username + ')';
+  a.style.display = 'block';
+  var st = document.getElementById('m-telegram-chat-status');
+  if (st && !_mTgWaitUntil) st.textContent = '';
+}
+window.m_telegramLoadBotLink = function(){
+  fetch(A+'/telegram/status',{cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .catch(function(){ return null; })
+    .then(function(j){ if (j && j.botUsername) m_telegramShowBotLink(j.botUsername); });
 };
+window.m_telegramSetupToken = function(){
+  var en = (_lang==='en');
+  var inp = document.getElementById('wopt-telegramBotToken');
+  var st = document.getElementById('m-telegram-token-status');
+  var tok = inp ? inp.value.trim() : '';
+  if (!tok || tok.indexOf('•') >= 0){
+    _m_tgSay(st, en?'Paste the token BotFather gave you.':'Pega el token que te dio BotFather.', '#ffb23f');
+    return;
+  }
+  _m_tgSay(st, en?'⏳ Checking with Telegram…':'⏳ Comprobando con Telegram…', '#9ad');
+  _m_tgPost('/telegram/setup-token', {token:tok}, st).then(function(res){
+    if (res.status === 0){ _m_tgSay(st, en?'✗ No answer from the plugin':'✗ El plugin no contesta', '#e53935'); return; }
+    if (!res.ok || !res.j || !res.j.ok) return;
+    _m_tgSay(st, '✓ Bot @' + res.j.username + (en?' is valid and saved. Now step 3.':' correcto y guardado. Ahora el paso 3.'), '#3aa856');
+    m_telegramShowBotLink(res.j.username);
+  });
+};
+/* Paso 3: el enlace abre el bot en Telegram y, a la vez, esperamos el
+   Iniciar. El plugin hace long poll de 20 s; repetimos hasta 2 min. */
+var _mTgWaitUntil = 0;
+window.m_telegramWaitChat = function(){
+  var en = (_lang==='en');
+  var st = document.getElementById('m-telegram-chat-status');
+  if (_mTgWaitUntil) return true;
+  _mTgWaitUntil = Date.now() + 120000;
+  _m_tgSay(st, en?'⏳ Waiting for you to tap Start in Telegram…':'⏳ Esperando a que pulses Iniciar en Telegram…', '#9ad');
+  (function poll(){
+    _m_tgPost('/telegram/wait-chat', {}, st).then(function(res){
+      if (res.ok && res.j && res.j.ok){
+        _mTgWaitUntil = 0;
+        _m_tgSay(st, '✓ ' + (en?'Connected':'Conectado') + (res.j.name ? (en?' with ':' con ') + res.j.name : '')
+          + (en?'. You should have a message in Telegram.':'. Te ha llegado un mensaje a Telegram.'), '#3aa856');
+        m_wizMarkStepDone('notifications');
+        return;
+      }
+      /* 401 o error de Telegram: ya pintado, paramos. Sin respuesta (SK
+         reiniciando el plugin tras guardar) o sin chat todavía: seguimos. */
+      if (res.status !== 0 && !res.ok){ _mTgWaitUntil = 0; return; }
+      if (Date.now() < _mTgWaitUntil){ setTimeout(poll, res.status === 0 ? 3000 : 500); return; }
+      _mTgWaitUntil = 0;
+      _m_tgSay(st, en
+        ? '✗ Nothing arrived. Open your bot, tap Start (or send /start) and press the button again.'
+        : '✗ No ha llegado nada. Abre tu bot, pulsa Iniciar (o escribe /start) y vuelve a pulsar el botón.', '#e53935');
+    });
+  })();
+  return true;
+};
+window.m_telegramTest = function(){
+  var en = (_lang==='en');
+  var st = document.getElementById('m-telegram-test-status');
+  _m_tgSay(st, en?'⏳ Sending…':'⏳ Enviando…', '#9ad');
+  _m_tgPost('/telegram/test', {}, st).then(function(res){
+    if (res.status === 0){ _m_tgSay(st, en?'✗ No answer from the plugin':'✗ El plugin no contesta', '#e53935'); return; }
+    if (res.ok && res.j && res.j.ok) _m_tgSay(st, en?'✓ Sent — check Telegram on your phone':'✓ Enviado — mira Telegram en el móvil', '#3aa856');
+  });
+};
+/* Rev737 (Hoekens catch-up): dispara alarma de prueba durante 10 s. */
 window.m_testAlarmFire = function(kind){
   var st = document.getElementById('m-testalarm-status');
   if (st){ st.textContent = (_lang==='en')?'⏳ Firing…':'⏳ Disparando…'; st.style.color = '#9ad'; }
@@ -18757,6 +18825,7 @@ window.m_wizPluginOptsLoadInto = function(hostId, scope){
       }
       window._wizPluginOptsCache = j.options;
       host.innerHTML = m_wizPluginOptsRenderHtml(j.options, scope, hostId);
+      if (scope === 'notifications' && j.options.telegramBotTokenSet) m_telegramLoadBotLink();
     });
 };
 window.m_wizPluginOptsRenderHtml = function(o, scope, hostId){
@@ -18769,25 +18838,44 @@ window.m_wizPluginOptsRenderHtml = function(o, scope, hostId){
   var esc = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
   var html = '';
   if (scope === 'notifications'){
+    /* Rev898 (feedback Carlos "asistente para configurar el bot"): pasos
+       guiados. Crear el bot solo se puede a mano en @BotFather; el resto lo
+       hace el plugin: comprueba el token con Telegram, detecta el chat
+       cuando el usuario pulsa Iniciar y manda el mensaje de prueba. */
+    var tgBtn = 'display:block;box-sizing:border-box;width:100%;margin-top:10px;padding:14px;background:rgba(255,178,63,.15);color:#ffb23f;border:1.5px solid #ffb23f;border-radius:10px;font-weight:800;cursor:pointer;font-size:17px;text-align:center;text-decoration:none';
+    var tgStatus = 'margin-top:10px;font-size:15px;font-weight:700;min-height:22px;text-align:center';
     html += '<div style="'+sec+'">';
     html += '<div style="'+h3+'">📲 '+(isEn?'Telegram bot':'Bot de Telegram')+'</div>';
-    html += '<div style="'+hint+';margin-bottom:8px">'+(isEn
-      ? 'Create a bot in @BotFather → /newbot → copy the token. Leave blank to disable Telegram push.'
-      : 'Crea un bot en @BotFather → /newbot → copia el token. Deja vacío para desactivar el push por Telegram.')+'</div>';
-    html += '<label style="'+lbl+'">'+(isEn?'Bot token':'Token del bot')+'</label>';
+    if (o.telegramBotTokenSet && (o.telegramChatId || o.telegramChatIdAutoDetected)){
+      html += '<div style="'+hint+';color:#3aa856;font-weight:700">'+(isEn?'✓ Configured. To change bot, repeat the steps.':'✓ Configurado. Para cambiar de bot, repite los pasos.')+'</div>';
+    }
+    html += '<label style="'+lbl+'">'+(isEn?'1. Create your bot':'1. Crea tu bot')+'</label>';
+    html += '<div style="'+hint+'">'+(isEn
+      ? 'In Telegram, send <code>/newbot</code> to @BotFather, choose a name and a username ending in <code>bot</code>. It answers with a token: copy it.'
+      : 'En Telegram, mándale <code>/newbot</code> a @BotFather, elige un nombre y un usuario que acabe en <code>bot</code>. Te contesta con un token: cópialo.')+'</div>';
+    html += '<a href="https://t.me/BotFather" target="_blank" rel="noopener" style="'+tgBtn+'">'+(isEn?'Open @BotFather':'Abrir @BotFather')+'</a>';
+    html += '<label style="'+lbl+'">'+(isEn?'2. Paste the token':'2. Pega el token')+'</label>';
     html += '<input id="wopt-telegramBotToken" type="text" style="'+inpBase+'" placeholder="123456789:AAEhBOw..." value="'+esc(o.telegramBotToken||'')+'" autocomplete="off">';
-    html += '<div style="'+hint+'">'+(o.telegramBotTokenSet ? (isEn?'✓ Token stored (edit to change)':'✓ Token guardado (edita para cambiar)') : (isEn?'No token stored':'Sin token guardado'))+'</div>';
-    html += '<label style="'+lbl+'">'+(isEn?'Chat ID (auto-detectable)':'Chat ID (auto-detectable)')+'</label>';
+    html += '<button onclick="m_telegramSetupToken()" style="'+tgBtn+'">'+(isEn?'Check and save':'Comprobar y guardar')+'</button>';
+    html += '<div id="m-telegram-token-status" style="'+tgStatus+'"></div>';
+    html += '<label style="'+lbl+'">'+(isEn?'3. Connect your phone':'3. Conecta tu móvil')+'</label>';
+    html += '<div style="'+hint+'">'+(isEn
+      ? 'Open your bot and tap <b>Start</b>. The plugin detects it and sends you a message.'
+      : 'Abre tu bot y pulsa <b>Iniciar</b>. El plugin lo detecta y te manda un mensaje.')+'</div>';
+    html += '<a id="m-telegram-open-bot" href="#" target="_blank" rel="noopener" onclick="return m_telegramWaitChat()" style="'+tgBtn+';display:none"></a>';
+    html += '<div id="m-telegram-chat-status" style="'+tgStatus+'">'+(o.telegramBotTokenSet?'':(isEn?'Do step 2 first.':'Haz antes el paso 2.'))+'</div>';
+    html += '<label style="'+lbl+'">'+(isEn?'4. Test':'4. Prueba')+'</label>';
+    html += '<button onclick="m_telegramTest()" style="'+tgBtn+'">📲 '+(isEn?'Test Telegram':'Probar Telegram')+'</button>';
+    html += '<div id="m-telegram-test-status" style="'+tgStatus+'"></div>';
+    html += '<details style="margin-top:14px"><summary style="cursor:pointer;'+hint+'">'+(isEn?'Advanced: manual chat or group':'Avanzado: chat o grupo manual')+'</summary>';
+    html += '<label style="'+lbl+'">Chat ID</label>';
     html += '<input id="wopt-telegramChatId" type="text" style="'+inpBase+'" placeholder="123456789" value="'+esc(o.telegramChatId||'')+'" autocomplete="off">';
     if (o.telegramChatIdAutoDetected){
       html += '<div style="'+hint+'">'+(isEn?'Auto-detected: ':'Auto-detectado: ')+'<code>'+esc(o.telegramChatIdAutoDetected)+'</code>'+(isEn?' (used if manual is empty)':' (se usa si el manual está vacío)')+'</div>';
     } else {
-      html += '<div style="'+hint+'">'+(isEn?'Leave blank and send /start to your bot from Telegram — the plugin auto-detects it.':'Deja vacío y envía /start al bot desde Telegram — el plugin lo auto-detecta.')+'</div>';
+      html += '<div style="'+hint+'">'+(isEn?'Leave blank: step 3 fills it in. Save with the button below.':'Déjalo vacío: el paso 3 lo rellena. Se guarda con el botón de abajo.')+'</div>';
     }
-    /* Rev897 (feedback Diego): probar Telegram de verdad y enseñar la
-       respuesta de Telegram si falla. */
-    html += '<button onclick="m_telegramTest()" style="width:100%;margin-top:14px;padding:14px;background:rgba(255,178,63,.15);color:#ffb23f;border:1.5px solid #ffb23f;border-radius:10px;font-weight:800;cursor:pointer;font-size:17px">📲 '+(isEn?'Test Telegram (save first)':'Probar Telegram (guarda antes)')+'</button>';
-    html += '<div id="m-telegram-test-status" style="margin-top:10px;font-size:15px;font-weight:700;min-height:22px;text-align:center"></div>';
+    html += '</details>';
     html += '</div>';
     /* Rev741: bloque aisstream.io movido a su propio scope 'aisstream'
        (step "🚢 AIS por internet" del wizard). Menos ruido en Alertas
@@ -18954,6 +19042,18 @@ window.m_wizPluginOptsRenderHtml = function(o, scope, hostId){
        + '<div id="wopt-status-'+hostId+'" style="margin-top:10px;font-size:16px;font-weight:700;min-height:22px"></div>';
   return html;
 };
+window.m_wizMarkStepDone = function(stepId){
+  if (!stepId) return;
+  try {
+    fetch(A+'/wizard/step',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({stepId:stepId, action:'complete', data:{savedAt:Date.now()}})})
+      .catch(function(){});
+    /* Update local cache para que Summary lo pinte verde YA sin esperar
+       siguiente render. */
+    if (_wizardState && Array.isArray(_wizardState.stepsCompleted) && _wizardState.stepsCompleted.indexOf(stepId) < 0){
+      _wizardState.stepsCompleted.push(stepId);
+    }
+  } catch(_){}
+};
 window.m_wizPluginOptsSave = function(scope, hostId){
   var st = document.getElementById('wopt-status-'+hostId);
   var gv = function(id){ var e=document.getElementById(id); return e ? e.value : ''; };
@@ -19008,18 +19108,7 @@ window.m_wizPluginOptsSave = function(scope, hostId){
          del wizard como completado — así el Summary refleja el estado
          real (verde en lugar de rojo). Mapeo scope → stepId. */
       var scopeToStep = { notifications:'notifications', aisstream:'aisFallback', imu:'imu' };
-      var stepId = scopeToStep[scope];
-      if (stepId){
-        try {
-          fetch(A+'/wizard/step',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({stepId:stepId, action:'complete', data:{savedAt:Date.now()}})})
-            .catch(function(){});
-          /* Update local cache para que Summary lo pinte verde YA sin esperar
-             siguiente render. */
-          if (_wizardState && Array.isArray(_wizardState.stepsCompleted) && _wizardState.stepsCompleted.indexOf(stepId) < 0){
-            _wizardState.stepsCompleted.push(stepId);
-          }
-        } catch(_){}
-      }
+      m_wizMarkStepDone(scopeToStep[scope]);
       setTimeout(function(){ m_wizPluginOptsLoadInto(hostId, scope); }, 6000);
     });
 };
