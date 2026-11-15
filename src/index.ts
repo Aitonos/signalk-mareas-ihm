@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev902";
+const PLUGIN_REVISION = "Rev903";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -8104,32 +8104,26 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
   try { _telegramAlarm("gps_lost", true, () => formatTelegramMessage("gps_lost", { elapsedSec: Math.round(elapsed / 1000) }, _currentLang)); } catch { /* defensive */ }
 }
 
-// Rev468: estado interno para detectar salida intencional por motorizado.
-// Rev751 (feedback Carlos "si salimos de fondeo con motor arrancado auto
-// lift anchor, hay un path especifico en SK para motor encendido"): trigger
-// por motor running (propulsion.*.state="started" o revolutions>0)
-// sostenido durante MOTOR_DUR_MS y con SOG > MOTOR_MIN_SOG_KT (evita
-// disparar con motor en ralentí atado a pantalán). Fallback histórico
-// Rev468: SOG > 3 kn durante 60 s (sin motor, o a vela).
-// Rev902 (decisión Carlos tras la auditoría D01): vuelven los dos
-// disparadores de 2.13.4, también con la alarma de garreo sonando (salir sin
-// pulsar levar es lo normal y la alarma sonando ya navegando alarma a la
-// tripulación). Se añade una condición: el barco tiene que AVANZAR DE PROA,
-// rumbo sobre el fondo (COG) a menos de 45° de la proa durante todo el
-// tiempo. Saliendo, a motor o a vela, el COG va con la proa (abatimiento de
-// 20-30° como mucho); garreando, el barco va de costado o de popa, nunca
-// avanza de proa. Sin rumbo o sin COG no se comprueba (como antes).
-// Marcha atrás para salir = no hay auto-lift, se leva a mano.
-const _INTENTIONAL_DEP_SOG_KT = 3.0;
-const _INTENTIONAL_DEP_DUR_MS = 60_000;
-const _INTENTIONAL_MOTOR_DUR_MS = 30_000;   // motor running sostenido
-const _INTENTIONAL_MOTOR_MIN_SOG_KT = 0.5;  // + barco ya moviéndose (no ralentí atado)
+// Rev468: salida intencional del fondeo → auto-lift (desarma la vigilancia).
+// Rev903 (decisión Carlos tras la auditoría D01 y Rev900-902): una sola
+// regla. Fuera del círculo de alarma y AVANZANDO DE PROA (COG a menos de 45°
+// de la proa) a más de 0,5 kn durante 15 s seguidos → auto-lift, con motor o
+// sin él, también con la alarma de garreo sonando (salir sin pulsar levar es
+// lo normal). Por qué:
+//  - Un barco que garrea nunca avanza de proa: va de costado o de popa.
+//  - Fondeado sí avanza de proa a ratos (bornea a vela con rachas, sube hacia
+//    el ancla con viento contra marea), pero sin salir del círculo. Dentro
+//    del círculo nunca hay auto-lift: desarmar en falso deja sin vigilancia.
+// Sin rumbo o sin COG no se puede saber si va de proa: queda la regla
+// histórica Rev468, SOG > 3 kn durante 60 s. Salir marcha atrás = se leva a mano.
+const _INTENTIONAL_BOW_FIRST_MIN_SOG_KT = 0.5;
+const _INTENTIONAL_BOW_FIRST_DUR_MS = 15_000;
 const _INTENTIONAL_BOW_FIRST_MAX_DEG = 45;
+const _INTENTIONAL_DEP_SOG_KT = 3.0;         // sin rumbo/COG
+const _INTENTIONAL_DEP_DUR_MS = 60_000;
 const _NAV_DATA_MAX_AGE_MS = 30_000;
-const _MOTOR_DATA_MAX_AGE_MS = 60_000;      // Rev901: un state="started" viejo no cuenta
 let _intentionalDepartureSinceMs: number | null = null;
-let _intentionalMotorSinceMs: number | null = null;
-let _lastIntentionalTrigger: "sog" | "motor" | null = null;
+let _lastIntentionalTrigger: "bow" | "sog" | null = null;
 /* Rev902: ¿avanza de proa? true / false, o null si falta rumbo o COG (o son
    viejos). Se emparejan verdadero con verdadero y magnético con magnético
    para no meter la declinación. */
@@ -8157,77 +8151,34 @@ function _movingBowFirst(): boolean | null {
   }
   return null;
 }
-function _isAnyMotorRunning(): boolean | null {
-  try {
-    const propulsion = (app as any).getPath?.("vessels.self.propulsion") ?? null;
-    if (!propulsion || typeof propulsion !== "object") return null;
-    const engines = Object.keys(propulsion);
-    if (engines.length === 0) return null;
-    // Rev901: un motor que dejó de publicar no cuenta como arrancado.
-    const _v = (raw: any): any => {
-      if (raw != null && typeof raw === "object" && "value" in raw) {
-        const ts = raw.timestamp ? Date.parse(raw.timestamp) : NaN;
-        if (Number.isFinite(ts) && Date.now() - ts > _MOTOR_DATA_MAX_AGE_MS) return undefined;
-        return raw.value;
-      }
-      return raw;
-    };
-    for (const name of engines) {
-      const eng = (propulsion as any)[name];
-      if (!eng || typeof eng !== "object") continue;
-      const stateVal = _v(eng.state);
-      if (typeof stateVal === "string" && stateVal.toLowerCase() === "started") return true;
-      const rpmVal = _v(eng.revolutions);
-      if (typeof rpmVal === "number" && Number.isFinite(rpmVal) && rpmVal > 0) return true;
-    }
-    return false;
-  } catch { return null; }
-}
-function _checkIntentionalDeparture(sogKt: number): boolean {
-  if (!anchorWatch.anchored) {
-    _intentionalDepartureSinceMs = null;
-    _intentionalMotorSinceMs = null;
-    return false;
-  }
+function _checkIntentionalDeparture(sogKt: number, distM: number, alarmRadiusM: number): boolean {
+  if (!anchorWatch.anchored) { _intentionalDepartureSinceMs = null; return false; }
   const nowMs = monotonicNowMs();
-  // Rev902: de popa o de costado no es una salida; los dos relojes vuelven a 0.
-  if (_movingBowFirst() === false) {
-    _intentionalDepartureSinceMs = null;
-    _intentionalMotorSinceMs = null;
-    return false;
+  const bowFirst = _movingBowFirst();
+  let candidate: "bow" | "sog" | null = null;
+  if (bowFirst === true) {
+    if (distM > alarmRadiusM && sogKt > _INTENTIONAL_BOW_FIRST_MIN_SOG_KT) candidate = "bow";
+  } else if (bowFirst === null) {
+    if (sogKt > _INTENTIONAL_DEP_SOG_KT) candidate = "sog";
   }
-  // Trigger primario: motor running + barco moviéndose (>0.5 kn).
-  if (_isAnyMotorRunning() === true && sogKt > _INTENTIONAL_MOTOR_MIN_SOG_KT) {
-    if (_intentionalMotorSinceMs == null) _intentionalMotorSinceMs = nowMs;
-    if ((nowMs - _intentionalMotorSinceMs) >= _INTENTIONAL_MOTOR_DUR_MS) {
-      _lastIntentionalTrigger = "motor";
-      return true;
-    }
-  } else {
-    _intentionalMotorSinceMs = null;
-  }
-  // Fallback SOG-only (sin motor en SK, o a vela): Rev468.
-  if (sogKt > _INTENTIONAL_DEP_SOG_KT) {
-    if (_intentionalDepartureSinceMs == null) _intentionalDepartureSinceMs = nowMs;
-    if ((nowMs - _intentionalDepartureSinceMs) >= _INTENTIONAL_DEP_DUR_MS) {
-      _lastIntentionalTrigger = "sog";
-      return true;
-    }
-    return false;
-  }
-  _intentionalDepartureSinceMs = null;
-  return false;
+  // bowFirst === false (de costado o de popa) nunca es salida.
+  if (candidate == null) { _intentionalDepartureSinceMs = null; return false; }
+  if (_intentionalDepartureSinceMs == null) _intentionalDepartureSinceMs = nowMs;
+  const needMs = candidate === "bow" ? _INTENTIONAL_BOW_FIRST_DUR_MS : _INTENTIONAL_DEP_DUR_MS;
+  if ((nowMs - _intentionalDepartureSinceMs) < needMs) return false;
+  _lastIntentionalTrigger = candidate;
+  return true;
 }
 async function _autoLiftAnchorIntentional(sogKt: number) {
   const trig = _lastIntentionalTrigger;
-  app.debug(`[IHM-AUTOLIFT] Salida detectada (${trig}): SOG=${sogKt.toFixed(2)} kn, avanzando de proa → auto-lift`);
+  app.debug(`[IHM-AUTOLIFT] Salida detectada (${trig}): SOG=${sogKt.toFixed(2)} kn${trig === "bow" ? ", fuera del círculo avanzando de proa" : " sin rumbo/COG"} → auto-lift`);
   // Replica el flujo de POST /api/anchor-watch/lift sin response HTTP.
   _saveAisAckPending();
   /* Rev736: registrar en activityLog antes de limpiar la posición. Sin req
      (es una acción interna disparada por el evaluador). userAlias = null
      porque nadie manualmente pidió la salida — fue el sistema. */
   const _prevPos = anchorWatch.anchorPosition ? { lat: anchorWatch.anchorPosition.lat, lng: anchorWatch.anchorPosition.lng } : null;
-  _pushActivity({ action: "auto-lift", userAlias: null, position: _prevPos, note: `${trig === "motor" ? "motor + " : ""}SOG ${sogKt.toFixed(1)} kn sostenido, de proa` });
+  _pushActivity({ action: "auto-lift", userAlias: null, position: _prevPos, note: `SOG ${sogKt.toFixed(1)} kn${trig === "bow" ? ", fuera del círculo de proa" : " sostenido"}` });
   _setAnchored(false);
   anchorWatch.anchorPosition = null;
   anchorWatch.anchorOwnerAlias = null;       // Rev592
@@ -8237,7 +8188,6 @@ async function _autoLiftAnchorIntentional(sogKt: number) {
   anchorWatch.aisAlarmEnabled = false;
   anchorWatch.garreoAlarmEnabled = false;
   _lastAisNotifSig = null;
-  _intentionalMotorSinceMs = null;
   _intentionalDepartureSinceMs = null;
   _restartAnchorWatchTimer();
   _restartGustTimer();
@@ -8266,7 +8216,9 @@ async function _autoLiftAnchorIntentional(sogKt: number) {
     app.handleMessage(plugin.id, d);
     _canonicalAnchorStateEmitted = "off"; // Rev775: no re-emitir null cíclico
     // Notificacion explicita del auto-lift.
-    const msg = `Auto-lift: SOG ${sogKt.toFixed(1)} kn sustained, moving bow first (departure assumed)`;
+    const msg = trig === "bow"
+      ? `Auto-lift: outside the alarm circle moving bow first at ${sogKt.toFixed(1)} kn (departure assumed)`
+      : `Auto-lift: SOG ${sogKt.toFixed(1)} kn sustained (departure assumed)`;
     const notifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [
         { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: "Auto-lift (departure)" } },
@@ -8442,22 +8394,6 @@ function evaluateAnchorWatch() {
     return 30; // último recurso defensivo (radio mínimo razonable)
   };
 
-  // === Rev468: Auto-lift por salida motorizada intencional ===
-  // Rev902: motor + SOG > 0,5 kn 30 s, o SOG > 3 kn 60 s, siempre avanzando
-  // de proa (ver _checkIntentionalDeparture). Notificación clara del desarme
-  // automático: si fue garreo real, el usuario vuelve al fondeo.
-  try {
-    let sogMsForLift = 0;
-    try {
-      const v = app.getSelfPath("navigation.speedOverGround");
-      sogMsForLift = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0);
-    } catch {}
-    const sogKtForLift = sogMsForLift * 1.94384;
-    if (_checkIntentionalDeparture(sogKtForLift)) {
-      _autoLiftAnchorIntentional(sogKtForLift);
-      return; // ya no estamos anchored — salir de evaluateAnchorWatch.
-    }
-  } catch { /* never break on auto-lift */ }
 
   // === GARREO DETECTION & RING SIZING ===
   // Bugs 4+5+6 (Deploy 1, 2026-05-02):
@@ -8490,6 +8426,23 @@ function evaluateAnchorWatch() {
     lastAnchorCalc?.swingRadiusMax,                           // 3º cálculo inicial
   );
   const alarmRadius = radiusTotalForRing + anchorWatch.alarmRadiusExtra;
+
+  // === Rev468: Auto-lift por salida intencional ===
+  // Rev903: fuera del círculo de alarma avanzando de proa > 0,5 kn 15 s (ver
+  // _checkIntentionalDeparture). Va aquí porque necesita alarmRadius.
+  // Notificación clara del desarme: si fue garreo real, el usuario vuelve.
+  try {
+    let sogMsForLift = 0;
+    try {
+      const v = app.getSelfPath("navigation.speedOverGround");
+      sogMsForLift = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0);
+    } catch {}
+    const sogKtForLift = sogMsForLift * 1.94384;
+    if (_checkIntentionalDeparture(sogKtForLift, dist, alarmRadius)) {
+      _autoLiftAnchorIntentional(sogKtForLift);
+      return; // ya no estamos anchored — salir de evaluateAnchorWatch.
+    }
+  } catch { /* never break on auto-lift */ }
 
   // Hysteresis (Deploy 1.1): once dragging, stay dragging until dist drops
   // CLEARLY back inside (alarmRadius - 2m). Once cleared, only re-trigger

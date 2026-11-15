@@ -277,17 +277,19 @@ test('telegram: a failed send lets the same kind try again sooner', async () => 
   assert.equal(await go(mockRequest(200, '{"ok":true}')), null, 'a delivered send holds the full minute');
 });
 
-// Rev902 (Carlos, after audit A1): the two 2.13.4 triggers are back (engine
-// + 0.5 kt 30 s, or 3 kt 60 s, also while the drag alarm sounds), but only
-// while the boat moves bow first: a dragging boat goes astern or beam-on.
-test('auto-lift: both triggers, only while moving bow first', () => {
+// Rev903 (Carlos, after audit A1): one rule. Outside the alarm circle and
+// moving bow first above 0.5 kt for 15 s, engine or not, also while the drag
+// alarm sounds. A dragging boat never moves bow first; at anchor a boat can,
+// but inside the circle. Without heading/COG: 3 kt for 60 s.
+test('auto-lift: outside the circle and moving bow first', () => {
   const src = readFileSync(indexTs, 'utf8');
   const start = src.indexOf('function _checkIntentionalDeparture(');
   const body = src.slice(start, src.indexOf('\n}\n', start));
   assert.ok(start >= 0, 'expected _checkIntentionalDeparture');
-  assert.match(body, /if \(_movingBowFirst\(\) === false\)/);
-  assert.match(body, /_isAnyMotorRunning\(\) === true/);
-  assert.match(body, /sogKt > _INTENTIONAL_DEP_SOG_KT/);
+  assert.match(body, /if \(bowFirst === true\) \{\n\s*if \(distM > alarmRadiusM && sogKt > _INTENTIONAL_BOW_FIRST_MIN_SOG_KT\)/);
+  assert.match(body, /\} else if \(bowFirst === null\) \{\n\s*if \(sogKt > _INTENTIONAL_DEP_SOG_KT\)/);
+  assert.doesNotMatch(src, /_isAnyMotorRunning/);
+  assert.match(src, /const _INTENTIONAL_BOW_FIRST_DUR_MS = 15_000;/);
   assert.match(src, /const _INTENTIONAL_BOW_FIRST_MAX_DEG = 45;/);
 });
 

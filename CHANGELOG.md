@@ -1,12 +1,12 @@
 # Changelog
 
-## [Unreleased] (Rev900-902)
+## [Unreleased] (Rev900-903)
 
 ### English
 
 From a code audit cross-checked with two outside reviews.
 
-**Fixed — auto-disarm could silence a real drag (Rev900-902).** Auto-disarm keeps its two triggers (engine running and 0.5 kt for 30 s, or 3 kt for 60 s), and still works after the drag alarm went off, since leaving without tapping "lift" is normal. It now also needs the boat to move bow first: course over ground within 45° of the heading. Leaving, under engine or sail, the boat goes bow first; dragging, it goes beam-on or astern. Without heading or course data the check is skipped. Stale engine data no longer counts as running.
+**Fixed — auto-disarm could silence a real drag (Rev900-903).** Before, 3 kt for 60 s (or engine + 0.5 kt for 30 s) disarmed the watch, also during a real drag. Now there is one rule: outside the alarm circle and moving bow first (course over ground within 45° of the heading) above 0.5 kt for 15 s, under engine or sail. A dragging boat never moves bow first, it goes beam-on or astern; a boat at anchor sometimes does (sailing on its anchor, wind against tide) but inside the circle, where it never disarms. It still works after the drag alarm went off, since leaving without tapping "lift" is normal, and now silences that alarm sooner. Without heading or course data: 3 kt for 60 s, as before.
 
 **Fixed — alarms that could stay quiet (Rev901).**
 - GPS lost: after a restart with the GPS dead and the anchor watch restored, the alarm never fired. It now counts from the first check without a fix.
@@ -33,7 +33,7 @@ From a code audit cross-checked with two outside reviews.
 
 De una auditoría del código cruzada con dos revisiones externas.
 
-**Arreglado — el auto-desarme podía apagar un garreo real (Rev900-902).** El auto-desarme mantiene sus dos disparadores (motor en marcha y 0,5 kn durante 30 s, o 3 kn durante 60 s) y sigue funcionando aunque ya haya saltado la alarma de garreo, porque salir sin pulsar levar es lo normal. Ahora además el barco tiene que avanzar de proa: rumbo sobre el fondo a menos de 45° de la proa. Saliendo, a motor o a vela, el barco va de proa; garreando, va de costado o de popa. Sin datos de rumbo o de rumbo sobre el fondo no se comprueba. Un dato del motor viejo ya no cuenta como motor en marcha.
+**Arreglado — el auto-desarme podía apagar un garreo real (Rev900-903).** Antes, 3 kn durante 60 s (o motor + 0,5 kn durante 30 s) desarmaban la vigilancia, también durante un garreo real. Ahora hay una sola regla: fuera del círculo de alarma y avanzando de proa (rumbo sobre el fondo a menos de 45° de la proa) a más de 0,5 kn durante 15 s, a motor o a vela. Un barco que garrea nunca avanza de proa, va de costado o de popa; fondeado a veces sí (borneando a vela, viento contra marea), pero dentro del círculo, donde nunca se desarma. Sigue funcionando aunque ya haya saltado la alarma de garreo, porque salir sin pulsar levar es lo normal, y ahora la calla antes. Sin datos de rumbo: 3 kn durante 60 s, como antes.
 
 **Arreglado — alarmas que podían quedarse calladas (Rev901).**
 - GPS perdido: tras un reinicio con el GPS muerto y el fondeo restaurado, la alarma no saltaba nunca. Ahora cuenta desde la primera comprobación sin posición.
