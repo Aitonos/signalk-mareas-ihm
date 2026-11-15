@@ -231,6 +231,52 @@ test('telegram: an HTTP error from Telegram is not retried', async () => {
   assert.equal(calls, 1);
 });
 
+// Rev901 (audit D08): a timeout is retried too; a failed send holds the
+// kind only for failRetryMs, a delivered one for the full throttle.
+function timeoutRequest() {
+  return (_url, _opts, _cb) => {
+    const req = new EventEmitter();
+    req.write = () => {};
+    req.destroy = () => {};
+    req.end = () => setImmediate(() => req.emit('timeout'));
+    return req;
+  };
+}
+
+test('telegram: a timeout is retried once and the retry can succeed', async () => {
+  const { sendTelegram } = await loadTelegram();
+  let calls = 0;
+  const slowThenOk = (url, opts, cb) => {
+    calls++;
+    return calls === 1 ? timeoutRequest()(url, opts, cb) : mockRequest(200, '{"ok":true}')(url, opts, cb);
+  };
+  const r = await send(sendTelegram, slowThenOk);
+  assert.equal(r.ok, true);
+  assert.equal(calls, 2);
+});
+
+test('telegram: a failed send lets the same kind try again sooner', async () => {
+  const { sendTelegram } = await loadTelegram();
+  const lastSent = {};
+  let t = 1_000_000;
+  const go = (httpsRequest) => new Promise((resolve) => {
+    const issued = sendTelegram({
+      botToken: 't', chatId: '1', kind: 'garreo', text: 'x', lastSent,
+      httpsRequest, retryDelayMs: 0, nowMs: () => t,
+      throttleMs: 60_000, failRetryMs: 20_000, onResult: resolve,
+    });
+    if (!issued) resolve(null);
+  });
+  const fail = mockRequest(0, '', { error: 'ENETUNREACH' });
+  assert.equal((await go(fail)).ok, false);
+  t += 19_000;
+  assert.equal(await go(fail), null, 'still held right after the failure');
+  t += 2_000;
+  assert.equal((await go(mockRequest(200, '{"ok":true}'))).ok, true);
+  t += 30_000;
+  assert.equal(await go(mockRequest(200, '{"ok":true}')), null, 'a delivered send holds the full minute');
+});
+
 // Rev900 (audit A1): auto-lift must not silence a real drag. No speed-only
 // trigger (a dragging boat drifts at 3-4 kn in a gale), and no auto-lift
 // while the drag alarm is sounding or silenced.
@@ -243,4 +289,38 @@ test('auto-lift: motor only, never during a drag alarm', () => {
   assert.match(body, /_isGarreoSilenced\(\)/);
   assert.match(body, /_isAnyMotorRunning\(\) === true/);
   assert.doesNotMatch(src, /_INTENTIONAL_DEP_SOG_KT/);
+  // Rev901: the bow must have come back near the anchor after being away
+  // from it (lifting), not just be near it after the drop (setting).
+  assert.match(body, /_bowWasFar && bowToAnchorM <= _INTENTIONAL_BOW_NEAR_M/);
+  assert.match(body, /bowWasNear && _isAnyMotorRunning\(\) === true/);
+});
+
+// Rev901 (audit D02, D03, D10, D11, Gemini #8): static checks on the alarm
+// paths that live inside the plugin closure.
+test('gps lost: counted from the first tick without a fix after a restart', () => {
+  const src = readFileSync(indexTs, 'utf8');
+  assert.doesNotMatch(src, /if \(_gpsLastValidMs === 0\) return;/);
+  assert.match(src, /now - \(_gpsLastValidMs \|\| _gpsNoFixSinceMs\)/);
+});
+
+test('grounding: real alarm starts and stops Pi audio, no tide data never clears it', () => {
+  const src = readFileSync(indexTs, 'utf8');
+  assert.match(src, /lastGroundingNotifState = "alarm";\n[^]*?_groundingAlarmRef\?\.start\(\)/);
+  assert.match(src, /!\(tideUnknown && lastGroundingNotifState === "alarm" && enabled && !isSnoozed\)/);
+  assert.doesNotMatch(src, /If we can't compute, treat as no risk/);
+});
+
+test('grounding: the alarm-button silence is the same state the evaluator reads', () => {
+  const src = readFileSync(indexTs, 'utf8');
+  const start = src.indexOf('function _silenceGrounding(');
+  const body = src.slice(start, src.indexOf('\n}\n', start));
+  assert.match(body, /emitNotificationClear\(\)/);
+  assert.match(src, /_silenceActive\(snoozeUntilMs, GROUNDING_SNOOZE_MAX_MIN\) \|\| \(_groundingAlarmRef\?\.silenced\(\) \?\? false\)/);
+});
+
+test('silences: bounded against a clock jumping backwards, snooze max 2 h', () => {
+  const src = readFileSync(indexTs, 'utf8');
+  assert.match(src, /const GROUNDING_SNOOZE_MAX_MIN = 120;/);
+  assert.match(src, /return left > 0 && left <= maxMin \* 60_000;/);
+  assert.doesNotMatch(src, /Math\.min\(24 \* 60, Number\(req\.body\?\.minutes\)/);
 });

@@ -25,8 +25,9 @@ window.addEventListener('pageshow', function(e){
 </script>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJNQVJFQVMgKElITSkiPgogIDxyZWN0IHg9IjAiIHk9IjAiIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMDQzODRhIi8+CiAgPCEtLSBzdW4gLS0+CiAgPGNpcmNsZSBjeD0iNDgiIGN5PSIxOCIgcj0iNiIgZmlsbD0iI2ZmZDE2NiIvPgogIDwhLS0gaXNsYW5kIC0tPgogIDxwYXRoIGQ9Ik0xOCA0MGM2LTYgMTYtNiAyMiAwIiBmaWxsPSIjMGU2YjRmIi8+CiAgPHBhdGggZD0iTTEyIDQyYzEwLTggMzAtOCA0MCAwdjZIMTJ6IiBmaWxsPSIjMGU2YjRmIi8+CiAgPCEtLSBsaWdodGhvdXNlIC0tPgogIDxyZWN0IHg9IjI4IiB5PSIyNCIgd2lkdGg9IjgiIGhlaWdodD0iMTgiIHJ4PSIyIiBmaWxsPSIjZmZmZmZmIi8+CiAgPHJlY3QgeD0iMjciIHk9IjIyIiB3aWR0aD0iMTAiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IiNmZjRiNGIiLz4KICA8cGF0aCBkPSJNMzIgMThsNiA0SDI2eiIgZmlsbD0iI2ZmZmZmZiIvPgogIDwhLS0gd2F2ZXMgLS0+CiAgPHBhdGggZD0iTTEwIDUwYzQgMCA0LTIgOC0yczQgMiA4IDIgNC0yIDgtMiA0IDIgOCAyIDQtMiA4LTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzFhYTZiNyIgc3Ryb2tlLXdpZHRoPSI0IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNMTAgNTZjNCAwIDQtMiA4LTJzNCAyIDggMiA0LTIgOC0yIDQgMiA4IDIgNC0yIDgtMiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMWFhNmI3IiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iMC45Ii8+Cjwvc3ZnPgo=">
 <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22VISOR%20DE%20FONDEO%20%E2%80%93%20Mareas%20IHM%22%2C%22short_name%22%3A%22Visor%20Fondeo%22%2C%22start_url%22%3A%22%2Fsignalk-mareas-ihm%2Fvisorfondeo%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230a1929%22%2C%22theme_color%22%3A%22%230a1929%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22%2Fsignalk-mareas-ihm%2Ficon.svg%22%2C%22sizes%22%3A%22any%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Rev901 (auditoría Gemini #10): Leaflet del propio plugin, no de unpkg: sin internet en una cala no había mapa. -->
+<link rel="stylesheet" href="/signalk-mareas-ihm/vendor/leaflet/leaflet.css"/>
+<script src="/signalk-mareas-ihm/vendor/leaflet/leaflet.js"></script>
 <style>
 :root{--bg:rgba(10,30,50,0.94);--brd:rgba(0,200,100,0.3);--grn:#66ffaa;--org:#ffb23f;--red:#f44336;--blue:#2196F3}
 /* Rev505 (consolidacion LLM GPT+Gemini): single source of truth para todos
@@ -3746,12 +3747,36 @@ function _ihmDedupFetch(url, opts){
    Windy, Nominatim, RainViewer, geocoding externos) van directos sin cambio.
    POSTs y otros metodos passthrough sin dedup. */
 var _IHM_ORIG_FETCH = window.fetch.bind(window);
+/* Rev901: con seguridad en Signal K, el backend pide sesión de Signal K
+   para cambiar nada (403 SK_LOGIN_REQUIRED). Un solo aviso, como mucho
+   cada 30 s, que abre el login de Signal K en otra pestaña. */
+var _mSkLoginAskedMs = 0;
+function _mSkLoginCheck(r){
+  try{
+    if (r && r.status === 403 && Date.now() - _mSkLoginAskedMs > 30000) {
+      r.clone().json().then(function(j){
+        if (!j || j.error !== 'SK_LOGIN_REQUIRED' || Date.now() - _mSkLoginAskedMs <= 30000) return;
+        _mSkLoginAskedMs = Date.now();
+        var en = (_lang==='en');
+        m_confirmDialog(
+          en ? 'Signal K login required' : 'Hace falta iniciar sesión en Signal K',
+          en ? 'Signal K security is on: to change anything you must be logged in to Signal K with a read/write or admin user. Open the Signal K login?'
+             : 'Signal K tiene la seguridad activada: para cambiar algo tienes que haber iniciado sesión en Signal K con un usuario de lectura/escritura o administrador. ¿Abrir el login de Signal K?',
+          function(){ window.open('/admin/#/login', '_blank'); });
+      }).catch(function(){});
+    }
+  }catch(_){}
+  return r;
+}
 window.fetch = function(input, init){
   try{
     var url = (typeof input === 'string') ? input : (input && input.url) || '';
     var m = (init && init.method ? init.method : 'GET').toUpperCase();
     if ((m === 'GET' || m === 'HEAD') && typeof url === 'string' && url.indexOf(B + '/') === 0) {
       return _ihmDedupFetch(url, init);
+    }
+    if (typeof url === 'string' && url.indexOf(B + '/') === 0) {
+      return _IHM_ORIG_FETCH(input, init).then(_mSkLoginCheck);
     }
   }catch(_){}
   return _IHM_ORIG_FETCH(input, init);
@@ -4162,7 +4187,7 @@ window.m_cfgSkPathsRender = function(){
   var html = '';
   if (filter && Object.keys(byGroup).length === 0){
     host.innerHTML = '<div style="padding:20px;color:#888;font-size:18px;text-align:center">'
-      + ((lang==='en')?'No paths match ':'Ningún path contiene ') + '"<b>'+filter+'</b>"</div>';
+      + ((lang==='en')?'No paths match ':'Ningún path contiene ') + '"<b>'+_escHtml(filter)+'</b>"</div>';
     return;
   }
   j.groups.forEach(function(g){
@@ -8866,7 +8891,7 @@ window._meteoSyncStationName = function(sName){
       /* Rev243: guion + doble espacio antes del link. innerHTML colapsa
          espacios consecutivos por defecto, usamos &nbsp; para preservar
          el doble espaciado entre el — y la palabra estación. */
-      stEl.innerHTML = '—&nbsp;&nbsp;<a class="meteo-station-link" data-name="'+sName+'" href="javascript:void(0)" onclick="'+onclickStr+'" title="Cambiar estación (TidesView Mareas)">' + sName + '</a>';
+      stEl.innerHTML = '—&nbsp;&nbsp;<a class="meteo-station-link" data-name="'+_escHtml(sName)+'" href="javascript:void(0)" onclick="'+onclickStr+'" title="Cambiar estación (TidesView Mareas)">' + _escHtml(sName) + '</a>';
     } else {
       stEl.innerHTML = '—&nbsp;&nbsp;…';
     }
@@ -11994,7 +12019,7 @@ function loadAIS(){
 var _isGhost=!!(t.fromCache && t.fromCache.indexOf('position')>=0);
 var mk=L.marker([t.lat,t.lng],{icon:mkAisBoatIcon(lenPx,hdgDeg,t.isStatic,t.aisClass,(typeof t.beam==='number'&&t.beam>0)?m2px(t.beam,z,t.lat):null,t.shipType,_isGhost),zIndexOffset:400});
       mk.on('click',function(){showAisPopup(t);});
-      mk.bindTooltip('<b style="font-size:14px">'+(t.name||'?')+'</b>',{permanent:false,direction:'top',offset:[0,-10]});
+      mk.bindTooltip('<b style="font-size:14px">'+_escHtml(t.name||'?')+'</b>',{permanent:false,direction:'top',offset:[0,-10]});
       aisLyrGroup.addLayer(mk);
       var mmsi=t.mmsi||'?';
       if(!aisTrackHist[mmsi])aisTrackHist[mmsi]=[];
@@ -12042,7 +12067,7 @@ function refreshAisIcons(){
 var _isGhost=!!(t.fromCache && t.fromCache.indexOf('position')>=0);
 var mk=L.marker([t.lat,t.lng],{icon:mkAisBoatIcon(lenPx,hdgDeg,t.isStatic,t.aisClass,(typeof t.beam==='number'&&t.beam>0)?m2px(t.beam,z,t.lat):null,t.shipType,_isGhost),zIndexOffset:400});
     mk.on('click',function(){showAisPopup(t);});
-    mk.bindTooltip('<b style="font-size:14px">'+(t.name||'?')+'</b>',{permanent:false,direction:'top',offset:[0,-10]});
+    mk.bindTooltip('<b style="font-size:14px">'+_escHtml(t.name||'?')+'</b>',{permanent:false,direction:'top',offset:[0,-10]});
     aisLyrGroup.addLayer(mk);
   });
 }
@@ -12286,7 +12311,7 @@ function showAisPopup(t,isBorneo){
      seleccionado aparezca SIN esperar al proximo poll AIS (6s). */
   try{ if(typeof drawAisTracks==='function') drawAisTracks(); }catch(_){}
   var flag=mmsiFlag(cleanMmsi);
-  var displayName=(t.name||'Target AIS')+(flag?' '+flag:'');
+  var displayName=_escHtml(t.name||'Target AIS')+(flag?' '+flag:''); /* Rev901 (D07): el nombre llega por radio */
   var isAcked=!!_aisAckedMMSIs[cleanMmsi];
   var titleEl=document.getElementById('ais-pop-title');
   titleEl.style.opacity='';
@@ -14834,7 +14859,7 @@ function loadCh(){
       cLyrs[ts.id]=ly;
       // MBTiles not auto-added — user activates via checkbox
       // Always use filename, never metadata name (which may be 'unnamed atlas')
-      var displayName=ts.filename||ts.id.replace(/_/g,' ').replace(/-/g,' ');
+      var displayName=_escHtml(ts.filename||ts.id.replace(/_/g,' ').replace(/-/g,' ')); /* Rev901 (D15) */
       var dv=document.createElement('div');dv.className='lyr-row';
       dv.innerHTML='<input type="checkbox" id="chk-'+ts.id+'" onchange="tCh(\''+ts.id+'\',this.checked)" style="width:17px;height:17px;accent-color:var(--grn)"><label for="chk-'+ts.id+'" style="color:#fff;font-size:14px;font-weight:600;cursor:pointer;flex:1">🗺 '+displayName+'</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-ch-'+ts.id+'" style="--val-pct:88.89%">90</span><input type="range" class="lyr-opa" min="10" max="100" value="90" oninput="opaCh(\''+ts.id+'\',this.value);_updLyrVal(\'ch-'+ts.id+'\',this.value)"></div>';
       list.appendChild(dv);
@@ -14971,7 +14996,7 @@ function loadCpCharts(){
       });
       console.log('[IHM-CP] Chart layer:',id,'z'+minNZ+'-'+maxNZ,'url:',url);
       cpLyrs[id]=ly;
-      var displayName=c.name||id;
+      var displayName=_escHtml(c.name||id); /* Rev901 (D15) */
       var safeId=id.replace(/[^a-zA-Z0-9_-]/g,'_');
       var dv=document.createElement('div');dv.className='lyr-row';
       dv.innerHTML='<input type="checkbox" id="chk-cp-'+safeId+'" onchange="tCp(\''+id.replace(/'/g,"\\'")+'\',this.checked)" style="width:17px;height:17px;accent-color:var(--grn)"><label for="chk-cp-'+safeId+'" style="color:#fff;font-size:14px;font-weight:600;cursor:pointer;flex:1">📜 '+displayName+'</label><div class="lyr-slider-wrap"><span class="lyr-val" id="val-cp-'+safeId+'" style="--val-pct:88.89%">90</span><input type="range" class="lyr-opa" min="10" max="100" value="90" oninput="opaCp(\''+id.replace(/'/g,"\\'")+'\',this.value);_updLyrVal(\'cp-'+safeId+'\',this.value)"></div>';
@@ -15309,7 +15334,7 @@ function loadCxCharts(){
           });
           cxLyrs[id]=ly;
         }
-        var displayName=c.name||id;
+        var displayName=_escHtml(c.name||id); /* Rev901 (D15) */
         var safeId=id.replace(/[^a-zA-Z0-9_-]/g,'_');
         var esc=id.replace(/'/g,"\\'");
         var icon=c.configured?'🗺️':'⚠';

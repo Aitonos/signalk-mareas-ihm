@@ -23,7 +23,7 @@ import fs from "fs";
 import os from "os";
 import https from "https";
 import crypto from "crypto";
-import { execFile, type ChildProcess } from "child_process";
+import { exec, execFile, type ChildProcess } from "child_process";
 import { Socket } from "net";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
@@ -46,6 +46,9 @@ import {
   setSecurityLayerEnabled,
   getSecurityLayerEnabled,
   requireControlAccess,
+  requireSkWrite,
+  setSkSecurityStrategy,
+  skSecurityEnabled,
 } from "./access.js";
 import createSources from "./sources/index.js";
 import { stationTimezone, HARDCODED_STATIONS } from "./sources/ihm.js";
@@ -122,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev900";
+const PLUGIN_REVISION = "Rev901";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -190,6 +193,18 @@ function _strictBool(value: unknown): boolean | null {
 // Devolvemos ms para facilidad de uso.
 // Persistencia: usar siempre ISO UTC (Date.toISOString) — el monotónico se
 // pierde al reiniciar y NO se persiste.
+// Rev901 (auditoría Gemini #5): las comprobaciones del asistente y del
+// catálogo de cartas usaban execSync (du -sb hasta 5 s, i2cdetect 3 s...).
+// Mientras, Node no hacía nada más: ni vigilancia de garreo ni alarmas.
+// Mismo contrato que execSync(...).toString(): rechaza si el comando falla.
+function execText(cmd: string, timeoutMs: number, env?: NodeJS.ProcessEnv): Promise<string> {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { timeout: timeoutMs, encoding: "utf-8", env }, (err, stdout) => {
+      if (err) reject(err); else resolve(String(stdout));
+    });
+  });
+}
+
 function monotonicNowMs(): number {
   // bigint nanosegundos → number ms. Pierde precisión <1ms pero es suficiente.
   return Number(process.hrtime.bigint() / 1_000_000n);
@@ -220,6 +235,21 @@ let _appRef: any = null;
 // profundo). Permite que evaluateAndPublishGroundingRisk (scope diferente)
 // pueda llamarlo sin duplicar código.
 let _readDepthValidatedRef: ((draft: number) => any) | null = null;
+// Rev901: audio de la Pi y silencio del botón de alarmas para el evaluador
+// de varada, que vive fuera del ámbito del plugin. Los rellena el plugin.
+let _groundingAlarmRef: { start: () => void; stop: () => void; silenced: () => boolean } | null = null;
+
+// Rev901 (auditoría Gemini #8): sin RTC la hora de la Pi salta. Si salta
+// hacia atrás, un silencio de 5 min podía durar horas. Un silencio al que le
+// quede más que el máximo permitido es un salto de reloj y se da por acabado
+// (hacia delante el salto solo lo acorta). Sobrevive a un reinicio, cosa que
+// el reloj monotónico no haría con alarmSnoozeUntil, que va a disco.
+const ALARM_SILENCE_MAX_MIN = 60;
+const GROUNDING_SNOOZE_MAX_MIN = 120;
+function _silenceActive(untilMs: number, maxMin: number): boolean {
+  const left = untilMs - Date.now();
+  return left > 0 && left <= maxMin * 60_000;
+}
 let _resolveDepthOffsetsRef: (() => { transducerToKeelM: number | null; surfaceToTransducerM: number | null }) | null = null;
 
 // Rev476 HOTFIX: design.draft viene como {value: {maximum: number}} en algunas
@@ -227,6 +257,22 @@ let _resolveDepthOffsetsRef: (() => { transducerToKeelM: number | null; surfaceT
 // NaN → draft=0 → _readDepthValidated cae en "conflict" (belowKeel vs belowSurface
 // difieren por exactamente el draft real). Helper único que maneja TODOS los
 // shapes posibles del path SK design.draft.
+// Rev901 (auditoría B1/D16): rumbo en radianes, o null si no hay. Antes se
+// leía con `?? 0` y `if (!hdg)`: rumbo 0 (norte) se tomaba por ausente, y
+// sin rumbo la proa se proyectaba siempre al norte. Ahora sin rumbo no se
+// proyecta (se usa la antena GPS): un error fijo menor y sin inventar
+// dirección.
+function _readHeadingRad(appRef: any): number | null {
+  for (const p of ["navigation.headingTrue", "navigation.headingMagnetic"]) {
+    try {
+      const v = appRef.getSelfPath(p);
+      const raw = (v && typeof v === "object") ? (v as any).value : v;
+      if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
 function _readSkDraftRobust(appRef: any): number {
   if (!appRef) return 0;
   try {
@@ -1315,6 +1361,11 @@ export default function (app: SignalKApp): Plugin {
   let _pypilotSelfHealTimer: ReturnType<typeof setInterval> | null = null;
   // Rev886: AIS identity enrichment of the SK vessels tree (cleared in stop()).
   let _aisIdentityEnrichTimer: ReturnType<typeof setInterval> | null = null;
+  // Rev901 (auditoría D12): tres setInterval de start() sin parar en stop();
+  // se sumaba uno de cada en cada desactivar/activar del plugin.
+  let _setSystemTimeCheckTimer: ReturnType<typeof setInterval> | null = null;
+  let _subsystemHealthTimer: ReturnType<typeof setInterval> | null = null;
+  let _audioNullSinkTimers: Array<ReturnType<typeof setTimeout>> = [];
   // Rev147: ImuManager — auto-detect IMU source (SK / pypilot local / pypilot
   // remoto / raw I2C). Funciona en paralelo con el bridge pypilot legacy
   // (línea ~3760+) sin pisarlo — el bridge sigue alimentando _feedAccelSample
@@ -1424,6 +1475,10 @@ export default function (app: SignalKApp): Plugin {
       if (_gustSampleTimer) { clearInterval(_gustSampleTimer); _gustSampleTimer = null; }
       if (_pypilotSelfHealTimer) { clearInterval(_pypilotSelfHealTimer); _pypilotSelfHealTimer = null; }
       if (_aisIdentityEnrichTimer) { clearInterval(_aisIdentityEnrichTimer); _aisIdentityEnrichTimer = null; }
+      if (_setSystemTimeCheckTimer) { clearInterval(_setSystemTimeCheckTimer); _setSystemTimeCheckTimer = null; }
+      if (_subsystemHealthTimer) { clearInterval(_subsystemHealthTimer); _subsystemHealthTimer = null; }
+      for (const t of _audioNullSinkTimers) { clearTimeout(t); clearInterval(t); }
+      _audioNullSinkTimers = [];
       // Rev146 (audit fix): quitar listeners de process para que no se
       // acumulen entre disable/enable.
       try { process.off("uncaughtException", _onUncaught); } catch { /* defensive */ }
@@ -1589,6 +1644,19 @@ export default function (app: SignalKApp): Plugin {
       onResult,
     });
   }
+  /* Rev901 (auditoría D08): los avisos de garreo, GPS perdido y varada solo
+     se mandaban al empezar la alarma; si ese envío fallaba (4G), no llegaba
+     nada. Ahora se llama en cada tick mientras la alarma sigue: reintenta
+     hasta que Telegram lo acepta (el freno de sendTelegram espacia los
+     intentos) y después recuerda cada 10 min. `first` = empieza la alarma. */
+  const TELEGRAM_ALARM_REMIND_MS = 10 * 60_000;
+  const _telegramAlarmDeliveredMs: Record<string, number> = {};
+  function _telegramAlarm(kind: string, first: boolean, text: () => string) {
+    if (first) _telegramAlarmDeliveredMs[kind] = 0;
+    const delivered = _telegramAlarmDeliveredMs[kind] || 0;
+    if (delivered && Date.now() - delivered < TELEGRAM_ALARM_REMIND_MS) return;
+    _sendTelegram(kind, text(), (r) => { if (r.ok) _telegramAlarmDeliveredMs[kind] = Date.now(); });
+  }
   /* Rev898: GET a la Bot API. Devuelve el JSON de Telegram ({ok, result}
      o {ok:false, description}) o null si no contesta. */
   function _telegramApi(token: string, method: string, query: string, timeoutMs: number): Promise<any | null> {
@@ -1631,6 +1699,9 @@ export default function (app: SignalKApp): Plugin {
 
   async function start(props: Config) {
     app.debug("Starting signalk-mareas-ihm: " + JSON.stringify(props));
+    // Rev901: con seguridad en Signal K, las rutas que escriben piden sesión
+    // de Signal K (src/access.ts).
+    setSkSecurityStrategy((app as any).securityStrategy);
     // Rev639: sello para warmup guard del grounding evaluator (ver
     // _GROUNDING_WARMUP_MS). Se reinicializa a cada start del plugin.
     _pluginStartedAtMs = Date.now();
@@ -1644,7 +1715,7 @@ export default function (app: SignalKApp): Plugin {
     // + en el state SSE para que el visor muestre banner de advertencia.
     setTimeout(() => { _detectSetSystemTimePlugin().catch(() => {}); }, 5000);
     // Re-probe cada 5 min por si el usuario lo desactiva sin restart de SK.
-    setInterval(() => { _detectSetSystemTimePlugin().catch(() => {}); }, 5 * 60_000);
+    _setSystemTimeCheckTimer = setInterval(() => { _detectSetSystemTimePlugin().catch(() => {}); }, 5 * 60_000);
 
     /* Rev869: watchdog de degradación de subsistemas. Emite SK
        notifications warn en transiciones cuando AIS online lleva >30 min
@@ -1717,7 +1788,7 @@ export default function (app: SignalKApp): Plugin {
     }
     // Primera check 90 s post-boot (deja tiempo a que handles arranquen).
     setTimeout(_emitSubsystemHealth, 90_000);
-    setInterval(_emitSubsystemHealth, 60_000);
+    _subsystemHealthTimer = setInterval(_emitSubsystemHealth, 60_000);
 
     let lastForecast: TideForecastResult | null = null;
     let lastPosition: Position | null = null;
@@ -2956,15 +3027,14 @@ try {
       // nombre técnico como sub-etiqueta. Frontend renderiza label grande,
       // technical pequeño al lado en monospaced.
       const checks: Array<{ id: string; label: string; technical?: string; status: "ok" | "warn" | "error"; message: string; action?: string }> = [];
-      const cp = await import("child_process");
-      const which = (bin: string): string | null => {
+      const which = async (bin: string): Promise<string | null> => {
         try {
-          const out = cp.execSync(`command -v ${bin} 2>/dev/null`, { timeout: 1000 }).toString().trim();
+          const out = (await execText(`command -v ${bin} 2>/dev/null`, 1000)).trim();
           return out || null;
         } catch { return null; }
       };
       // 1. espeak
-      const espeakPath = which("espeak") || which("espeak-ng");
+      const espeakPath = (await which("espeak")) || (await which("espeak-ng"));
       checks.push({
         id: "espeak",
         label: "Voz para alarmas",
@@ -2976,7 +3046,7 @@ try {
       // 2. fonts-noto-color-emoji
       let hasNoto = false;
       try {
-        const out = cp.execSync("fc-list 2>/dev/null | grep -i 'noto color emoji'", { timeout: 2000 }).toString().trim();
+        const out = (await execText("fc-list 2>/dev/null | grep -i 'noto color emoji'", 2000)).trim();
         hasNoto = out.length > 0;
       } catch { /* ignore */ }
       checks.push({
@@ -3131,9 +3201,9 @@ try {
       // de la carpeta Mbtiles"): tamaño del cache del plugin y del dir
       // mbtiles configurado. `du -sh` cuenta bytes en disco. Umbrales:
       // ok <200MB, warn 200-1000MB, error >1GB.
-      const dirSize = (dir: string): { bytes: number | null; human: string | null } => {
+      const dirSize = async (dir: string): Promise<{ bytes: number | null; human: string | null }> => {
         try {
-          const out = cp.execSync(`du -sb "${dir}" 2>/dev/null`, { timeout: 5000 }).toString().trim();
+          const out = (await execText(`du -sb "${dir}" 2>/dev/null`, 5000)).trim();
           const m = out.match(/^(\d+)/);
           if (!m) return { bytes: null, human: null };
           const bytes = Number(m[1]);
@@ -3147,7 +3217,7 @@ try {
       };
       try {
         const pluginCacheDir = (await import("path")).join(app.getDataDirPath(), "ihm");
-        const sizeInfo = dirSize(pluginCacheDir);
+        const sizeInfo = await dirSize(pluginCacheDir);
         if (sizeInfo.bytes != null) {
           const mb = sizeInfo.bytes / 1024 / 1024;
           checks.push({
@@ -3164,7 +3234,7 @@ try {
         const mbDir = ((await ihmCache.get("mbtilesDir")) as string) || "/home/pi/charts";
         const fsX = await import("fs");
         if (fsX.existsSync(mbDir)) {
-          const sizeInfo = dirSize(mbDir);
+          const sizeInfo = await dirSize(mbDir);
           if (sizeInfo.bytes != null) {
             const mb = sizeInfo.bytes / 1024 / 1024;
             checks.push({
@@ -3195,7 +3265,7 @@ try {
       // USB audio detectado, error rojo con explicación.
       try {
         let alsaRaw = "";
-        try { alsaRaw = cp.execSync("aplay -l 2>/dev/null", { timeout: 2000 }).toString(); } catch { /* ignore */ }
+        try { alsaRaw = await execText("aplay -l 2>/dev/null", 2000); } catch { /* ignore */ }
         const usbSpeakerFound = /card\s+\d+:\s*[^\n]*(usb|jieli|cmedia)/i.test(alsaRaw);
         checks.push({
           id: "usb-speaker",
@@ -3265,7 +3335,7 @@ try {
          el Pi de Carlos linger ya está activo (Fase 0), pero este check
          cubre a otros usuarios que instalen desde el App Store. */
       try {
-        const lingerOut = cp.execSync("loginctl show-user pi -p Linger 2>/dev/null", { timeout: 2000, encoding: "utf-8" }).toString().trim();
+        const lingerOut = (await execText("loginctl show-user pi -p Linger 2>/dev/null", 2000)).trim();
         const lingerActive = lingerOut.includes("Linger=yes");
         checks.push({
           id: "linger-pi",
@@ -3288,8 +3358,7 @@ try {
           XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || "/run/user/1000",
           DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS || "unix:path=/run/user/1000/bus",
         };
-        const svcOut = cp.execSync("systemctl --user is-active pipewire pipewire-pulse wireplumber 2>&1",
-          { timeout: 3000, encoding: "utf-8", env: svcEnv }).toString().trim();
+        const svcOut = (await execText("systemctl --user is-active pipewire pipewire-pulse wireplumber 2>&1", 3000, svcEnv)).trim();
         const lines = svcOut.split("\n");
         const allActive = lines.length >= 3 && lines.every(l => l.trim() === "active");
         checks.push({
@@ -3315,9 +3384,8 @@ try {
     // que llegan + salidas de audio ALSA (para altavoz USB).
     expressApp.get("/signalk-mareas-ihm/api/wizard/hardware-check", async (_req: any, res: any) => {
       res.set("Cache-Control", "no-store");
-      const cp = await import("child_process");
-      const runSafe = (cmd: string, timeoutMs = 2000): string => {
-        try { return cp.execSync(cmd, { timeout: timeoutMs }).toString(); } catch { return ""; }
+      const runSafe = async (cmd: string, timeoutMs = 2000): Promise<string> => {
+        try { return await execText(cmd, timeoutMs); } catch { return ""; }
       };
       const info: any = { usb: [], i2c: [], audio: [], skHint: {} };
       // Rev663 (feedback Carlos "solo debemos hacer check sobre lo que
@@ -3326,7 +3394,7 @@ try {
       // alarma), GPS USB, serial USB (para adaptadores NMEA). El resto
       // (hubs, bluetooth, cámaras, teclados, etc) NO nos sirve.
       try {
-        const raw = runSafe("lsusb 2>/dev/null");
+        const raw = await runSafe("lsusb 2>/dev/null");
         const allUsb = raw.split("\n").filter(Boolean).map((line: string) => {
           const m = line.match(/^Bus\s+\d+\s+Device\s+\d+:\s+ID\s+([0-9a-f:]+)\s+(.+)$/i);
           return { id: m ? m[1] : "", desc: m ? m[2] : line };
@@ -3364,7 +3432,7 @@ try {
       } catch { /* ignore */ }
       // I2C devices (i2cdetect -y 1). Requiere permisos; si falla se salta.
       try {
-        const raw = runSafe("i2cdetect -y 1 2>/dev/null", 3000);
+        const raw = await runSafe("i2cdetect -y 1 2>/dev/null", 3000);
         const addrs: string[] = [];
         raw.split("\n").forEach((line: string) => {
           // Filas tipo "10: -- -- -- -- 15 -- -- -- ..."
@@ -3400,7 +3468,7 @@ try {
       } catch { /* ignore */ }
       // ALSA audio outputs (aplay -l). Fuente clave para altavoz USB.
       try {
-        const raw = runSafe("aplay -l 2>/dev/null", 2000);
+        const raw = await runSafe("aplay -l 2>/dev/null", 2000);
         const lines = raw.split("\n").filter(Boolean);
         for (const line of lines) {
           const m = line.match(/^card\s+(\d+):\s+(\S+)\s*\[(.+?)\],\s*device\s+(\d+):\s*(.+?)(\s*\[.+?\])?$/i);
@@ -4399,8 +4467,7 @@ try {
           // Fallback: dpkg-query
           if (!opVersion) {
             try {
-              const cp = await import("child_process");
-              const out = cp.execSync("dpkg-query -W -f='${Version}' openplotter-settings 2>/dev/null", { timeout: 1500 }).toString().trim();
+              const out = (await execText("dpkg-query -W -f='${Version}' openplotter-settings 2>/dev/null", 1500)).trim();
               if (out) opVersion = "opkg-settings:" + out.slice(0, 30);
             } catch { /* ignore */ }
           }
@@ -4758,7 +4825,12 @@ try {
         const osX = await import("os");
         const availMB = Math.round(osX.freemem() / 1024 / 1024);
         const requiredMB = Math.ceil(heapUsedMB * 1.5);
-        const force = req?.query?.force === "1" || req?.body?.force === true;
+        // Rev901 (auditoría Gemini #6): con la capa PIN apagada, cualquiera
+        // podía pedir un volcado con force y tumbar Signal K. force solo con
+        // sesión de maestro o de administrador de Signal K.
+        const _pinS = (global as any)._ihmPinSessionCheck?.(req);
+        const trusted = (_pinS?.valid && _pinS?.isMaster) || req?.skPrincipal?.permissions === "admin";
+        const force = trusted && (req?.query?.force === "1" || req?.body?.force === true);
         if (!force && availMB < requiredMB) {
           return res.status(409).json({
             ok: false,
@@ -4847,7 +4919,7 @@ try {
     // GET del estado del toggle de la capa. Público.
     expressApp.get("/signalk-mareas-ihm/api/access/security-layer", (_req: any, res: any) => {
       res.set("Cache-Control", "no-store");
-      res.json({ enabled: getSecurityLayerEnabled() });
+      res.json({ enabled: getSecurityLayerEnabled(), skSecurity: skSecurityEnabled() });
     });
     // POST para cambiar el toggle.
     //   - Activar primera vez sin maestro creado → 409 NO_MASTER (UI debe
@@ -4855,7 +4927,7 @@ try {
     //   - Activar con maestro creado → SOLO maestro autenticado.
     //   - Desactivar con capa ON → SOLO maestro autenticado.
     //   - Desactivar con capa ya OFF → no-op público (idempotente).
-    expressApp.post("/signalk-mareas-ihm/api/access/security-layer", async (req: any, res: any) => {
+    expressApp.post("/signalk-mareas-ihm/api/access/security-layer", requireSkWrite, async (req: any, res: any) => {
       const body = req.body || {};
       const desired = body.enabled === true || body.enabled === "true";
       const current = getSecurityLayerEnabled();
@@ -5014,6 +5086,21 @@ try {
       device: string;
     }
     const _pinSessions = new Map<string, PinSession>();
+    // Rev901 (auditoría D06): borrar un PIN o cambiarlo no cerraba sus
+    // sesiones; quien ya estaba dentro seguía con permisos hasta 1 año.
+    // keepTok = la sesión de quien hace el cambio (el maestro cambiando su PIN).
+    function _dropPinSessionsOf(alias: string, keepTok: string | null): number {
+      let n = 0;
+      for (const tok of Array.from(_pinSessions.keys())) {
+        if (tok !== keepTok && _pinSessions.get(tok)?.alias === alias) { _pinSessions.delete(tok); n++; }
+      }
+      if (n > 0) void _persistPinSessions();
+      return n;
+    }
+    function _pinTokFromReq(req: any): string | null {
+      const m = /(?:^|; )ihm_pin_session=([a-f0-9]+)/.exec(String(req?.headers?.cookie || ""));
+      return m ? m[1] : null;
+    }
     // Rev790: persistir sesiones PIN en disco para que sobrevivan restarts
     // del server (bug Carlos 2026-07-28: cada deploy -Restart borraba las
     // sesiones activas, y los visores seguían con la cookie muerta →
@@ -5178,7 +5265,7 @@ try {
     //   - Si NO hay PINs → crea el maestro. No requiere cookie. Ignora level
     //     (será 'master').
     //   - Si SÍ hay PINs → requiere cookie de maestro. Crea un PIN invitado.
-    expressApp.post("/signalk-mareas-ihm/api/access/pin-set", async (req: any, res: any) => {
+    expressApp.post("/signalk-mareas-ihm/api/access/pin-set", requireSkWrite, async (req: any, res: any) => {
       res.set("Cache-Control", "no-store");
       const body = req.body || {};
       const pin = String(body.pin || "");
@@ -5336,6 +5423,7 @@ try {
         target.hash = newHash;
         target.pin = newPin;
         await savePins(pins);
+        _dropPinSessionsOf(target.alias, _pinTokFromReq(req)); // Rev901 (D06)
         res.json({ ok: true, alias: target.alias });
       } catch (e: any) {
         res.status(500).json({ ok: false, error: "PIN_CHANGE_PWD_ERROR", message: e?.message ?? "unknown" });
@@ -5477,6 +5565,7 @@ try {
         if (target.isMaster) { res.status(400).json({ ok: false, error: "CANNOT_DELETE_MASTER" }); return; }
         const filtered = pins.filter(p => p.alias !== alias);
         await savePins(filtered);
+        _dropPinSessionsOf(alias, null); // Rev901 (D06)
         res.json({ ok: true, remaining: filtered.length });
       } catch (e: any) {
         res.status(500).json({ ok: false, error: "PIN_DELETE_ERROR", message: e?.message ?? "unknown" });
@@ -6287,12 +6376,14 @@ function emitNotificationClear() {
     app.handleMessage(plugin.id, clearDelta);
     lastGroundingNotifState = "normal"; // v1.2.1: "normal" not "cleared" — prevents re-emit on next cycle
   } catch { /* never break user action */ }
+  try { _piAlarmStop("grounding"); } catch { /* defensive */ } // Rev901 (D10)
 }
 
 // Snooze grounding alarm notifications (minutes)
 expressApp.post("/signalk-mareas-ihm/api/snooze", requireControlAccess, async (req: any, res: any) => {
   try {
-    const minutes = Math.max(1, Math.min(24 * 60, Number(req.body?.minutes) || 20));
+    // Rev901: máximo 2 h (antes 24 h, decisión Carlos).
+    const minutes = Math.max(1, Math.min(GROUNDING_SNOOZE_MAX_MIN, Number(req.body?.minutes) || 20));
     const untilMs = Date.now() + (minutes * 60_000);
     await ihmCache.set("alarmSnoozeUntil", untilMs);
     emitNotificationClear(); // v1.125: stop sound IMMEDIATELY
@@ -6353,9 +6444,13 @@ expressApp.post("/signalk-mareas-ihm/api/anchor/config", requireControlAccess, a
     // saving from one UI silently resets fields managed by another UI.
     const prev: Partial<AnchorConfig> = (await ihmCache.get("anchorConfig")) as any || {};
     const fallback = (key: keyof AnchorConfig) => (prev[key] !== undefined ? prev[key] : ANCHOR_DEFAULTS[key]) as number;
+    // Rev901 (auditoría Gemini #11): `|| fallback` convertía un 0 en el valor
+    // anterior; 0 es válido para la altura de proa y el transductor.
+    const num0 = (v: any, key: keyof AnchorConfig): number =>
+      (v !== undefined && v !== null && v !== "" && Number.isFinite(Number(v))) ? Number(v) : fallback(key);
     const cfg: AnchorConfig = {
-      hBowMeters: Math.max(0, Math.min(10, Number(b.hBowMeters) || fallback("hBowMeters"))),
-      zTxMeters: Math.max(0, Math.min(5, Number(b.zTxMeters) || fallback("zTxMeters"))),
+      hBowMeters: Math.max(0, Math.min(10, num0(b.hBowMeters, "hBowMeters"))),
+      zTxMeters: Math.max(0, Math.min(5, num0(b.zTxMeters, "zTxMeters"))),
       scopeBasic: Math.max(1, Math.min(12, Number(b.scopeBasic) || fallback("scopeBasic"))),
       scopeNormal: Math.max(1, Math.min(12, Number(b.scopeNormal) || fallback("scopeNormal"))),
       scopeHard: Math.max(1, Math.min(12, Number(b.scopeHard) || fallback("scopeHard"))),
@@ -6674,9 +6769,10 @@ function scanMBTiles() {
     if (!fs.existsSync(mbtilesDir)) { app.debug(`[IHM] MBTiles dir not found: ${mbtilesDir}`); return; }
     const files = fs.readdirSync(mbtilesDir).filter((f: string) => f.endsWith(".mbtiles"));
     for (const file of files) {
+      let db: any = null;
       try {
         const fp = path.join(mbtilesDir, file);
-        const db = new BetterSqlite3(fp, { readonly: true, fileMustExist: true });
+        db = new BetterSqlite3(fp, { readonly: true, fileMustExist: true });
         // Read metadata
         const rows = db.prepare("SELECT name, value FROM metadata").all();
         const md: Record<string, string> = {};
@@ -6721,7 +6817,11 @@ function scanMBTiles() {
         tilesets.set(id, { db, meta });
         app.debug(`[IHM] MBTiles loaded: ${id} file="${friendlyFilename}" (meta.name="${meta.name}") z${actualMinZoom}-${actualMaxZoom} avail=[${availableZooms.join(',')}] tms=${meta.tms}`);
 
-      } catch (e: any) { app.debug(`[IHM] MBTiles error ${file}: ${e?.message}`); }
+      } catch (e: any) {
+        app.debug(`[IHM] MBTiles error ${file}: ${e?.message}`);
+        // Rev901 (auditoría Gemini #9): un .mbtiles roto dejaba la base abierta.
+        try { db?.close(); } catch { /* ok */ }
+      }
     }
   } catch (e: any) { app.debug(`[IHM] MBTiles scan error: ${e?.message}`); }
 }
@@ -7878,6 +7978,11 @@ function _recordTrackPoint(bowLat: number, bowLng: number) {
 // porque sin GPS no podemos calcular distancia al ancla ni detectar garreo.
 const GPS_LOST_TIMEOUT_MS = 60_000; // 60s sin GPS válido = perdido
 let _gpsLastValidMs = 0;
+// Rev901 (auditoría 2026-11-14, D02): primer tick sin fix desde el último
+// válido. Si no ha habido fix desde el arranque (_gpsLastValidMs == 0), el
+// tiempo sin GPS se cuenta desde aquí: antes un reinicio con el GPS muerto
+// y el fondeo restaurado del disco no alarmaba nunca.
+let _gpsNoFixSinceMs = 0;
 let _gpsLostAlarmActive = false;
 // Rev358: persistencia de la última posición GPS conocida. Permite a otros
 // consumidores (shelter, weather, etc.) tener un fallback usable cuando el
@@ -7937,6 +8042,7 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
   if (lat != null && lng != null && isFinite(lat) && isFinite(lng)) {
     const wasLost = _gpsLostAlarmActive;
     _gpsLastValidMs = now;
+    _gpsNoFixSinceMs = 0;
     // Rev358: persistir la última posición conocida (cada ~60s).
     if (now - _lastKnownGpsPersistedAt > LASTKNOWN_PERSIST_INTERVAL_MS) {
       _lastKnownGpsCache = { lat, lng, ts: now };
@@ -7964,15 +8070,18 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
     return;
   }
   // No hay GPS válido ahora. Solo alarmar si estamos anchored Y llevamos
-  // suficiente tiempo sin GPS. Si nunca tuvimos GPS (_gpsLastValidMs == 0),
-  // dar margen inicial — quizá el plugin acaba de arrancar.
+  // suficiente tiempo sin GPS. Sin fix desde el arranque, se cuenta desde el
+  // primer tick sin fix (Rev901): el mismo margen de 60 s.
+  if (_gpsNoFixSinceMs === 0) _gpsNoFixSinceMs = now;
   if (!anchorWatch.anchored) return;
   // Rev354: respeta el toggle del usuario. Si está deshabilitada, no dispara.
   if (anchorWatch.gpsLostAlarmEnabled === false) return;
-  if (_gpsLastValidMs === 0) return; // sin baseline, no podemos juzgar timeout
-  const elapsed = now - _gpsLastValidMs;
+  const elapsed = now - (_gpsLastValidMs || _gpsNoFixSinceMs);
   if (elapsed < GPS_LOST_TIMEOUT_MS) return;
-  if (_gpsLostAlarmActive) return; // ya activa
+  if (_gpsLostAlarmActive) { // ya activa: Telegram hasta que llegue (Rev901)
+    try { _telegramAlarm("gps_lost", false, () => formatTelegramMessage("gps_lost", { elapsedSec: Math.round(elapsed / 1000) }, _currentLang)); } catch { /* defensive */ }
+    return;
+  }
   _gpsLostAlarmActive = true;
   app.debug(`[IHM-GPS] alarma GPS-lost ABIERTA (${Math.round(elapsed / 1000)}s sin GPS, fondeado)`);
   try {
@@ -7992,7 +8101,7 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
   // aún → fallback a espeak con la frase configurada (Rev353 añadiría OGG).
   try { _piAlarmStart('gps_lost'); } catch { /* defensive */ }
   // Telegram push.
-  try { _sendTelegram("gps_lost", formatTelegramMessage("gps_lost", { elapsedSec: Math.round(elapsed / 1000) }, _currentLang)); } catch { /* defensive */ }
+  try { _telegramAlarm("gps_lost", true, () => formatTelegramMessage("gps_lost", { elapsedSec: Math.round(elapsed / 1000) }, _currentLang)); } catch { /* defensive */ }
 }
 
 // Rev468: estado interno para detectar salida intencional por motorizado.
@@ -8007,9 +8116,25 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
 // alarma de garreo al minuto. Sin motor en SK no hay auto-lift: se leva a
 // mano. Y nunca con la alarma de garreo sonando (motor arrancado para
 // luchar contra el garreo), tampoco con el garreo silenciado.
+// Rev901 (decisión Carlos, auditoría D01): además, la proa tiene que haber
+// pasado cerca del ancla en los últimos minutos. Al levar se va a motor
+// hasta encima del ancla; un garreo aleja el barco del ancla y nunca lo
+// lleva encima. Así un motor en marcha fondeado con un garreo lento ya no
+// leva solo. 15 m cubren el error del GPS y fondear pulsando un poco tarde.
+// Solo cuenta si antes la proa se alejó más de 20 m desde que se fondeó: al
+// fondear la proa está encima del ancla y luego se da atrás a motor para
+// clavarla, y eso no es una salida. Con cadena muy corta (nunca a más de
+// 20 m) no hay auto-lift: se leva a mano.
 const _INTENTIONAL_MOTOR_DUR_MS = 30_000;   // motor running sostenido
 const _INTENTIONAL_MOTOR_MIN_SOG_KT = 0.5;  // + barco ya moviéndose (no ralentí atado)
+const _INTENTIONAL_BOW_NEAR_M = 15;
+const _INTENTIONAL_BOW_FAR_M = 20;
+const _INTENTIONAL_BOW_NEAR_WINDOW_MS = 10 * 60_000;
+const _MOTOR_DATA_MAX_AGE_MS = 60_000;      // un state="started" viejo no cuenta
 let _intentionalMotorSinceMs: number | null = null;
+let _bowNearAnchorAtMs: number | null = null;
+let _bowWasFar = false;
+let _bowTrackAnchoredSince: number | null = null; // fondeo al que se refieren los dos de arriba
 /* Rev751: escanea propulsion.* en el árbol SK para detectar cualquier
    motor arrancado. Devuelve:
    - true → hay al menos un motor con state="started" o revolutions>0.
@@ -8022,7 +8147,15 @@ function _isAnyMotorRunning(): boolean | null {
     if (!propulsion || typeof propulsion !== "object") return null;
     const engines = Object.keys(propulsion);
     if (engines.length === 0) return null;
-    const _v = (raw: any): any => (raw != null && typeof raw === "object" && "value" in raw) ? (raw as any).value : raw;
+    // Rev901: un motor que dejó de publicar no cuenta como arrancado.
+    const _v = (raw: any): any => {
+      if (raw != null && typeof raw === "object" && "value" in raw) {
+        const ts = raw.timestamp ? Date.parse(raw.timestamp) : NaN;
+        if (Number.isFinite(ts) && Date.now() - ts > _MOTOR_DATA_MAX_AGE_MS) return undefined;
+        return raw.value;
+      }
+      return raw;
+    };
     for (const name of engines) {
       const eng = (propulsion as any)[name];
       if (!eng || typeof eng !== "object") continue;
@@ -8034,13 +8167,24 @@ function _isAnyMotorRunning(): boolean | null {
     return false;
   } catch { return null; }
 }
-function _checkIntentionalDeparture(sogKt: number): boolean {
+function _checkIntentionalDeparture(sogKt: number, bowToAnchorM: number): boolean {
   if (!anchorWatch.anchored || anchorDragAlarmActive || _isGarreoSilenced()) {
     _intentionalMotorSinceMs = null;
+    _bowNearAnchorAtMs = null;
     return false;
   }
-  const nowMs = Date.now();
-  if (_isAnyMotorRunning() === true && sogKt > _INTENTIONAL_MOTOR_MIN_SOG_KT) {
+  if (_bowTrackAnchoredSince !== anchorWatch.anchoredSinceMs) { // fondeo nuevo
+    _bowTrackAnchoredSince = anchorWatch.anchoredSinceMs;
+    _bowWasFar = false;
+    _bowNearAnchorAtMs = null;
+  }
+  const nowMs = monotonicNowMs();
+  if (Number.isFinite(bowToAnchorM)) {
+    if (bowToAnchorM > _INTENTIONAL_BOW_FAR_M) _bowWasFar = true;
+    else if (_bowWasFar && bowToAnchorM <= _INTENTIONAL_BOW_NEAR_M) _bowNearAnchorAtMs = nowMs;
+  }
+  const bowWasNear = _bowNearAnchorAtMs != null && (nowMs - _bowNearAnchorAtMs) <= _INTENTIONAL_BOW_NEAR_WINDOW_MS;
+  if (bowWasNear && _isAnyMotorRunning() === true && sogKt > _INTENTIONAL_MOTOR_MIN_SOG_KT) {
     if (_intentionalMotorSinceMs == null) _intentionalMotorSinceMs = nowMs;
     return (nowMs - _intentionalMotorSinceMs) >= _INTENTIONAL_MOTOR_DUR_MS;
   }
@@ -8066,6 +8210,7 @@ async function _autoLiftAnchorIntentional(sogKt: number) {
   anchorWatch.garreoAlarmEnabled = false;
   _lastAisNotifSig = null;
   _intentionalMotorSinceMs = null;
+  _bowNearAnchorAtMs = null;
   _restartAnchorWatchTimer();
   _restartGustTimer();
   try { await ihmCache.set("anchorWatch", anchorWatch); } catch { /* persist non-critical */ }
@@ -8178,13 +8323,13 @@ function evaluateAnchorWatch() {
   let bowLng: number | null = null;
   let dLen = 12;
   if (lat != null && lng != null) {
-    let hdg = 0;
-    try { const v = app.getSelfPath("navigation.headingTrue"); hdg = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
-    if (!hdg) { try { const v = app.getSelfPath("navigation.headingMagnetic"); hdg = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {} }
+    const _hdgR = _readHeadingRad(app); // Rev901 (D16)
+    let hdg = _hdgR ?? 0;
     let bowOff = 0;
     try { const v = app.getSelfPath("sensors.gps.fromBow"); bowOff = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
     try { const v = app.getSelfPath("design.length"); if (typeof v === "object") dLen = (v as any).value?.overall ?? (v as any).overall ?? 12; else if (typeof v === "number") dLen = v; } catch {}
     if (!bowOff || bowOff <= 0) bowOff = dLen * 0.35;
+    if (_hdgR == null) bowOff = 0; // sin rumbo no se proyecta la proa
     bowLat = lat + (bowOff * Math.cos(hdg)) / 111320;
     bowLng = lng + (bowOff * Math.sin(hdg)) / (111320 * Math.cos(lat * Math.PI / 180));
     _recordTrackPoint(bowLat, bowLng);
@@ -8270,11 +8415,9 @@ function evaluateAnchorWatch() {
   };
 
   // === Rev468: Auto-lift por salida motorizada intencional ===
-  // Si SOG > 3 kn sostenido durante >60s estando anchored, asumimos salida
-  // intencional (motor encendido, navegando) y auto-levamos en lugar de
-  // dejar sonar la alarma de garreo indefinidamente. Notificacion clara para
-  // que el usuario sepa que el desarme fue automatico — si fue garreo real
-  // catastrofico, sabra volver al fondeo.
+  // Rev901: motor en marcha + SOG > 0,5 kn 30 s + proa pasada cerca del ancla
+  // en los últimos 10 min, y nunca con el garreo sonando o silenciado (ver
+  // _checkIntentionalDeparture). Notificación clara del desarme automático.
   try {
     let sogMsForLift = 0;
     try {
@@ -8282,7 +8425,7 @@ function evaluateAnchorWatch() {
       sogMsForLift = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0);
     } catch {}
     const sogKtForLift = sogMsForLift * 1.94384;
-    if (_checkIntentionalDeparture(sogKtForLift)) {
+    if (_checkIntentionalDeparture(sogKtForLift, dist)) {
       _autoLiftAnchorIntentional(sogKtForLift);
       return; // ya no estamos anchored — salir de evaluateAnchorWatch.
     }
@@ -8368,16 +8511,15 @@ function evaluateAnchorWatch() {
     // Rev42: start Pi audio engine on FIRST transition. Independent of any
     // browser. Only stop on dragging→clear or alarm disable.
     // Rev44: skipped if user has silenced via OP/KIP/visor ACK.
-    if (isFirstEmit) {
-      _piAlarmStart('garreo');
-      // Rev166: Telegram push — solo al PRIMER emit (no en cada re-emit cada
-      // minuto). Throttle interno de _sendTelegram evita duplicados si la
-      // alarma flapea por GPS noise. Mensaje con distancia y radio para que
-      // el usuario decida si volver al barco.
+    if (isFirstEmit) _piAlarmStart('garreo');
+    // Rev166: Telegram push con distancia y radio para que el usuario decida
+    // si volver al barco. Rev901 (D08): en cada tick mientras dure, hasta que
+    // llegue y luego cada 10 min (_telegramAlarm).
+    try {
       const distM = Math.round(dist);
       const radM  = Math.round(alarmRadius);
-      _sendTelegram("garreo", formatTelegramMessage("garreo", { distM, radM }, _currentLang));
-    }
+      _telegramAlarm("garreo", isFirstEmit, () => formatTelegramMessage("garreo", { distM, radM }, _currentLang));
+    } catch { /* non-critical */ }
     if (isFirstEmit || minuteElapsed) {
       _lastDragEmitMs = nowMs;
       try {
@@ -8671,7 +8813,7 @@ function evaluateAnchorWatch() {
         if (selfMmsi && _extractMmsi(id) === selfMmsi) continue;
         const v = vessel as any;
         const pos = v?.navigation?.position?.value;
-        if (!pos?.latitude || !pos?.longitude) continue;
+        if (!Number.isFinite(pos?.latitude) || !Number.isFinite(pos?.longitude)) continue; // Rev901 (D14): 0 es válido
         const dAis = haversineM(anchorWatch.anchorPosition.lat, anchorWatch.anchorPosition.lng, pos.latitude, pos.longitude);
         // Per-target threshold: add target length (fallback 10m for Class B AIS
         // that doesn't broadcast dimensions — typical pleasure boat / sailboat).
@@ -9552,7 +9694,6 @@ expressApp.get("/signalk-mareas-ihm/api/mbtiles", async (_req: any, res: any) =>
   // ocupan"): tamaño de cada .mbtiles + total del directorio.
   const fs = await import("fs");
   const pathMod = await import("path");
-  const cp2 = await import("child_process");
   const humanBytes = (b: number | null): string | null => {
     if (b == null || !isFinite(b)) return null;
     if (b > 1024 * 1024 * 1024) return `${(b / 1024 / 1024 / 1024).toFixed(2)} GB`;
@@ -9575,7 +9716,7 @@ expressApp.get("/signalk-mareas-ihm/api/mbtiles", async (_req: any, res: any) =>
   });
   let dirSizeBytes: number | null = null;
   try {
-    const out = cp2.execSync(`du -sb "${mbtilesDir}" 2>/dev/null`, { timeout: 3000 }).toString().trim();
+    const out = (await execText(`du -sb "${mbtilesDir}" 2>/dev/null`, 3000)).trim();
     const m = out.match(/^(\d+)/);
     if (m) dirSizeBytes = Number(m[1]);
   } catch { /* ignore */ }
@@ -10162,14 +10303,14 @@ function getAnchorWatchState() {
   let dragging = false;
   if (anchorWatch.anchored && anchorWatch.anchorPosition && lat != null && lng != null) {
     // Distance from BOW to anchor (same as evaluateAnchorWatch)
-    let hdgState = 0;
-    try { const v = app.getSelfPath("navigation.headingTrue"); hdgState = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
-    if (!hdgState) { try { const v = app.getSelfPath("navigation.headingMagnetic"); hdgState = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {} }
+    const _hdgR = _readHeadingRad(app); // Rev901 (D16)
+    let hdgState = _hdgR ?? 0;
     let bowOffState = 0;
     try { const v = app.getSelfPath("sensors.gps.fromBow"); bowOffState = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
     let dLenState = 12;
     try { const v = app.getSelfPath("design.length"); if (typeof v === "object") dLenState = (v as any).value?.overall ?? (v as any).overall ?? 12; else if (typeof v === "number") dLenState = v; } catch {}
     if (!bowOffState || bowOffState <= 0) bowOffState = dLenState * 0.35;
+    if (_hdgR == null) bowOffState = 0; // sin rumbo no se proyecta la proa
     const bowLatState = lat + (bowOffState * Math.cos(hdgState)) / 111320;
     const bowLngState = lng + (bowOffState * Math.sin(hdgState)) / (111320 * Math.cos(lat * Math.PI / 180));
     currentDistance = haversineM(bowLatState, bowLngState, anchorWatch.anchorPosition.lat, anchorWatch.anchorPosition.lng);
@@ -10465,6 +10606,18 @@ function getAnchorWatchState() {
   }
 }
 
+// Rev901 (auditoría D09): write() devuelve false cuando el cliente no lee,
+// y se ignoraba. Un móvil que se queda sin cobertura sin cerrar el socket
+// acumulaba en memoria un estado cada 10 s (y en cada evento). Por encima
+// de este pendiente se corta; el visor se reconecta solo al volver.
+const SSE_MAX_PENDING_BYTES = 2 * 1024 * 1024;
+const SSE_MAX_CLIENTS = 30;
+function _sseDrop(client: any, why: string) {
+  sseClients.delete(client);
+  try { client.destroy?.(); } catch { /* already closed */ }
+  app.debug(`[SSE] client dropped (${why}); ${sseClients.size} left`);
+}
+
 /** Broadcast state to all SSE clients — fully crash-proof */
 function broadcastSSE(eventName?: string) {
   if (sseClients.size === 0) return;
@@ -10479,7 +10632,10 @@ function broadcastSSE(eventName?: string) {
   // Copy set to avoid modification during iteration
   const clients = Array.from(sseClients);
   for (const client of clients) {
-    try { client.write(payload); } catch { sseClients.delete(client); }
+    try {
+      if ((client.writableLength ?? 0) > SSE_MAX_PENDING_BYTES) { _sseDrop(client, "not reading"); continue; }
+      client.write(payload);
+    } catch { sseClients.delete(client); }
   }
 }
 
@@ -10501,6 +10657,12 @@ expressApp.get("/signalk-mareas-ihm/api/sse", (req: any, res: any) => {
       res.write(`event: state\ndata: ${JSON.stringify(state)}\n\n`);
       res.write(`event: connected\ndata: {"clients":${sseClients.size + 1}}\n\n`);
     } catch { /* initial write failed — client probably disconnected */ }
+    // Rev901 (D09): tope de conexiones; sobra la más antigua (la que más
+    // probablemente sea un móvil que se fue sin cerrar).
+    while (sseClients.size >= SSE_MAX_CLIENTS) {
+      const oldest = sseClients.values().next().value;
+      _sseDrop(oldest, "too many clients");
+    }
     sseClients.add(res);
     app.debug(`[SSE] Client connected (${sseClients.size} total)`);
     req.on("close", () => { sseClients.delete(res); });
@@ -13536,9 +13698,9 @@ let _aisSilencedUntil = 0;
 // Rev480: snooze grounding. Antes el botón snooze del visor solo callaba AIS y
 // el usuario reportaba "sirena loca de grounding no se apaga" (QA barco).
 let _groundingSilencedUntil = 0;
-function _isGarreoSilenced(): boolean { return Date.now() < _garreoSilencedUntil; }
-function _isAisSilenced(): boolean { return Date.now() < _aisSilencedUntil; }
-function _isGroundingSilenced(): boolean { return Date.now() < _groundingSilencedUntil; }
+function _isGarreoSilenced(): boolean { return _silenceActive(_garreoSilencedUntil, ALARM_SILENCE_MAX_MIN); }
+function _isAisSilenced(): boolean { return _silenceActive(_aisSilencedUntil, ALARM_SILENCE_MAX_MIN); }
+function _isGroundingSilenced(): boolean { return _silenceActive(_groundingSilencedUntil, ALARM_SILENCE_MAX_MIN); }
 function _silenceGarreo(minutes: number) {
   _garreoSilencedUntil = Date.now() + minutes * 60_000;
   _piAlarmStop("garreo");
@@ -13580,21 +13742,20 @@ function _silenceAis(minutes: number) {
 // Rev480: snooze grounding — para el audio Pi y reseta el sig para reemitir
 // fresco cuando la ventana expire si el riesgo persiste. La FSM reflejará
 // notification.state="snoozed" mientras dure (visto via _buildGroundingFSM).
+// Rev901 (auditoría D11): antes ponía en normal otra ruta (groundingRisk)
+// sin tocar lastGroundingNotifState, y el evaluador no miraba este silencio:
+// al acabar no se reemitía nada. Ahora limpia la ruta de la alarma con el
+// mismo helper que /api/snooze, y el evaluador cuenta este silencio.
 function _silenceGrounding(minutes: number) {
   _groundingSilencedUntil = Date.now() + minutes * 60_000;
-  try { _piAlarmStop("grounding"); } catch { /* defensive */ }
-  try {
-    const delta: Delta = {
-      context: ("vessels." + app.selfId) as Context,
-      updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
-        path: "notifications.signalk-mareas-ihm.groundingRisk" as any,
-        value: { state: "normal", method: [] as string[], message: `Silenced ${minutes} min` },
-      }]}],
-    };
-    app.handleMessage(plugin.id, delta);
-  } catch { /* defensive */ }
+  emitNotificationClear();
   app.debug(`[IHM-GROUNDING] silenced for ${minutes} min`);
 }
+_groundingAlarmRef = {
+  start: () => _piAlarmStart("grounding"),
+  stop: () => _piAlarmStop("grounding"),
+  silenced: _isGroundingSilenced,
+};
 
 // In-memory language cache, refreshed when /api/settings POST changes lang.
 // Declaration lives near other plugin forward decls (Rev766); boot load here.
@@ -14781,8 +14942,7 @@ function _checkAudioNullSink(): void {
     } catch { /* non-critical */ }
   }).catch(() => { /* non-critical */ });
 }
-setTimeout(_checkAudioNullSink, 60_000);
-setInterval(_checkAudioNullSink, 10 * 60_000);
+_audioNullSinkTimers = [setTimeout(_checkAudioNullSink, 60_000), setInterval(_checkAudioNullSink, 10 * 60_000)];
 
 // Rev106: el init del bridge pypilot vive ahora en start() para tener acceso
 // a `props`. El forward-decl `_pypilotInitOuter` se asignó arriba a la función
@@ -15095,7 +15255,7 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
       if (selfMmsi && _extractMmsi(id) === selfMmsi) continue;
       const v = vessel as any;
       const pos = v?.navigation?.position?.value;
-      if (!pos?.latitude || !pos?.longitude) continue;
+      if (!Number.isFinite(pos?.latitude) || !Number.isFinite(pos?.longitude)) continue; // Rev901 (D14): 0 es válido
       /* Rev758 (feedback Carlos "los nombres van saliendo poco a poco,
          nuestro AIS no parece el primero"): saltarse vessels que hemos
          republishado nosotros mismos desde aisstream/aishub/aisfriends.
@@ -15374,14 +15534,14 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", requireControlAcces
       const gpsLat = (pos as any)?.value?.latitude ?? (pos as any)?.latitude;
       const gpsLng = (pos as any)?.value?.longitude ?? (pos as any)?.longitude;
       if (typeof gpsLat === "number" && typeof gpsLng === "number") {
-        let hdg = 0;
-        try { const v = app.getSelfPath("navigation.headingTrue"); hdg = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
-        if (!hdg) { try { const v = app.getSelfPath("navigation.headingMagnetic"); hdg = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {} }
+        const _hdgR = _readHeadingRad(app); // Rev901 (D16)
+        let hdg = _hdgR ?? 0;
         let bowOff = 0;
         try { const v = app.getSelfPath("sensors.gps.fromBow"); bowOff = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
         let dLen = 12;
         try { const v = app.getSelfPath("design.length"); if (typeof v === "object") dLen = (v as any).value?.overall ?? (v as any).overall ?? 12; else if (typeof v === "number") dLen = v; } catch {}
         if (!bowOff || bowOff <= 0) bowOff = dLen * 0.35;
+        if (_hdgR == null) bowOff = 0; // sin rumbo no se proyecta la proa
         lat = gpsLat + (bowOff * Math.cos(hdg)) / 111320;
         lng = gpsLng + (bowOff * Math.sin(hdg)) / (111320 * Math.cos(gpsLat * Math.PI / 180));
       }
@@ -15571,14 +15731,14 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/toggle", requireControlAcc
       const gLat = (pos as any)?.value?.latitude ?? (pos as any)?.latitude;
       const gLng = (pos as any)?.value?.longitude ?? (pos as any)?.longitude;
       if (typeof gLat === "number" && typeof gLng === "number") {
-        let hdg = 0;
-        try { const v = app.getSelfPath("navigation.headingTrue"); hdg = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
-        if (!hdg) { try { const v = app.getSelfPath("navigation.headingMagnetic"); hdg = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {} }
+        const _hdgR = _readHeadingRad(app); // Rev901 (D16)
+        let hdg = _hdgR ?? 0;
         let bowOff = 0;
         try { const v = app.getSelfPath("sensors.gps.fromBow"); bowOff = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
         let dLen = 12;
         try { const v = app.getSelfPath("design.length"); if (typeof v === "object") dLen = (v as any).value?.overall ?? (v as any).overall ?? 12; else if (typeof v === "number") dLen = v; } catch {}
         if (!bowOff || bowOff <= 0) bowOff = dLen * 0.35;
+        if (_hdgR == null) bowOff = 0; // sin rumbo no se proyecta la proa
         lat = gLat + (bowOff * Math.cos(hdg)) / 111320;
         lng = gLng + (bowOff * Math.sin(hdg)) / (111320 * Math.cos(gLat * Math.PI / 180));
       }
@@ -15697,14 +15857,14 @@ try {
           const gLat = (pos as any)?.value?.latitude ?? (pos as any)?.latitude;
           const gLng = (pos as any)?.value?.longitude ?? (pos as any)?.longitude;
           if (typeof gLat === "number" && typeof gLng === "number") {
-            let hdg = 0;
-            try { const v = app.getSelfPath("navigation.headingTrue"); hdg = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
-            if (!hdg) { try { const v = app.getSelfPath("navigation.headingMagnetic"); hdg = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {} }
+            const _hdgR = _readHeadingRad(app); // Rev901 (D16)
+            let hdg = _hdgR ?? 0;
             let bowOff = 0;
             try { const v = app.getSelfPath("sensors.gps.fromBow"); bowOff = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
             let dLen = 12;
             try { const v = app.getSelfPath("design.length"); if (typeof v === "object") dLen = (v as any).value?.overall ?? (v as any).overall ?? 12; else if (typeof v === "number") dLen = v; } catch {}
             if (!bowOff || bowOff <= 0) bowOff = dLen * 0.35;
+            if (_hdgR == null) bowOff = 0; // sin rumbo no se proyecta la proa
             lat = gLat + (bowOff * Math.cos(hdg)) / 111320;
             lng = gLng + (bowOff * Math.sin(hdg)) / (111320 * Math.cos(gLat * Math.PI / 180));
           }
@@ -16902,7 +17062,7 @@ expressApp.get("/signalk-mareas-ihm/api/chart-proxy/:id/:z/:x/:y", async (req: a
 // 💤 + tiempo restante en tiempo real.
 expressApp.post("/signalk-mareas-ihm/api/anchor-watch/silence-alarm", requireControlAccess, (req: any, res: any) => {
   const kind = String(req?.body?.kind ?? "");
-  const minutes = Math.max(1, Math.min(60, Number(req?.body?.minutes ?? ALARM_SILENCE_DEFAULT_MIN)));
+  const minutes = Math.max(1, Math.min(ALARM_SILENCE_MAX_MIN, Number(req?.body?.minutes ?? ALARM_SILENCE_DEFAULT_MIN)));
   if (kind === "garreo") {
     _silenceGarreo(minutes);
     broadcastSSE("silence");
@@ -18017,8 +18177,17 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
       }
     }
 
-    // Physical risk at expected minimum (next low). If we can't compute, treat as no risk.
-    const physicalRisk = (expectedMinDepth != null && eff != null) ? (expectedMinDepth < eff) : false;
+    // Physical risk at expected minimum (next low).
+    // Rev901 (auditoría D03): sin bajamar calculable (extremos vacíos o
+    // caducados) antes se daba "sin riesgo" y se limpiaba una alarma activa
+    // aunque la sonda ya marcase poco fondo. Ahora se juzga con la sonda
+    // actual (riesgo ya presente = 0 min) y una alarma activa se mantiene.
+    const tideUnknown = expectedMinDepth == null && depthNow != null;
+    let physicalRisk = false;
+    if (eff != null) {
+      if (expectedMinDepth != null) physicalRisk = expectedMinDepth < eff;
+      else if (depthNow != null && depthNow < eff) { physicalRisk = true; minutesToRisk = 0; }
+    }
 
     // Alarm timing logic: the checkboxes control WHEN to alert, not IF physics exist.
     const alertOnArrival = alarmaCfg?.alertOnArrival !== false;
@@ -18027,7 +18196,9 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
 
     // Snooze logic (notification only)
     const snoozeUntilMs = Number((await ihmCache.get("alarmSnoozeUntil")) as any) || 0;
-    const isSnoozed = snoozeUntilMs > now.getTime();
+    // Rev901: también el silencio del botón de alarmas (D11), y acotado a 2 h
+    // contra saltos de reloj.
+    const isSnoozed = _silenceActive(snoozeUntilMs, GROUNDING_SNOOZE_MAX_MIN) || (_groundingAlarmRef?.silenced() ?? false);
 
     // Sub-mode logic:
     //  - alertOnArrival: warn whenever physicalRisk is true (24h horizon = next low tide)
@@ -18076,6 +18247,8 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
         : `GROUNDING RISK`;
       const depthLine = `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
       message = `${minsLine}\n${depthLine}`;
+    } else if (tideUnknown) {
+      message = `NO TIDE DATA\nCurrent depth: ${depthNow!.toFixed(2)} m`;
     } else {
       const okLine = "NO RISK";
       const depthLine = `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
@@ -18176,6 +18349,7 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
     // v1.126: Reverted to physicalRisk. KIP/external instruments need the real situation.
     const status = physicalRisk
     ? tr("RIESGO DE VARADA", "GROUNDING RISK")
+    : tideUnknown ? tr("SIN DATOS DE MAREA", "NO TIDE DATA")
     : tr("SIN RIESGO", "NO RISK");
 
     vesselValues.push({ path: "environment.tide.vessel.groundingStatus", value: status });
@@ -18233,11 +18407,17 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
       };
       app.handleMessage(plugin.id, notifDelta);
       lastGroundingNotifState = "alarm";
+      // Rev901 (auditoría D10): la varada real no arrancaba el audio de la Pi,
+      // solo la prueba. _piAlarmStart ya respeta el mute global.
+      if (alarmaCfg?.soundMuted !== true) { try { _groundingAlarmRef?.start(); } catch { /* defensive */ } }
       // Rev897: el mensaje de arranque de Telegram promete garreo/AIS/varada,
       // pero la varada nunca se mandaba.
-      try { _sendTelegram("grounding", formatTelegramMessage("grounding", { detail: String(message ?? "") }, _currentLang)); } catch { /* non-critical */ }
-    } else if (!shouldNotify && lastGroundingNotifState !== "normal") {
+      try { _telegramAlarm("grounding", true, () => formatTelegramMessage("grounding", { detail: String(message ?? "") }, _currentLang)); } catch { /* non-critical */ }
+    } else if (!shouldNotify && lastGroundingNotifState !== "normal"
+               && !(tideUnknown && lastGroundingNotifState === "alarm" && enabled && !isSnoozed)) {
       // TRANSITION → clear: covers both "alarm"→"normal" AND "cleared"→"normal" (startup)
+      // Rev901 (D03): sin datos de marea una alarma activa no se limpia.
+      try { _groundingAlarmRef?.stop(); } catch { /* defensive */ }
       const clearDelta: Delta = {
         context: ("vessels." + app.selfId) as Context,
         updates: [{
@@ -18252,6 +18432,9 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
       lastGroundingNotifState = "normal";
     }
     // If already "cleared" or "normal" and no risk → do nothing (no spam).
+    if (shouldNotify && lastGroundingNotifState === "alarm") { // Rev901 (D08)
+      try { _telegramAlarm("grounding", false, () => formatTelegramMessage("grounding", { detail: String(message ?? "") }, _currentLang)); } catch { /* non-critical */ }
+    }
   } catch (e: any) {
     // Never break tide updates because of alarm errors — pero al menos lo logueamos.
     // Rev146 (audit fix): antes este catch era silente y un fallo de IO/SK

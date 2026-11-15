@@ -10,6 +10,8 @@ import https from "https";
 import type { ClientRequest, IncomingMessage, RequestOptions } from "http";
 
 export const TELEGRAM_THROTTLE_MS = 60_000;
+/** Rev901: after a failed send, the same kind may try again this soon. */
+export const TELEGRAM_FAIL_RETRY_MS = 20_000;
 
 export type TelegramLang = "es" | "en";
 
@@ -49,6 +51,8 @@ export interface TelegramSendOptions {
   nowMs?: () => number;
   /** Rev899: wait before the single retry after a connection error. */
   retryDelayMs?: number;
+  /** Rev901: how soon the same kind may try again after a failed send. */
+  failRetryMs?: number;
 }
 
 export interface TelegramResult {
@@ -78,7 +82,11 @@ export function sendTelegram(opts: TelegramSendOptions): boolean {
   if (now - (opts.lastSent[opts.kind] || 0) < throttleMs) {
     return false;
   }
+  // Rev901 (auditoría D08 + Gemini #3): the throttle is set now so two sends
+  // of one kind never overlap, but a failed send only holds the kind for
+  // failRetryMs instead of the full minute.
   opts.lastSent[opts.kind] = now;
+  const failRetryMs = opts.failRetryMs ?? TELEGRAM_FAIL_RETRY_MS;
 
   const url = `https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendMessage`;
   const payload = JSON.stringify({
@@ -92,11 +100,28 @@ export function sendTelegram(opts: TelegramSendOptions): boolean {
   const report = (r: TelegramResult) => {
     if (reported) return;
     reported = true;
+    if (!r.ok && opts.lastSent[opts.kind] === now) {
+      opts.lastSent[opts.kind] = now - throttleMs + failRetryMs;
+    }
     try { opts.onResult?.(r); } catch { /* caller bug — ignore */ }
   };
 
   const attempt = (retry: boolean): void => {
     let gotResponse = false;
+    let failed = false; // this attempt already handled (timeout, then error)
+    // Rev899: on the boat's 4G the first connection sometimes fails at once
+    // and the next one works. Retry once if Telegram never answered.
+    // Rev901: a timeout too: the message may arrive twice, but an alarm must
+    // not be lost.
+    const fail = (description: string): void => {
+      if (failed) return;
+      failed = true;
+      if (retry && !gotResponse && !reported) {
+        setTimeout(() => attempt(false), opts.retryDelayMs ?? 2000);
+        return;
+      }
+      report({ ok: false, status: null, description });
+    };
     const req = request(
       url,
       {
@@ -122,17 +147,11 @@ export function sendTelegram(opts: TelegramSendOptions): boolean {
     );
     req.on("error", (e: Error) => {
       debug(`[IHM-TELEGRAM] send failed: ${e?.message || e}`);
-      // Rev899: on the boat's 4G the first connection sometimes fails at once
-      // and the next one works. Retry once if Telegram never answered (the
-      // message was not delivered); an alarm must not be lost to that.
-      if (retry && !gotResponse && !reported) {
-        setTimeout(() => attempt(false), opts.retryDelayMs ?? 2000);
-        return;
-      }
-      report({ ok: false, status: null, description: String(e?.message || e) });
+      fail(String(e?.message || e));
     });
     req.on("timeout", () => {
-      report({ ok: false, status: null, description: "timeout" });
+      debug("[IHM-TELEGRAM] send timed out");
+      fail("timeout");
       try { req.destroy(); } catch { /* ignore */ }
     });
     req.write(payload);

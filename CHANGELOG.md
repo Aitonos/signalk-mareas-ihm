@@ -1,5 +1,61 @@
 # Changelog
 
+## [Unreleased] (Rev900-901)
+
+### English
+
+From a code audit cross-checked with two outside reviews.
+
+**Fixed — auto-disarm could silence a real drag (Rev900-901).** The speed-only trigger (3 kt for 60 s, for boats without engine data) is gone: a boat dragging in a gale drifts that fast. Auto-disarm now needs the engine running, 0.5 kt for 30 s, and the bow back over the anchor (within 15 m) in the last 10 minutes, after it had been away from it. A drag moves the boat away from the anchor and never over it. Never while the drag alarm sounds or is silenced. Stale engine data no longer counts as running.
+
+**Fixed — alarms that could stay quiet (Rev901).**
+- GPS lost: after a restart with the GPS dead and the anchor watch restored, the alarm never fired. It now counts from the first check without a fix.
+- Grounding: with no low tide to compute (empty or old tide data), the plugin said "no risk" and cleared an active alarm. It now judges from the current depth and keeps an active alarm.
+- Grounding: a real alarm did not sound on the Pi, only the test did. It does now, and stops with it.
+- Grounding: after silencing from the alarm button, the alarm did not come back when the silence ended. It does now.
+- Telegram: drag, GPS-lost and grounding messages were sent once, when the alarm started; if that send failed, nothing arrived. They are now retried until Telegram accepts them, then repeated every 10 minutes while the alarm lasts. A timeout is retried too.
+- Silences are bounded against the Pi clock jumping backwards, and the grounding snooze is limited to 2 hours (was 24).
+
+**Changed — Signal K security is respected (Rev901).** If Signal K security is on, the actions that change something (drop/lift, alarms, settings, Telegram) need a Signal K login with a read/write or admin user. Before, anyone on the boat network could lift the anchor or silence the drag alarm, because the plugin routes are not covered by Signal K. Without Signal K security nothing changes. The viewer offers to open the Signal K login.
+
+**Fixed — other (Rev900-901).**
+- State files are written atomically (temporary file, flush, rename); a broken file is set aside and logged instead of read as empty.
+- Deleting or changing a PIN now closes its open sessions.
+- Three timers kept running after the plugin was disabled, and added up on each restart.
+- A phone that stops reading the live updates without closing the connection no longer makes Signal K's memory grow.
+- The viewer loads its map library from the plugin, not from the internet: the map works in an anchorage with no internet.
+- The wizard checks no longer block Signal K while they run.
+- AIS targets at latitude or longitude 0 are no longer ignored; a heading of 0 (north) is no longer taken as missing, and without heading the bow is not projected.
+- AIS, chart and tide station names are escaped in the viewer.
+- Bow height and transducer offset can be set back to 0.
+
+### Español
+
+De una auditoría del código cruzada con dos revisiones externas.
+
+**Arreglado — el auto-desarme podía apagar un garreo real (Rev900-901).** Se quita el disparador solo por velocidad (3 kn durante 60 s, para barcos sin datos del motor): un barco que garrea en un temporal deriva así de rápido. Ahora hace falta el motor en marcha, 0,5 kn durante 30 s y que la proa haya vuelto encima del ancla (a menos de 15 m) en los últimos 10 minutos, después de haberse alejado. Un garreo aleja el barco del ancla y nunca lo pone encima. Nunca con la alarma de garreo sonando o silenciada. Un dato del motor viejo ya no cuenta como motor en marcha.
+
+**Arreglado — alarmas que podían quedarse calladas (Rev901).**
+- GPS perdido: tras un reinicio con el GPS muerto y el fondeo restaurado, la alarma no saltaba nunca. Ahora cuenta desde la primera comprobación sin posición.
+- Varada: sin bajamar calculable (datos de marea vacíos o viejos), el plugin decía «sin riesgo» y limpiaba una alarma activa. Ahora juzga con la sonda actual y mantiene la alarma activa.
+- Varada: la alarma real no sonaba en la Pi, solo la prueba. Ahora suena, y se para con ella.
+- Varada: tras silenciarla desde el botón de alarmas, no volvía al acabar el silencio. Ahora sí.
+- Telegram: los avisos de garreo, GPS perdido y varada se mandaban una vez, al empezar la alarma; si ese envío fallaba, no llegaba nada. Ahora se reintentan hasta que Telegram los acepta y se repiten cada 10 minutos mientras dure la alarma. También se reintenta tras un timeout.
+- Los silencios están acotados contra saltos hacia atrás del reloj de la Pi, y el silencio de varada tiene un máximo de 2 horas (antes 24).
+
+**Cambiado — se respeta la seguridad de Signal K (Rev901).** Si Signal K tiene la seguridad activada, las acciones que cambian algo (echar/levar, alarmas, ajustes, Telegram) piden haber iniciado sesión en Signal K con un usuario de lectura/escritura o administrador. Antes, cualquiera en la red del barco podía levar el ancla o silenciar el garreo, porque Signal K no protege las rutas del plugin. Sin seguridad en Signal K no cambia nada. El visor ofrece abrir el login de Signal K.
+
+**Arreglado — otros (Rev900-901).**
+- Los ficheros de estado se escriben de forma atómica (fichero temporal, volcado a disco, renombrado); un fichero roto se aparta y se avisa en el log en vez de leerse como vacío.
+- Borrar o cambiar un PIN cierra sus sesiones abiertas.
+- Tres temporizadores seguían en marcha con el plugin desactivado y se sumaban en cada reinicio.
+- Un móvil que deja de leer las actualizaciones sin cerrar la conexión ya no hace crecer la memoria de Signal K.
+- El visor carga la librería del mapa desde el plugin, no desde internet: el mapa funciona en una cala sin internet.
+- Las comprobaciones del asistente ya no bloquean Signal K mientras se hacen.
+- Los blancos AIS en latitud o longitud 0 ya no se ignoran; un rumbo 0 (norte) ya no se toma por ausente, y sin rumbo no se proyecta la proa.
+- Los nombres de AIS, cartas y estaciones de marea se escapan en el visor.
+- La altura de proa y el offset del transductor se pueden volver a poner a 0.
+
 ## [2.13.4] - 2026-11-14
 
 ### English

@@ -56,7 +56,7 @@ Most anchor watch apps are paid, closed source, single-device and tied to a vend
 - **Predictive swing radius** combining depth, chain deployed and tide cycle for the actual swing area over the next 12 h — not a static circle.
 - **Two chain calculation methods**: classic ratio and the Vicente method (15 + 2 × depth).
 - **Drag detection** with audible siren that bypasses user mute for safety.
-- **Auto-disarm when leaving under engine**: if Signal K reports the engine running and the boat moves above 0.5 kt for 30 s, the watch disarms automatically. Never while the drag alarm is sounding or silenced, and never on speed alone: a dragging boat can drift at 3-4 kt in a gale. Without engine data in Signal K, lift in the app.
+- **Auto-disarm when leaving under engine**: if Signal K reports the engine running, the boat moves above 0.5 kt for 30 s, and in the last 10 minutes the bow came back over the anchor (within 15 m, as when you motor up to lift it), the watch disarms automatically. A dragging boat moves away from the anchor and never passes over it. Never while the drag alarm is sounding or silenced, and never on speed alone. Without engine data in Signal K, or with very short scope, lift in the app.
 - **GPS track** with time-gradient colouring so you can see exactly where the boat has been.
 - **Favourite anchorages** saved with a custom name (or auto-named from geolocation), synced across all your devices via the backend.
 
@@ -133,7 +133,7 @@ Most anchor watch apps are paid, closed source, single-device and tied to a vend
 - **Notes** and **PIN visible to master** — the master opens the guest card and sees their current PIN in plain text (the file lives on the owner's Pi, treated as boat-local).
 - **Active users list** shows each open session with device (OS · browser), IP and remaining minutes/hours/days. The master can revoke any guest session remotely.
 - **Master session persistent** (1 year cookie TTL) — the owner does not have to re-enter PIN every 30 minutes. Guest sessions match the PIN's expiry.
-- **Zero Signal K account setup required**. No `/admin/#/security` fiddling; everything is inside the plugin.
+- **Signal K security is respected**. Without security in Signal K, nothing to set up. If Signal K security is on, changing anything (drop/lift, alarms, settings) also needs a Signal K login with a read/write or admin user in that browser; the viewer offers to open the login.
 
 ### URLs
 
@@ -272,7 +272,7 @@ La mayoría de apps de anchor watch son de pago, código cerrado, un solo dispos
 - **Radio de borneo predictivo**: combina sonda, cadena largada y ciclo de marea para predecir el área real de borneo en las próximas 12 h — no un círculo estático.
 - **Dos métodos de cálculo de cadena**: ratio clásico y método Vicente (15 + 2 × sonda).
 - **Detección de garreo** con sirena audible que bypassa el mute del usuario por seguridad.
-- **Auto-desarme al salir a motor**: si Signal K dice que el motor está en marcha y el barco va a más de 0,5 kn durante 30 s, la vigilancia se desarma sola. Nunca con la alarma de garreo sonando o silenciada, y nunca solo por velocidad: un barco que garrea en un temporal puede derivar a 3-4 kn. Sin datos del motor en Signal K, leva en la app.
+- **Auto-desarme al salir a motor**: si Signal K dice que el motor está en marcha, el barco va a más de 0,5 kn durante 30 s y en los últimos 10 minutos la proa ha vuelto encima del ancla (a menos de 15 m, como al ir a motor a levarla), la vigilancia se desarma sola. Un barco que garrea se aleja del ancla y nunca pasa por encima. Nunca con la alarma de garreo sonando o silenciada, y nunca solo por velocidad. Sin datos del motor en Signal K, o con muy poca cadena, leva en la app.
 - **Track GPS** con coloreado por gradiente temporal para ver exactamente por dónde ha pasado el barco.
 - **Fondeos favoritos** guardados con nombre personalizado (o auto-nombrados por geolocalización), sincronizados entre todos tus dispositivos vía backend.
 
@@ -349,7 +349,7 @@ La mayoría de apps de anchor watch son de pago, código cerrado, un solo dispos
 - **Notas** y **PIN visible al maestro** — el maestro abre la ficha del invitado y ve su PIN en claro (el fichero vive en la Pi del propio armador, tratado como local del barco).
 - **Lista de usuarios activos** muestra cada sesión con dispositivo (OS · navegador), IP y minutos/horas/días restantes. El maestro puede revocar cualquier sesión de invitado desde su terminal.
 - **Sesión del maestro persistente** (cookie TTL 1 año) — el armador no re-introduce PIN cada 30 minutos. Las sesiones de invitado se ajustan a la caducidad de su PIN.
-- **Cero setup de cuentas Signal K**. No hay que tocar `/admin/#/security`; todo vive dentro del plugin.
+- **Respeta la seguridad de Signal K**. Sin seguridad en Signal K no hay nada que configurar. Si Signal K tiene la seguridad activada, para cambiar algo (echar/levar, alarmas, ajustes) hace falta además haber iniciado sesión en Signal K en ese navegador con un usuario de lectura/escritura o administrador; el visor ofrece abrir el login.
 
 ### URLs
 
