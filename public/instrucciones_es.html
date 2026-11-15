@@ -152,6 +152,7 @@ Donde <strong>R_cadena</strong> es la proyección horizontal de la cadena lascad
 <ul>
   <li><strong>Alarma de garreo:</strong> si la posición GPS del barco supera el círculo rojo (con 2 m de histéresis), salta sirena audible y aviso de voz. La sirena tiene prioridad sobre el mute de usuario por seguridad — siempre dentro de los límites que permita el sistema operativo y el navegador.</li>
   <li><strong>Auto-desarme al salir:</strong> cuando el barco está <strong>fuera del círculo de alarma</strong> y <strong>avanza de proa</strong> (rumbo sobre el fondo a menos de 45° de la proa) a más de <strong>0,5 nudos durante 15 segundos</strong>, la vigilancia se desarma sola, a motor o a vela, aunque ya haya saltado la alarma de garreo: no hace falta pulsar levar. Un barco que garrea nunca avanza de proa (va de costado o de popa). Fondeado a veces sí, al bornear con rachas o con viento contra marea, pero sin salir del círculo; por eso dentro del círculo nunca se desarma. Sin datos de rumbo, se desarma a más de <strong>3 nudos durante 60 segundos</strong>. Recibes una notificación en Signal K y por Telegram. Si sales marcha atrás, leva en la app.</li>
+  <li><strong>Alarma de GPS perdido:</strong> fondeado, si pasan 60 segundos sin posición GPS válida salta la alarma (sin GPS no se puede vigilar el garreo). Desde 2.14.0 también tras un reinicio de la Pi con el GPS sin señal.</li>
   <li><strong>Track GPS con gradiente temporal:</strong> oscuro = antiguo, claro = reciente. Útil para validar visualmente el patrón de borneo después de un rato fondeado.</li>
   <li><strong>Fondeos favoritos:</strong> guarda un fondeo con nombre personalizado o auto-nombre por geolocalización. Sincronizados entre dispositivos a través del backend.</li>
 </ul>
@@ -222,7 +223,7 @@ Donde <strong>R_cadena</strong> es la proyección horizontal de la cadena lascad
 <h4>9.2 Alarma de varada</h4>
 <p>El calado efectivo se define como:</p>
 <div class="callout">
-calado_efectivo = (calado_base + margen_seguridad) × 1,15
+calado_efectivo = calado_base + margen_seguridad
 </div>
 <p>La alarma compara la profundidad futura proyectada con ese calado efectivo. La proyección se calcula así:</p>
 <div class="callout blue">
@@ -233,8 +234,10 @@ profundidad_futura = profundidad_actual + (marea_actual − marea_futura)
 <ul>
   <li><strong>Aviso 24 h:</strong> detecta riesgo dentro del horizonte configurado.</li>
   <li><strong>Alarma anticipada:</strong> avisa X minutos antes del momento estimado de pérdida de calado, con sonido audible.</li>
-  <li><strong>Posponer:</strong> retrasa el aviso sin borrar el riesgo.</li>
+  <li><strong>Posponer:</strong> retrasa el aviso sin borrar el riesgo, como mucho 2 horas. Al acabar, si el riesgo sigue, la alarma vuelve.</li>
   <li><strong>Silenciar sonido:</strong> desactiva el audio pero mantiene la alerta visual y el estado en Signal K.</li>
+  <li><strong>Audio en la Pi:</strong> la alarma real de varada suena también por el altavoz de la Pi, no solo en los navegadores.</li>
+  <li><strong>Sin datos de marea:</strong> si no hay una bajamar calculable (datos de marea vacíos o viejos), el estado pasa a «SIN DATOS DE MAREA». El plugin juzga entonces con la sonda actual: si ya hay menos agua que el calado efectivo, avisa. Una alarma que ya estaba sonando no se apaga por quedarse sin datos.</li>
 </ul>
 
 <div class="callout">
@@ -253,6 +256,7 @@ profundidad_futura = profundidad_actual + (marea_actual − marea_futura)
   <li>Pulsa <strong>Abrir mi bot</strong> y, en Telegram, <strong>Iniciar</strong>. El plugin lo detecta y te manda un mensaje.</li>
   <li><strong>Probar Telegram</strong> y <strong>Probar alarmas</strong> (misma pantalla) mandan mensajes de prueba. Si algo falla, el visor enseña lo que contesta Telegram.</li>
 </ol>
+<p>Los avisos de garreo, GPS perdido y varada se reintentan hasta que Telegram los acepta (útil con 4G inestable) y se repiten cada 10 minutos mientras dure la alarma.</p>
 <p>Hace falta internet a bordo. Telegram es complementario: no sustituye al audio del barco.</p>
 
 <!-- ---------------------------------------------------------------- -->
@@ -281,7 +285,9 @@ profundidad_futura = profundidad_actual + (marea_actual − marea_futura)
   <li><strong>Cerrar sesión:</strong> arriba de Configuración, bloque "🔓 Mi sesión", botón "Cerrar sesión". Tanto maestro como invitado pueden salir.</li>
   <li><strong>Si nadie tiene el PIN maestro:</strong> el fichero <code>~/.signalk/plugin-config-data/mareas-ihm/ihm/securityPins.json</code> guarda los PINs (en el propio Pi del armador). Borrarlo resetea el control a "sin usuarios". No hay recovery por correo — el barco es local.</li>
   <li><strong>Desactivar el control:</strong> el maestro puede volver el toggle a OFF en cualquier momento; entonces todo funciona como antes (sin PIN para nada).</li>
+  <li><strong>Borrar o cambiar un PIN</strong> cierra al momento las sesiones abiertas con ese PIN.</li>
 </ul>
+<p><strong>Seguridad de Signal K (desde 2.14.0).</strong> Si Signal K tiene la seguridad activada (Server → Security), para cambiar cualquier cosa en el plugin (echar/levar, alarmas, ajustes, Telegram) hace falta además haber iniciado sesión en Signal K en ese navegador, con un usuario de lectura/escritura o administrador. Si no la tienes, el visor te ofrece abrir el login de Signal K. Mirar sigue abierto. Sin seguridad en Signal K no cambia nada.</p>
 
 <!-- ================================================================ -->
 <h2 class="mareas">📊 MÓDULO MAREAS (IHM)</h2>
@@ -317,7 +323,7 @@ profundidad_futura = profundidad_actual + (marea_actual − marea_futura)
 </ul>
 
 <h3>16. Caché y funcionamiento sin Internet</h3>
-<p>El plugin mantiene una caché local de más de 2 meses de datos IHM. Auto-actualización cada 48 h cuando hay conexión. Primer arranque sin Internet: usa estaciones hardcoded como respaldo.</p>
+<p>El plugin mantiene una caché local de más de 2 meses de datos IHM. Auto-actualización cada 48 h cuando hay conexión. Primer arranque sin Internet: usa estaciones hardcoded como respaldo. El mapa del visor (Leaflet) lo sirve el propio plugin, así que funciona sin Internet; sin conexión solo faltan las capas de cartas que se descargan de fuera, salvo las que estén en caché o en MBTiles.</p>
 
 <!-- ================================================================ -->
 <h2>❓ Preguntas frecuentes</h2>
@@ -337,7 +343,7 @@ profundidad_futura = profundidad_actual + (marea_actual − marea_futura)
 <ul>
   <li><strong>¿No aparece la posición GPS?</strong> Comprueba que <code>navigation.position</code> está publicado en Signal K. Necesitas receptor GPS conectado y su driver activo.</li>
   <li><strong>¿Qué plugins SK necesito para amaneceres y puestas?</strong> <a href="https://www.npmjs.com/package/signalk-derived-data" target="_blank">signalk-derived-data</a> con la opción Sun activada.</li>
-  <li><strong>¿Dónde configuro el calado del barco?</strong> Signal K → Server → Settings → Vessel Base Data → Draft. Ese valor se usa para la alarma de varada y el calado efectivo +15%.</li>
+  <li><strong>¿Dónde configuro el calado del barco?</strong> Signal K → Server → Settings → Vessel Base Data → Draft. Ese valor se usa para la alarma de varada: calado efectivo = calado + margen de seguridad, sin factores ocultos.</li>
 </ul>
 
 <h3>Sobre mareas</h3>
