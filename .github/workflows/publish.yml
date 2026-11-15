@@ -88,3 +88,28 @@ jobs:
         # by npm 11.5.1+ when running inside a GH Actions job with
         # id-token: write and a matching trusted publisher on npmjs.
         run: npm publish --access public --provenance
+
+  # The Signal K App Store builds its Changelog tab from GitHub Releases. A
+  # bare tag shows up there as its truncated commit subject, so every
+  # published tag also gets a Release whose notes are that version's section
+  # of CHANGELOG.md.
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Create GitHub Release from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          node scripts/release-notes.mjs "$VER"
+          if gh release view "v$VER" >/dev/null 2>&1; then
+            gh release edit "v$VER" --title "$(cat title.txt)" --notes-file notes.md
+          else
+            gh release create "v$VER" --verify-tag --title "$(cat title.txt)" --notes-file notes.md
+          fi
