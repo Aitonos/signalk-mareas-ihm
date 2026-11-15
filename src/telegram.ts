@@ -232,12 +232,12 @@ export function formatTelegramMessage(
     case "autolift":
       return en
         ? (
-          `⚓ Auto-lift on powered departure: SOG ${sogKt} kn ` +
-          `sustained for 1 min. If this was real drag, re-enable the anchor watch.`
+          `⚓ Auto-lift on departure: SOG ${sogKt} kn sustained, ` +
+          `moving bow first. If this was real drag, re-enable the anchor watch.`
         )
         : (
-          `⚓ Auto-lift por salida motorizada: SOG ${sogKt} kn ` +
-          `sostenido durante 1 min. Si fue garreo real, vuelve al fondeo.`
+          `⚓ Auto-lift al salir del fondeo: SOG ${sogKt} kn sostenido, ` +
+          `avanzando de proa. Si fue garreo real, vuelve al fondeo.`
         );
     case "garreo":
       return en

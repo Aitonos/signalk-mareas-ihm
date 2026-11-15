@@ -56,7 +56,7 @@ Most anchor watch apps are paid, closed source, single-device and tied to a vend
 - **Predictive swing radius** combining depth, chain deployed and tide cycle for the actual swing area over the next 12 h — not a static circle.
 - **Two chain calculation methods**: classic ratio and the Vicente method (15 + 2 × depth).
 - **Drag detection** with audible siren that bypasses user mute for safety.
-- **Auto-disarm when leaving under engine**: if Signal K reports the engine running, the boat moves above 0.5 kt for 30 s, and in the last 10 minutes the bow came back over the anchor (within 15 m, as when you motor up to lift it), the watch disarms automatically. A dragging boat moves away from the anchor and never passes over it. Never while the drag alarm is sounding or silenced, and never on speed alone. Without engine data in Signal K, or with very short scope, lift in the app.
+- **Auto-disarm when leaving**: with the engine running (Signal K) above 0.5 kt for 30 s, or above 3 kt for 60 s, the watch disarms automatically, even if the drag alarm already went off: no need to tap "lift". Only while the boat moves bow first (course over ground within 45° of the heading): leaving, under engine or sail, the boat goes bow first; dragging, it goes beam-on or astern. Leaving in reverse: lift in the app.
 - **GPS track** with time-gradient colouring so you can see exactly where the boat has been.
 - **Favourite anchorages** saved with a custom name (or auto-named from geolocation), synced across all your devices via the backend.
 
@@ -272,7 +272,7 @@ La mayoría de apps de anchor watch son de pago, código cerrado, un solo dispos
 - **Radio de borneo predictivo**: combina sonda, cadena largada y ciclo de marea para predecir el área real de borneo en las próximas 12 h — no un círculo estático.
 - **Dos métodos de cálculo de cadena**: ratio clásico y método Vicente (15 + 2 × sonda).
 - **Detección de garreo** con sirena audible que bypassa el mute del usuario por seguridad.
-- **Auto-desarme al salir a motor**: si Signal K dice que el motor está en marcha, el barco va a más de 0,5 kn durante 30 s y en los últimos 10 minutos la proa ha vuelto encima del ancla (a menos de 15 m, como al ir a motor a levarla), la vigilancia se desarma sola. Un barco que garrea se aleja del ancla y nunca pasa por encima. Nunca con la alarma de garreo sonando o silenciada, y nunca solo por velocidad. Sin datos del motor en Signal K, o con muy poca cadena, leva en la app.
+- **Auto-desarme al salir**: con el motor en marcha (Signal K) a más de 0,5 kn durante 30 s, o a más de 3 kn durante 60 s, la vigilancia se desarma sola, aunque ya haya saltado la alarma de garreo: no hace falta pulsar levar. Solo si el barco avanza de proa (rumbo sobre el fondo a menos de 45° de la proa): saliendo, a motor o a vela, el barco va de proa; garreando, va de costado o de popa. Si sales marcha atrás, leva en la app.
 - **Track GPS** con coloreado por gradiente temporal para ver exactamente por dónde ha pasado el barco.
 - **Fondeos favoritos** guardados con nombre personalizado (o auto-nombrados por geolocalización), sincronizados entre todos tus dispositivos vía backend.
 

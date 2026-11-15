@@ -277,22 +277,18 @@ test('telegram: a failed send lets the same kind try again sooner', async () => 
   assert.equal(await go(mockRequest(200, '{"ok":true}')), null, 'a delivered send holds the full minute');
 });
 
-// Rev900 (audit A1): auto-lift must not silence a real drag. No speed-only
-// trigger (a dragging boat drifts at 3-4 kn in a gale), and no auto-lift
-// while the drag alarm is sounding or silenced.
-test('auto-lift: motor only, never during a drag alarm', () => {
+// Rev902 (Carlos, after audit A1): the two 2.13.4 triggers are back (engine
+// + 0.5 kt 30 s, or 3 kt 60 s, also while the drag alarm sounds), but only
+// while the boat moves bow first: a dragging boat goes astern or beam-on.
+test('auto-lift: both triggers, only while moving bow first', () => {
   const src = readFileSync(indexTs, 'utf8');
   const start = src.indexOf('function _checkIntentionalDeparture(');
   const body = src.slice(start, src.indexOf('\n}\n', start));
   assert.ok(start >= 0, 'expected _checkIntentionalDeparture');
-  assert.match(body, /anchorDragAlarmActive/);
-  assert.match(body, /_isGarreoSilenced\(\)/);
+  assert.match(body, /if \(_movingBowFirst\(\) === false\)/);
   assert.match(body, /_isAnyMotorRunning\(\) === true/);
-  assert.doesNotMatch(src, /_INTENTIONAL_DEP_SOG_KT/);
-  // Rev901: the bow must have come back near the anchor after being away
-  // from it (lifting), not just be near it after the drop (setting).
-  assert.match(body, /_bowWasFar && bowToAnchorM <= _INTENTIONAL_BOW_NEAR_M/);
-  assert.match(body, /bowWasNear && _isAnyMotorRunning\(\) === true/);
+  assert.match(body, /sogKt > _INTENTIONAL_DEP_SOG_KT/);
+  assert.match(src, /const _INTENTIONAL_BOW_FIRST_MAX_DEG = 45;/);
 });
 
 // Rev901 (audit D02, D03, D10, D11, Gemini #8): static checks on the alarm

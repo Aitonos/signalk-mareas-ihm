@@ -1,12 +1,12 @@
 # Changelog
 
-## [Unreleased] (Rev900-901)
+## [Unreleased] (Rev900-902)
 
 ### English
 
 From a code audit cross-checked with two outside reviews.
 
-**Fixed — auto-disarm could silence a real drag (Rev900-901).** The speed-only trigger (3 kt for 60 s, for boats without engine data) is gone: a boat dragging in a gale drifts that fast. Auto-disarm now needs the engine running, 0.5 kt for 30 s, and the bow back over the anchor (within 15 m) in the last 10 minutes, after it had been away from it. A drag moves the boat away from the anchor and never over it. Never while the drag alarm sounds or is silenced. Stale engine data no longer counts as running.
+**Fixed — auto-disarm could silence a real drag (Rev900-902).** Auto-disarm keeps its two triggers (engine running and 0.5 kt for 30 s, or 3 kt for 60 s), and still works after the drag alarm went off, since leaving without tapping "lift" is normal. It now also needs the boat to move bow first: course over ground within 45° of the heading. Leaving, under engine or sail, the boat goes bow first; dragging, it goes beam-on or astern. Without heading or course data the check is skipped. Stale engine data no longer counts as running.
 
 **Fixed — alarms that could stay quiet (Rev901).**
 - GPS lost: after a restart with the GPS dead and the anchor watch restored, the alarm never fired. It now counts from the first check without a fix.
@@ -33,7 +33,7 @@ From a code audit cross-checked with two outside reviews.
 
 De una auditoría del código cruzada con dos revisiones externas.
 
-**Arreglado — el auto-desarme podía apagar un garreo real (Rev900-901).** Se quita el disparador solo por velocidad (3 kn durante 60 s, para barcos sin datos del motor): un barco que garrea en un temporal deriva así de rápido. Ahora hace falta el motor en marcha, 0,5 kn durante 30 s y que la proa haya vuelto encima del ancla (a menos de 15 m) en los últimos 10 minutos, después de haberse alejado. Un garreo aleja el barco del ancla y nunca lo pone encima. Nunca con la alarma de garreo sonando o silenciada. Un dato del motor viejo ya no cuenta como motor en marcha.
+**Arreglado — el auto-desarme podía apagar un garreo real (Rev900-902).** El auto-desarme mantiene sus dos disparadores (motor en marcha y 0,5 kn durante 30 s, o 3 kn durante 60 s) y sigue funcionando aunque ya haya saltado la alarma de garreo, porque salir sin pulsar levar es lo normal. Ahora además el barco tiene que avanzar de proa: rumbo sobre el fondo a menos de 45° de la proa. Saliendo, a motor o a vela, el barco va de proa; garreando, va de costado o de popa. Sin datos de rumbo o de rumbo sobre el fondo no se comprueba. Un dato del motor viejo ya no cuenta como motor en marcha.
 
 **Arreglado — alarmas que podían quedarse calladas (Rev901).**
 - GPS perdido: tras un reinicio con el GPS muerto y el fondeo restaurado, la alarma no saltaba nunca. Ahora cuenta desde la primera comprobación sin posición.
