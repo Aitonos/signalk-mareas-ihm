@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev904";
+const PLUGIN_REVISION = "Rev905";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -7538,6 +7538,17 @@ const AIS_DROP_GRACE_MS = 60_000;
 const AIS_ALARM_GRACE_MS = 60_000;
 let _anchorDroppedAt = 0;
 const _aisFirstInZoneAt: Map<string, number> = new Map();
+// Rev905 (auditoría zona 1, D1, decisión Carlos): un ACK valía para todo el
+// fondeo. Vecino fondeado cerca → ACK → de madrugada garrea hacia ti y no
+// sonaba nada. Ahora el ACK vale para la situación en que se dio: se pierde
+// si el blanco se acerca a tu ancla AIS_ACK_CLOSER_M o más respecto a la
+// distancia que tenía al darle ACK, o si sale del círculo más de
+// AIS_ACK_OUT_MS seguidos (al volver a entrar, alarma nueva). Distancia de
+// referencia en memoria: tras un reinicio se toma la del primer tick.
+const AIS_ACK_CLOSER_M = 15;
+const AIS_ACK_OUT_MS = 2 * 60_000;
+const _aisAckBaselineM: Map<string, number> = new Map();
+const _aisAckOutSince: Map<string, number> = new Map();
 
 // === Track points (Bug 1 + 10, Deploy 2) ===
 // Backend-side track storage so all devices (laptop, mobile, Pi browser) see
@@ -8800,7 +8811,7 @@ function evaluateAnchorWatch() {
       // Build aisInZone with both name (for display) AND mmsiClean (for ACK matching).
       // Filtering by MMSI directly avoids the fragile name→MMSI re-lookup that broke
       // ACKs when targets shared names or when name was empty.
-      const aisInZone: { name: string; mmsiClean: string }[] = [];
+      const aisInZone: { name: string; mmsiClean: string; dAis: number }[] = [];
       // Threshold = my swing radius + my safety margin. We add the TARGET'S length
       // per-iteration below: collision risk is when target's hull (not just centre)
       // could intersect my swing circle.
@@ -8829,7 +8840,7 @@ function evaluateAnchorWatch() {
         } catch {}
         if (dAis < baseAlarmR + targetLen) {
           const mmsiClean = id.replace(/^urn:mrn:imo:mmsi:/, "").replace(/^urn:mrn:signalk:uuid:/, "");
-          aisInZone.push({ name: v?.name ?? id.substring(0, 8), mmsiClean });
+          aisInZone.push({ name: v?.name ?? id.substring(0, 8), mmsiClean, dAis });
         }
       }
       const aisStatus = aisInZone.length > 0 ? aisInZone.map(t => t.name).join(", ") : "OK";
@@ -8846,6 +8857,41 @@ function evaluateAnchorWatch() {
       for (const t of aisInZone) {
         if (!_aisFirstInZoneAt.has(t.mmsiClean)) {
           _aisFirstInZoneAt.set(t.mmsiClean, _nowMs);
+        }
+      }
+      // Rev905 (D1): ACK que caduca si el blanco se acerca o sale del círculo.
+      {
+        const byMmsi = new Map(aisInZone.map(t => [t.mmsiClean, t]));
+        const acked = anchorWatch.aisAckedMMSIs ?? [];
+        const keep: string[] = [];
+        for (const m of acked) {
+          const t = byMmsi.get(m);
+          let why: string | null = null;
+          if (t) {
+            _aisAckOutSince.delete(m);
+            const base = _aisAckBaselineM.get(m);
+            if (base == null) _aisAckBaselineM.set(m, t.dAis);
+            else if (t.dAis <= base - AIS_ACK_CLOSER_M) why = `closer: ${Math.round(base)} m -> ${Math.round(t.dAis)} m from the anchor`;
+          } else {
+            const since = _aisAckOutSince.get(m);
+            if (since == null) _aisAckOutSince.set(m, _nowMs);
+            else if (_nowMs - since >= AIS_ACK_OUT_MS) why = "left the swing circle";
+          }
+          if (why) {
+            _aisAckBaselineM.delete(m);
+            _aisAckOutSince.delete(m);
+            app.debug(`[IHM-AIS] ACK of ${m} dropped (${why})`);
+          } else {
+            keep.push(m);
+          }
+        }
+        for (const m of Array.from(_aisAckBaselineM.keys())) if (!keep.includes(m)) _aisAckBaselineM.delete(m);
+        for (const m of Array.from(_aisAckOutSince.keys())) if (!keep.includes(m)) _aisAckOutSince.delete(m);
+        if (keep.length !== acked.length) {
+          anchorWatch.aisAckedMMSIs = keep;
+          _lastAisNotifSig = null;
+          ihmCache.set("anchorWatch", anchorWatch).catch(() => { /* non-critical */ });
+          try { broadcastSSE("ais-ack"); } catch { /* defensive */ }
         }
       }
       const ackedSet = new Set(anchorWatch.aisAckedMMSIs ?? []);
@@ -17778,7 +17824,13 @@ function effectiveDraft(draft: number, safetyMargin: number): number {
 // el historial se resetea — no mezclar frames produciría falsos spikes.
 const DEPTH_HISTORY_WINDOW_MS = 75_000;
 const DEPTH_FROZEN_TOLERANCE = 0.02;
-const DEPTH_FROZEN_MIN_SPAN_MS = 60_000;
+// Rev905 (auditoría zona 1, D2, decisión Carlos): 60 s → 10 min. Las sondas
+// dan pasos de 0,1 m; fondeado, en repunte y con calma, una sonda sana puede
+// repetir la misma cifra más de un minuto, y eso apagaba la varada justo en
+// la bajamar. Una sonda colgada repite durante horas. Se mide desde el último
+// cambio de 2 cm o más (no hace falta guardar 10 min de muestras).
+const DEPTH_FROZEN_MIN_SPAN_MS = 10 * 60_000;
+let _depthLastChange: { depth: number; ts: number } | null = null;
 // Rev706 (feedback Carlos "alarma loca de varada, sonda bajo quilla se puso
 // negativa un momento"): antes 3.0 dejaba pasar spikes leves (5m → 1.7m,
 // ratio 0.34 > 1/3=0.33 → no filtrado → alarma). Bajado a 2.0 — una
@@ -17798,6 +17850,7 @@ function isDepthReliable(depthNow: number | null, sourcePath: string = "unknown"
   // C-14: si cambia la fuente, reset (no mezclar frames).
   if (_depthHistorySource && _depthHistorySource !== sourcePath) {
     depthHistory.length = 0;
+    _depthLastChange = null;
   }
   _depthHistorySource = sourcePath;
 
@@ -17809,11 +17862,11 @@ function isDepthReliable(depthNow: number | null, sourcePath: string = "unknown"
 
   if (depthHistory.length < 4) return { reliable: true, reason: "ok" };
 
-  // C-01: frozen check exige span temporal real ≥ 60s, no solo número de muestras.
-  const oldest = depthHistory[0];
-  const span = now - oldest.ts;
-  const allFrozen = depthHistory.every(h => Math.abs(h.depth - oldest.depth) < DEPTH_FROZEN_TOLERANCE);
-  if (allFrozen && span >= DEPTH_FROZEN_MIN_SPAN_MS) {
+  // Rev905: congelada = sin cambiar 2 cm o más durante DEPTH_FROZEN_MIN_SPAN_MS.
+  if (!_depthLastChange || Math.abs(depthNow - _depthLastChange.depth) >= DEPTH_FROZEN_TOLERANCE) {
+    _depthLastChange = { depth: depthNow, ts: now };
+  }
+  if (now - _depthLastChange.ts >= DEPTH_FROZEN_MIN_SPAN_MS) {
     return { reliable: false, reason: "frozen" };
   }
 

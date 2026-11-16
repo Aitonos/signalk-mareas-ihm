@@ -332,3 +332,19 @@ test('routes: handlers from an earlier start pass the request on', () => {
   assert.match(src, /const expressApp = _routesForThisStart\(app as any\);/);
   assert.doesNotMatch(src, /const expressApp = app as any;/);
 });
+
+// Rev905 (audit zone 1, D1/D2): an AIS ACK is dropped when the boat gets
+// 15 m closer to the anchor or stays out of the circle 2 min; a sounder is
+// "frozen" only after 10 min without a 2 cm change.
+test('ais: ACK dropped when the target closes in or leaves the circle', () => {
+  const src = readFileSync(indexTs, 'utf8');
+  assert.match(src, /const AIS_ACK_CLOSER_M = 15;/);
+  assert.match(src, /else if \(t\.dAis <= base - AIS_ACK_CLOSER_M\)/);
+  assert.match(src, /else if \(_nowMs - since >= AIS_ACK_OUT_MS\) why = "left the swing circle";/);
+});
+
+test('depth: frozen only after 10 min without a 2 cm change', () => {
+  const src = readFileSync(indexTs, 'utf8');
+  assert.match(src, /const DEPTH_FROZEN_MIN_SPAN_MS = 10 \* 60_000;/);
+  assert.match(src, /if \(now - _depthLastChange\.ts >= DEPTH_FROZEN_MIN_SPAN_MS\)/);
+});

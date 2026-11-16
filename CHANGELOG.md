@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased] (Rev904-905)
+
+### English
+
+Second audit round: AIS alarm and grounding calculation.
+
+**Fixed — after disabling and enabling the plugin, the viewer talked to the old state (Rev904).** The plugin's HTTP routes from the first start kept answering after a stop/start (disabling and enabling the plugin, or saving its settings in the Signal K admin). The viewer showed the old state, and dropping or lifting the anchor changed a state the new anchor watch did not use. Only a full Signal K restart fixed it.
+
+**Fixed — an AIS ACK lasted for the whole anchoring (Rev905).** A neighbour you ACKed could later drag towards you without an alarm. On the Pi (audio, Signal K, Telegram) an ACK is now dropped if the boat gets 15 m or more closer to your anchor than when you ACKed it, or if it stays out of your circle for 2 minutes.
+
+**Fixed — a calm sounder could switch the grounding alarm off (Rev905).** A depth that did not change by 2 cm in 60 s was taken as a frozen sounder, and the grounding alarm stopped. Sounders read in 0.1 m steps; at anchor, at slack water and in calm conditions, a healthy one can repeat the same value for over a minute, right at low tide. Now it takes 10 minutes.
+
+**Fixed — time to grounding (Rev904).** It was read on a straight line while the tide falls on a curve; the "X minutes before" warning could come late (at 6 h to low water and 75 % of the fall: 4 h 30 instead of 4 h). It now uses the same tide curve. The tide height exactly at a high or low no longer gives an error.
+
+**Docs.** The AIS alarm is a swing-circle intrusion alarm, not CPA/TCPA; for collision risk from course and speed, use `@signalk/collision-alerts`.
+
+### Español
+
+Segunda ronda de auditoría: alarma AIS y cálculo de la varada.
+
+**Arreglado — tras desactivar y activar el plugin, el visor hablaba con el estado viejo (Rev904).** Las rutas HTTP del primer arranque seguían contestando tras desactivar y activar el plugin, o guardar sus ajustes en el admin de Signal K. El visor enseñaba el estado viejo, y fondear o levar cambiaba un estado que la vigilancia nueva no usaba. Solo lo arreglaba reiniciar Signal K entero.
+
+**Arreglado — un ACK de AIS duraba todo el fondeo (Rev905).** Un vecino al que diste ACK podía garrear después hacia ti sin alarma. En la Pi (audio, Signal K, Telegram) el ACK se pierde ahora si el barco se acerca 15 m o más a tu ancla respecto a donde estaba al darle ACK, o si sale de tu círculo más de 2 minutos.
+
+**Arreglado — una sonda en calma podía apagar la alarma de varada (Rev905).** Una sonda que no cambiaba 2 cm en 60 s se daba por colgada y la varada dejaba de vigilarse. Las sondas dan pasos de 0,1 m; fondeado, en repunte y con calma, una sonda sana puede repetir la misma cifra más de un minuto, justo en la bajamar. Ahora hacen falta 10 minutos.
+
+**Arreglado — minutos hasta la varada (Rev904).** Se calculaban con una recta, aunque la marea baja en curva; el aviso «X minutos antes» podía llegar tarde (con 6 h a la bajamar y el 75 % de la bajada: 4 h 30 en vez de 4 h). Ahora usa la misma curva de marea. Justo a la hora de una pleamar o bajamar ya no da error.
+
+**Documentación.** La alarma AIS es de intrusión en el círculo de borneo, no CPA/TCPA; para el riesgo de colisión por rumbo y velocidad, usa `@signalk/collision-alerts`.
+
 ## [2.14.0] - 2026-11-15
 
 ### English
