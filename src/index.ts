@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev903";
+const PLUGIN_REVISION = "Rev904";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1361,6 +1361,26 @@ export default function (app: SignalKApp): Plugin {
   let _pypilotSelfHealTimer: ReturnType<typeof setInterval> | null = null;
   // Rev886: AIS identity enrichment of the SK vessels tree (cleared in stop()).
   let _aisIdentityEnrichTimer: ReturnType<typeof setInterval> | null = null;
+  // Rev904 (sospecha de la auditoría GPT, confirmada): las 156 rutas HTTP se
+  // registran en la app de Signal K dentro de start() y Express no permite
+  // quitarlas. Tras un stop()/start() (desactivar y activar el plugin, o
+  // guardar su configuración en el admin) seguían respondiendo los
+  // manejadores del PRIMER arranque, con su anchorWatch, ihmCache, sesiones…
+  // El visor veía el estado viejo y fondear/levar cambiaba un estado que la
+  // vigilancia nueva no miraba. Ahora cada arranque tiene su generación y los
+  // manejadores de arranques anteriores pasan la petición al de ahora.
+  let _routeGeneration = 0;
+  function _routesForThisStart(target: any): any {
+    const myGen = ++_routeGeneration;
+    const wrap = (fn: any) => (typeof fn !== "function") ? fn
+      : (req: any, res: any, next: any) => (myGen === _routeGeneration ? fn(req, res, next) : next("route"));
+    const out: any = Object.create(target);
+    for (const m of ["get", "post", "put", "delete", "patch"]) {
+      // app.get("setting") con un solo argumento es el getter de ajustes de Express.
+      out[m] = (path: any, ...fns: any[]) => fns.length === 0 ? target[m](path) : target[m](path, ...fns.map(wrap));
+    }
+    return out;
+  }
   // Rev901 (auditoría D12): tres setInterval de start() sin parar en stop();
   // se sumaba uno de cada en cada desactivar/activar del plugin.
   let _setSystemTimeCheckTimer: ReturnType<typeof setInterval> | null = null;
@@ -2715,7 +2735,7 @@ function publishAnchoringDeltas(r: AnchorCalcResult) {
 // Optional HTTP endpoint for the webapp (avoids relying on /resources/tides availability).
 // Returns a TideForecast-like payload: { station, extremes, coef }.
 try {
-  const expressApp = app as any;
+  const expressApp = _routesForThisStart(app as any); // Rev904
   if (typeof expressApp.get === "function") {
     // Reuse ihmCache defined above (scoped in start)
 
@@ -18143,7 +18163,7 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
           remainingDrop = Math.max(0, hNow - nextLowHeight);
           expectedMinDepth = depthNow - remainingDrop;
 
-          // Estimate minutes until the depth crosses effective draft assuming linear drop to next low.
+          // Estimate minutes until the depth crosses effective draft before the next low.
           if (eff != null) {
             const requiredDrop = depthNow - eff;
             if (requiredDrop <= 0) {
@@ -18152,6 +18172,19 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
               const minutesUntilLow = Math.max(0, Math.round((nextLow._t - now.getTime()) / 60_000));
               const frac = Math.min(1, Math.max(0, requiredDrop / remainingDrop));
               minutesToRisk = Math.max(0, Math.round(frac * minutesUntilLow));
+              // Rev904 (auditoría zona 1): la marea baja en coseno, no en
+              // recta. Con la recta, si hace falta más de la mitad de la
+              // bajada, la hora estimada sale TARDE (con 6 h hasta la bajamar
+              // y el 75 % de la bajada, 4 h 30 en vez de 4 h): el aviso «X min
+              // antes» llegaba con menos margen. Si hay riesgo antes de la
+              // bajamar, se busca minuto a minuto en la misma curva.
+              if (frac < 1) {
+                const threshold = hNow - requiredDrop; // altura de marea a la que sonda == calado efectivo
+                for (let m = 1; m <= minutesUntilLow; m++) {
+                  const h = approximateTideHeightAt(extremes, new Date(now.getTime() + m * 60_000));
+                  if (typeof h === "number" && Number.isFinite(h) && h <= threshold) { minutesToRisk = m; break; }
+                }
+              }
             }
           }
         }

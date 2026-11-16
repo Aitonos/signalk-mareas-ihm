@@ -8,6 +8,8 @@ export function approximateTideHeightAt(extremes: TideExtreme[], time: Date): nu
 
   if (!prev) return null;
   if (!next) return null;
+  // Rev904: justo en la hora de un extremo prev === next y el progreso era 0/0 = NaN.
+  if (new Date(prev.time).getTime() === new Date(next.time).getTime()) return prev.value;
 
   const progress = (time.getTime() - new Date(prev.time).getTime()) /
     (new Date(next.time).getTime() - new Date(prev.time).getTime());

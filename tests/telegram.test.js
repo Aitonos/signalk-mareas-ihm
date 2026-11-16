@@ -322,3 +322,13 @@ test('silences: bounded against a clock jumping backwards, snooze max 2 h', () =
   assert.match(src, /return left > 0 && left <= maxMin \* 60_000;/);
   assert.doesNotMatch(src, /Math\.min\(24 \* 60, Number\(req\.body\?\.minutes\)/);
 });
+
+// Rev904 (GPT suspicion, confirmed): routes registered in start() survive a
+// stop()/start(); handlers from earlier starts must hand over to the
+// current one.
+test('routes: handlers from an earlier start pass the request on', () => {
+  const src = readFileSync(indexTs, 'utf8');
+  assert.match(src, /myGen === _routeGeneration \? fn\(req, res, next\) : next\("route"\)/);
+  assert.match(src, /const expressApp = _routesForThisStart\(app as any\);/);
+  assert.doesNotMatch(src, /const expressApp = app as any;/);
+});
