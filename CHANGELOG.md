@@ -1,8 +1,11 @@
 # Changelog
 
-## [Unreleased] (Rev908-912)
+## [Unreleased] (Rev908-913)
 
 ### English
+
+**Fixed — a long anchor drag or AIS alarm is one alarm, not a new one every 30 s (Rev913).** To make KIP beep again, the alarm was repeated with a 1-second "normal" in between. Alert Center took that as a new alarm and sent two Telegram messages every 30 s, OpenPlotter opened a new window each time, and WilhelmSK pushed again. The alarm is now repeated as it is, with the distance kept up to date. The Pi's speaker keeps sounding until you ACK, as before.
+
 
 **Changed — alarm texts in the boat's language (Rev912).** The text of the Signal K notifications (what Alert Center, WilhelmSK, KIP and OpenPlotter show) follows the language set in the viewer. Since 2.8.0 it was always English.
 
@@ -21,6 +24,8 @@ Removed:
 - the viewer's "dragging!" from a closing speed of 5 m/min. With the 9-12 m position noise of class B AIS, a rafted boat seemed to close at that speed.
 
 ### Español
+
+**Corregido — un garreo o una alarma AIS largos son una alarma, no una nueva cada 30 s (Rev913).** Para que KIP volviera a pitar, la alarma se repetía con un "normal" de 1 segundo en medio. Alert Center lo tomaba por alarma nueva y mandaba dos Telegram cada 30 s, OpenPlotter abría una ventana nueva cada vez y WilhelmSK volvía a mandar el push. Ahora la alarma se repite tal cual, con la distancia al día. El altavoz de la Pi sigue sonando hasta el ACK, como antes.
 
 **Cambiado — textos de las alarmas en el idioma del barco (Rev912).** El texto de las notificaciones de Signal K (lo que enseñan Alert Center, WilhelmSK, KIP y OpenPlotter) sigue el idioma elegido en el visor. Desde la 2.8.0 iba siempre en inglés.
 

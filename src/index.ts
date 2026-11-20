@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev912";
+const PLUGIN_REVISION = "Rev913";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -7004,8 +7004,6 @@ const AIS_ACK_PENDING_MAX_DIST_M = 5;            // 5 metres of anchor displacem
 //     "dejar un minuto para reaccionar es mucho tiempo si por ejemplo se
 //     está dormido". A dragging anchor is the highest-priority safety event,
 //     so prioritise wake-up over comfort. AIS stays at 60s (less critical).
-//   - Pseudo-transition gap: 1000ms — gives KIP/OP time to register
-//     state:normal before state:alarm re-fires.
 const DRAG_HYSTERESIS_M = 2;
 // Rev205 (B-01 safety net): si hay garreo activo Y el audio está muteado
 // globalmente, tras GARREO_MUTE_OVERRIDE_MS se reactiva el audio
@@ -7055,7 +7053,6 @@ function _cancelGarreoMuteOverride() {
   }
 }
 const DRAG_REEMIT_MS = 30_000;
-const PSEUDO_TRANSITION_GAP_MS = 1000;
 
 // Rev387: Database persistente de propiedades estaticas AIS por MMSI.
 // Cuando un target reaparece tras haber estado fuera de rango/desaparecido,
@@ -8665,20 +8662,12 @@ function evaluateAnchorWatch() {
           // Rev721: el espejo canónico lo añade el wrapper de
           // handleMessage automáticamente (notifications.navigation.anchor).
         };
-        if (!isFirstEmit) {
-          // Pseudo-transition: brief normal then alarm
-          const normalDelta: Delta = {
-            context: ("vessels." + app.selfId) as Context,
-            updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
-              path: "notifications.signalk-mareas-ihm.anchorDrag" as any,
-              value: { state: "normal", method: [] as string[], message: _nt("repitiendo aviso", "re-arming") },
-            }]}],
-          };
-          app.handleMessage(plugin.id, normalDelta);
-          setTimeout(emitAlarm, PSEUDO_TRANSITION_GAP_MS);
-        } else {
-          emitAlarm();
-        }
+        // Rev913: se repite la misma alarma, sin el "normal" de 1 s que
+        // metía Rev49 para que KIP volviera a pitar. Alert Center lo tomaba
+        // por alarma resuelta + alarma nueva (dos Telegram cada 30 s), y
+        // OpenPlotter abría una ventana nueva cada vez. El altavoz de la Pi
+        // no depende de esto y sigue sonando hasta el ACK.
+        emitAlarm();
       } catch { /* non-critical */ }
     }
   } else if (!dragging && anchorDragAlarmActive) {
@@ -9045,15 +9034,14 @@ function evaluateAnchorWatch() {
       // Rev50: smarter AIS emit logic.
       //   - normal→warn transition: emit immediately, start Pi audio.
       //   - warn→normal: emit immediately.
-      //   - Sustained warn: re-emit every AIS_REEMIT_MS with pseudo-transition
-      //     (state:normal then state:warn 1s later) so KIP/OP re-fire sound.
+      //   - Sustained warn: re-emit every AIS_REEMIT_MS (Rev913: same state,
+      //     no brief normal in between).
       //   - normal sustained: don't re-spam (dedup as before).
       // Rev52: state was 'alarm', now 'warn' — see comment above.
       const wasWarn = _lastAisNotifSig === 'warn';
       const isWarn = desiredState === 'warn';
       const aisNowMs = Date.now();
       let aisShouldEmit = false;
-      let aisShouldPseudoTransition = false;
       if (isWarn && !wasWarn) {
         // Fresh transition into warn
         aisShouldEmit = true;
@@ -9062,10 +9050,9 @@ function evaluateAnchorWatch() {
         // Transition out of warn
         aisShouldEmit = true;
       } else if (isWarn && wasWarn) {
-        // Sustained warn — re-emit periodically with pseudo-transition
+        // Sustained warn — re-emit periodically (same state)
         if (aisNowMs - _lastAisEmitMs >= AIS_REEMIT_MS) {
           aisShouldEmit = true;
-          aisShouldPseudoTransition = true;
           _lastAisEmitMs = aisNowMs;
         }
       } else {
@@ -9074,57 +9061,26 @@ function evaluateAnchorWatch() {
       }
       if (aisShouldEmit) {
         _lastAisNotifSig = desiredSig;
-        if (aisShouldPseudoTransition) {
-          // Brief normal then warn — forces KIP/OP to detect transition
-          try {
-            const normalDelta: Delta = {
-              context: ("vessels." + app.selfId) as Context,
-              updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
-                path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any,
-                value: { state: "normal", method: [] as string[], message: _nt("repitiendo aviso", "re-arming") },
-              }]}],
-            };
-            app.handleMessage(plugin.id, normalDelta);
-            setTimeout(() => {
-              try {
-                // Rev203: filter "sound" from method when global mute is on.
-                // Rev722 (feedback usuario "WilhelmSK me despierta en iPhone
-                // vía notifications SK"): añadido "push" para que WilhelmSK
-                // dispare notification nativa iOS en la alarma AIS también.
-                const aisMethods = anchorWatch.audioEnabled !== false
-                  ? ["visual", "sound", "push"]
-                  : ["visual", "push"];
-                const warnDelta: Delta = {
-                  context: ("vessels." + app.selfId) as Context,
-                  updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
-                    path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any,
-                    value: { state: "warn", method: aisMethods, message: desiredMessage },
-                  }]}],
-                };
-                app.handleMessage(plugin.id, warnDelta);
-              } catch { /* defensive */ }
-            }, PSEUDO_TRANSITION_GAP_MS);
-          } catch { /* defensive */ }
-        } else {
-          // Direct emit (transition or first time)
-          // Rev203: filter "sound" from method when global mute is on (only
-          // applies to warn; normal state already has empty method).
-          // Rev722: "push" añadido para WilhelmSK push nativo iOS.
-          let aisDirectMethods: string[] = [];
-          if (desiredState === 'warn') {
-            aisDirectMethods = anchorWatch.audioEnabled !== false
-              ? ["visual", "sound", "push"]
-              : ["visual", "push"];
-          }
-          watchValues.push({
-            path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any,
-            value: {
-              state: desiredState,
-              method: aisDirectMethods,
-              message: desiredMessage,
-            },
-          } as any);
+        // Rev913: la alarma AIS mantenida se repite tal cual, sin el
+        // "normal" de 1 s (ver garreo).
+        // Direct emit (transition or first time)
+        // Rev203: filter "sound" from method when global mute is on (only
+        // applies to warn; normal state already has empty method).
+        // Rev722: "push" añadido para WilhelmSK push nativo iOS.
+        let aisDirectMethods: string[] = [];
+        if (desiredState === 'warn') {
+          aisDirectMethods = anchorWatch.audioEnabled !== false
+            ? ["visual", "sound", "push"]
+            : ["visual", "push"];
         }
+        watchValues.push({
+          path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any,
+          value: {
+            state: desiredState,
+            method: aisDirectMethods,
+            message: desiredMessage,
+          },
+        } as any);
       }
       // Rev42/44: Pi audio engine for AIS — start when transitioning into warn
       // state, stop when leaving. Skipped if user-silenced. Independent of browser.
