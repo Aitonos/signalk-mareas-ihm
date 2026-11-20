@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] (Rev908)
+
+### English
+
+**Changed — an AIS ACK lasts the whole anchorage (Rev908).** Too many alarms teach you to stop listening, or to switch the alarm off. An ACK now silences that boat until you lift the anchor. It drops only when there is a new danger: the boat gets 15 m closer to your anchor than your own boat has meanwhile, as a neighbour dragging towards you does. A friend rafted alongside, or a neighbour swinging with you, moves like your boat and never sets it off.
+
+Removed:
+- the viewer's ACK expiry after 15 minutes, which raised the alarm again for a boat that had not moved;
+- the Pi's new alarm after a boat had been 2 minutes out of the circle, which went off with every wind shift for a neighbour on the edge;
+- the viewer's "dragging!" from a closing speed of 5 m/min. With the 9-12 m position noise of class B AIS, a rafted boat seemed to close at that speed.
+
+### Español
+
+**Cambiado — el ACK de un barco AIS dura todo el fondeo (Rev908).** Un exceso de alarmas enseña a dejar de escucharlas o a apagarlas. El ACK silencia ahora ese barco hasta que levas. Solo se pierde con un peligro nuevo: que el barco se acerque a tu ancla 15 m más de lo que se ha acercado tu propio barco, como hace un vecino que garrea hacia ti. Un amigo abarloado, o un vecino que bornea contigo, se mueve como tu barco y nunca lo dispara.
+
+Quitado:
+- la caducidad del ACK a los 15 minutos en el visor, que volvía a hacer sonar un barco que no se había movido;
+- la alarma nueva en la Pi tras 2 minutos de un barco fuera del círculo, que saltaba con cada rolada si el vecino estaba en el borde;
+- el "¡garreando!" del visor por acercarse a 5 m/min. Con el ruido de posición de un AIS clase B (9-12 m), un barco abarloado parecía acercarse a esa velocidad.
+
 ## [2.15.0] - 2026-11-20
 
 ### English

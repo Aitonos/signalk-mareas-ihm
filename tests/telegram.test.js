@@ -336,11 +336,16 @@ test('routes: handlers from an earlier start pass the request on', () => {
 // Rev905 (audit zone 1, D1/D2): an AIS ACK is dropped when the boat gets
 // 15 m closer to the anchor or stays out of the circle 2 min; a sounder is
 // "frozen" only after 10 min without a 2 cm change.
-test('ais: ACK dropped when the target closes in or leaves the circle', () => {
+// Rev908: the ACK lasts the whole anchorage; it drops only when the boat
+// gets 15 m closer to the anchor than the own boat has meanwhile (a rafted
+// friend or a neighbour swinging alongside moves like the own boat).
+test('ais: ACK dropped only when the target closes in more than the own boat', () => {
   const src = readFileSync(indexTs, 'utf8');
   assert.match(src, /const AIS_ACK_CLOSER_M = 15;/);
-  assert.match(src, /else if \(t\.dAis <= base - AIS_ACK_CLOSER_M\)/);
-  assert.match(src, /else if \(_nowMs - since >= AIS_ACK_OUT_MS\) why = "left the swing circle";/);
+  assert.match(src, /const closer = \(base\.target - t\.dAis\) - \(base\.own - dist\);/);
+  assert.match(src, /if \(closer >= AIS_ACK_CLOSER_M\) why = /);
+  assert.doesNotMatch(src, /AIS_ACK_OUT_MS/, 'no more expiry for being out of the circle');
+  assert.doesNotMatch(readFileSync(new URL('../public/mobile.html', import.meta.url), 'utf8'), /_AIS_ACK_TTL_MS=/, 'no more 15 min expiry in the viewer');
 });
 
 test('depth: frozen only after 10 min without a 2 cm change', () => {

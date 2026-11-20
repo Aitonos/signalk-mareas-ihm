@@ -71,7 +71,7 @@ Most anchor watch apps are paid, closed source, single-device and tied to a vend
 - **🔍 vesselfinder button** per row — opens vesselfinder.com in a new tab with IMO + MMSI.
 - **Voice alarm** when a target enters your swing zone; 30 s grace before voice starts.
 - **Per-target ACK** with timestamp; silencing one boat doesn't disable the alarm for others.
-- **ACKs that expire when the situation changes** — on the Pi (audio, Signal K, Telegram) an ACK is dropped if the boat gets 15 m or more closer to your anchor than when you ACKed it (a neighbour dragging towards you), or if it stays out of your circle for 2 minutes. The viewer also drops an ACK after 15 minutes, or if the boat closes at more than 5 m/min.
+- **An ACK lasts the whole anchorage** — it silences that boat until you lift the anchor. It drops only if the boat gets 15 m closer to your anchor than your own boat has meanwhile: a neighbour dragging towards you. A friend rafted alongside, or a neighbour swinging with you, moves like your boat and never sets it off.
 - **Swing-circle intrusion, not CPA/TCPA** — the alarm needs a boat to stay in your circle for a minute, so passing traffic does not set it off. For collision risk from course and speed, use `@signalk/collision-alerts`.
 - **Click-to-focus**: click any target → the map centres on it, auto-follows it and displays its distance next to the blue selection ring. Click the X on the ring to release.
 - **Vessel-type emoji**: list and popup show ⛵ sailing / 📦 cargo / 🛢️ tanker / 🛳️ passenger etc. at a glance.
@@ -288,7 +288,7 @@ La mayoría de apps de anchor watch son de pago, código cerrado, un solo dispos
 - **🔍 Botón vesselfinder** por fila — abre vesselfinder.com en una pestaña nueva con IMO + MMSI.
 - **Alarma de voz** cuando un target entra en tu zona de borneo; 30 s de gracia antes de que arranque la voz.
 - **ACK por target** con timestamp; silenciar un barco no desactiva la alarma para otros.
-- **ACK que caduca si cambia la situación** — en la Pi (audio, Signal K, Telegram) el ACK se pierde si el barco se acerca 15 m o más a tu ancla respecto a donde estaba al darle ACK (un vecino que garrea hacia ti), o si sale de tu círculo más de 2 minutos. El visor, además, retira el ACK a los 15 minutos o si el barco se acerca a más de 5 m/min.
+- **El ACK dura todo el fondeo** — silencia ese barco hasta que levas. Solo se pierde si el barco se acerca a tu ancla 15 m más de lo que se ha acercado tu propio barco: un vecino que garrea hacia ti. Un amigo abarloado, o un vecino que bornea contigo, se mueve como tu barco y nunca la dispara.
 - **Intrusión en el círculo de borneo, no CPA/TCPA** — la alarma pide que el barco se quede un minuto en tu círculo, para no sonar con el tráfico que pasa. Para el riesgo de colisión por rumbo y velocidad, usa `@signalk/collision-alerts`.
 - **Click-to-focus**: click en cualquier target → el mapa lo centra, lo sigue y muestra su distancia junto al aro azul de selección. Click en la X del aro para soltar.
 - **Emoji por tipo**: lista y popup muestran ⛵ velero / 📦 carga / 🛢️ tanque / 🛳️ pasaje, etc. a primera vista.

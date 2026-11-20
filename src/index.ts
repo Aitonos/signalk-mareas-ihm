@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev907";
+const PLUGIN_REVISION = "Rev908";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -7560,13 +7560,17 @@ const _aisFirstInZoneAt: Map<string, number> = new Map();
 // fondeo. Vecino fondeado cerca → ACK → de madrugada garrea hacia ti y no
 // sonaba nada. Ahora el ACK vale para la situación en que se dio: se pierde
 // si el blanco se acerca a tu ancla AIS_ACK_CLOSER_M o más respecto a la
-// distancia que tenía al darle ACK, o si sale del círculo más de
-// AIS_ACK_OUT_MS seguidos (al volver a entrar, alarma nueva). Distancia de
-// referencia en memoria: tras un reinicio se toma la del primer tick.
+// distancia que tenía al darle ACK. Referencia en memoria: tras un reinicio
+// se toma la del primer tick.
+// Rev908 (Carlos 2026-11-20, "un exceso de alarma significa que al final la
+// dejas de escuchar"): el ACK dura todo el fondeo y solo cae por un peligro
+// nuevo. Se mide cuánto se acerca el blanco a tu ancla MÁS de lo que te has
+// acercado tú: un amigo abarloado o un vecino que bornea contigo se mueven
+// como tu barco y no la disparan; uno que garrea hacia ti, sí. Fuera la
+// caducidad por estar 2 min fuera del círculo (un vecino en el borde volvía
+// a sonar con cada rolada).
 const AIS_ACK_CLOSER_M = 15;
-const AIS_ACK_OUT_MS = 2 * 60_000;
-const _aisAckBaselineM: Map<string, number> = new Map();
-const _aisAckOutSince: Map<string, number> = new Map();
+const _aisAckBaselineM: Map<string, { target: number; own: number }> = new Map();
 
 // === Track points (Bug 1 + 10, Deploy 2) ===
 // Backend-side track storage so all devices (laptop, mobile, Pi browser) see
@@ -8877,7 +8881,8 @@ function evaluateAnchorWatch() {
           _aisFirstInZoneAt.set(t.mmsiClean, _nowMs);
         }
       }
-      // Rev905 (D1): ACK que caduca si el blanco se acerca o sale del círculo.
+      // Rev905 (D1) / Rev908: el ACK cae solo si el blanco se acerca a tu ancla
+      // AIS_ACK_CLOSER_M más de lo que se ha acercado tu barco.
       {
         const byMmsi = new Map(aisInZone.map(t => [t.mmsiClean, t]));
         const acked = anchorWatch.aisAckedMMSIs ?? [];
@@ -8885,26 +8890,22 @@ function evaluateAnchorWatch() {
         for (const m of acked) {
           const t = byMmsi.get(m);
           let why: string | null = null;
-          if (t) {
-            _aisAckOutSince.delete(m);
+          if (t && Number.isFinite(dist)) {
             const base = _aisAckBaselineM.get(m);
-            if (base == null) _aisAckBaselineM.set(m, t.dAis);
-            else if (t.dAis <= base - AIS_ACK_CLOSER_M) why = `closer: ${Math.round(base)} m -> ${Math.round(t.dAis)} m from the anchor`;
-          } else {
-            const since = _aisAckOutSince.get(m);
-            if (since == null) _aisAckOutSince.set(m, _nowMs);
-            else if (_nowMs - since >= AIS_ACK_OUT_MS) why = "left the swing circle";
+            if (base == null) _aisAckBaselineM.set(m, { target: t.dAis, own: dist });
+            else {
+              const closer = (base.target - t.dAis) - (base.own - dist);
+              if (closer >= AIS_ACK_CLOSER_M) why = `closer: ${Math.round(base.target)} m -> ${Math.round(t.dAis)} m from the anchor (own boat ${Math.round(base.own)} m -> ${Math.round(dist)} m)`;
+            }
           }
           if (why) {
             _aisAckBaselineM.delete(m);
-            _aisAckOutSince.delete(m);
             app.debug(`[IHM-AIS] ACK of ${m} dropped (${why})`);
           } else {
             keep.push(m);
           }
         }
         for (const m of Array.from(_aisAckBaselineM.keys())) if (!keep.includes(m)) _aisAckBaselineM.delete(m);
-        for (const m of Array.from(_aisAckOutSince.keys())) if (!keep.includes(m)) _aisAckOutSince.delete(m);
         if (keep.length !== acked.length) {
           anchorWatch.aisAckedMMSIs = keep;
           _lastAisNotifSig = null;

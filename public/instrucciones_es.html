@@ -192,7 +192,7 @@ Donde <strong>R_cadena</strong> es la proyección horizontal de la cadena lascad
   <li><strong>Iconos por tipo:</strong> ⛵ velero, 🛥️ recreo, 📦 carga, 🛢️ tanque, 🛳️ pasaje, 🎣 pesca…</li>
   <li><strong>Botón 🔍 vesselfinder:</strong> abre vesselfinder.com en pestaña nueva con IMO + MMSI del barco para foto, ruta histórica, etc.</li>
   <li><strong>Alarma de proximidad:</strong> cuando un AIS cruza el límite del círculo rojo (considerando además su eslora), salta alarma de voz tras un breve tiempo de gracia. Pulsa ACK para silenciar ese MMSI sin afectar al resto.</li>
-  <li><strong>Cuándo se pierde un ACK:</strong> el ACK vale para la situación en que lo diste. En la Pi (audio, Signal K, Telegram) se pierde si el blanco se acerca 15 m o más a tu ancla respecto a donde estaba al darle ACK (un vecino que garrea hacia ti), o si sale del círculo más de 2 minutos (al volver, alarma nueva). En el visor, además, el ACK caduca a los 15 min y se retira si el blanco se acerca a más de 5 m/min.</li>
+  <li><strong>Cuándo se pierde un ACK:</strong> el ACK dura todo el fondeo y silencia ese barco hasta que levas. Solo se pierde si el barco se acerca a tu ancla 15 m más de lo que se ha acercado tu propio barco: un vecino que garrea hacia ti. Un amigo abarloado, o un vecino que bornea contigo, se mueve como tu barco y nunca lo dispara.</li>
   <li><strong>Click-to-focus:</strong> click en un AIS → el mapa lo centra, lo sigue automáticamente y muestra distancia en directo. La X del aro deselecciona.</li>
 </ul>
 <div class="callout">

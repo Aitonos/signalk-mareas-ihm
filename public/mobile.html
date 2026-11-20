@@ -6437,12 +6437,8 @@ var chainRec=0,chainDep=null,designLen=12,designBeam=4,fromBow=6;
 var trkPts=[];
 var anchHist=[],aisTargets=[];
 var _aisAckedMMSIs=JSON.parse(localStorage.getItem('ihm-ais-acked')||'{}'); /* ACK persistence */
-/* Rev386: TTL del ACK + anti-jitter para evitar bucle ACK/des-ACK por
-   fluctuacion de SOG. Cuando ACK lleva mas de _AIS_ACK_TTL_MS el ACK
-   caduca y se re-evalua. Cuando isDragging cumple en CADA tick, el
-   contador sube; necesita >= _AIS_DRAGGING_CONSEC ticks consecutivos
-   para des-ACK (filtra jitter de SOG cruzando 0.5 kt). */
-var _AIS_ACK_TTL_MS=15*60*1000;          /* 15 min */
+/* Rev908: sin caducidad del ACK en el visor (lo retira la Pi, ver
+   checkAisBorneoAlarm). Estos contadores quedan sin uso activo. */
 var _AIS_DRAGGING_CONSEC=3;              /* 3 ticks (≈ 6-9s a poll 2-3s) sostenidos */
 var _aisDraggingCounter={};              /* mmsi -> ticks consecutivos cumpliendo */
 var _ownSogKt=0;                          /* SOG propio en kt (cacheado del state poll) */
@@ -12880,45 +12876,14 @@ function checkAisBorneoAlarm(targets){
          El cálculo de garreo/ACK queda inhibido — sólo se muestra la lista
          limpia con distancia, sin adornos de vigilancia. */
       var inB=anch&&aPos&&d<alR&&aisAlarmEnabled;
-      var ackTs=_aisAckedMMSIs[cleanMmsi];
-      var acked=!!ackTs;
-      var targetSogKt=(typeof t.sog==='number')?t.sog:null;
-      /* Rev386: SOG propio cacheado desde el state SSE (_ownSogKt actualizado
-         en el render del bottom-bar). Si ambos parados, getClosingRate→0. */
-      var closing=getClosingRate(cleanMmsi, _ownSogKt, targetSogKt);
-      /* Rev386 — TTL del ACK: tras 15 min, ACK caduca y re-evaluamos.
-         Si target sigue en zona borneo, salta alarma nueva. */
-      if(acked && ackTs && (Date.now()-ackTs)>_AIS_ACK_TTL_MS){
-        acked=false;
-        delete _aisAckedMMSIs[cleanMmsi];
-        localStorage.setItem('ihm-ais-acked',JSON.stringify(_aisAckedMMSIs));
-      }
-      /* Rev386 — re-armado del ACK cuando el target reanuda movimiento
-         significativo HACIA el barco propio. Criterio "garreo" (lento + cerrando)
-         O "reanudacion" (target ahora claramente en movimiento + cerrando):
-           - garreo: target_sog<3 kt + closing>5 m/min (movimiento lento acercandose).
-           - reanudacion: target_sog>=0.5 kt + closing>5 m/min (en movimiento real).
-         Anti-jitter: requiere _AIS_DRAGGING_CONSEC ticks consecutivos cumpliendo. */
-      var trulyStatic=t.isStatic||(targetSogKt!==null&&targetSogKt<0.5);
-      var nowMoving=targetSogKt!==null && targetSogKt>=0.5;
-      /* Rev629 (bug report Carlos): con alarma AIS OFF NUNCA marcar targets
-         como "GARREANDO" — evita banner rojo "¡GARREANDO!" persistente sin
-         botón ACK cuando el usuario tiene la alarma desactivada. La detección
-         drag AIS solo tiene sentido con la vigilancia activa. */
-      var draggingCondition = aisAlarmEnabled && acked && closing!==null && closing>5 &&
-                              (trulyStatic || nowMoving);
-      if(draggingCondition){
-        _aisDraggingCounter[cleanMmsi]=(_aisDraggingCounter[cleanMmsi]||0)+1;
-      } else {
-        delete _aisDraggingCounter[cleanMmsi];
-      }
-      var isDragging = aisAlarmEnabled && (_aisDraggingCounter[cleanMmsi]||0) >= _AIS_DRAGGING_CONSEC;
-      if(isDragging){
-        acked=false;
-        delete _aisAckedMMSIs[cleanMmsi];
-        delete _aisDraggingCounter[cleanMmsi];
-        localStorage.setItem('ihm-ais-acked',JSON.stringify(_aisAckedMMSIs));
-      }
+      var acked=!!_aisAckedMMSIs[cleanMmsi];
+      /* Rev908 (Carlos 2026-11-20, "un exceso de alarma significa que al
+         final la dejas de escuchar"): el ACK dura todo el fondeo. Solo lo
+         retira la Pi, si el barco se acerca a tu ancla 15 m más que tú
+         (un vecino que garrea hacia ti). Fuera la caducidad de 15 min y el
+         "¡GARREANDO!" por velocidad de acercamiento: con el ruido de un AIS
+         clase B (9-12 m) un barco abarloado parecía venir a 5 m/min. */
+      var isDragging=false;
       alerts.push({target:t,name:t.name||'?',dist:d,mmsi:t.mmsi,cleanMmsi:cleanMmsi,inBorneo:inB,acked:acked,isDragging:isDragging});
       if(inB){
         borneoAll++;
