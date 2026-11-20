@@ -1,8 +1,15 @@
 # Changelog
 
-## [Unreleased] (Rev904-906)
+## [Unreleased] (Rev904-907)
 
 ### English
+
+**Added — see where each boat's anchor comes from (Rev907).**
+- On the map, the swing circle of another boat has a solid line when it comes from anchor-mapper, and a dashed one when the viewer estimated it from the track. The "Anchorages" switch says so when you hover over it.
+- In the AIS list, boats with an estimated anchor show ⚓ ("⚓ anchor-mapper" when it comes from there).
+- The sort menu gets "⚓ At anchor", which lists only those boats.
+- The setup assistant's AIS step recommends Anchor Mapper, and says whether it is installed and working, or installed but waiting for its configuration to be saved.
+
 
 **Changed — where other boats are anchored, with signalk-anchor-mapper (Rev906).** The ⚓ and swing circle of other boats at anchor now come from [`signalk-anchor-mapper`](https://www.npmjs.com/package/signalk-anchor-mapper) when it is installed. It publishes each boat's anchor in Signal K (`navigation.anchor.*` on that vessel), fitted to the track and its headings. It is listed in the App Store as "works well with". The boat's window says where each estimate comes from, and its quality.
 
@@ -28,6 +35,13 @@ Second audit round: AIS alarm and grounding calculation.
 **Docs.** The AIS alarm is a swing-circle intrusion alarm, not CPA/TCPA; for collision risk from course and speed, use `@signalk/collision-alerts`.
 
 ### Español
+
+**Añadido — de dónde sale cada fondeo (Rev907).**
+- En el mapa, el círculo de borneo de otro barco lleva línea continua si viene de anchor-mapper, y discontinua si el visor lo estimó por el track. El interruptor "Fondeos" lo explica al pasar por encima.
+- En la lista AIS, los barcos con fondeo estimado llevan ⚓ ("⚓ anchor-mapper" si viene de ahí).
+- El menú de ordenar trae "⚓ Fondeados", que deja solo esos barcos.
+- El paso AIS del asistente de configuración recomienda Anchor Mapper y dice si está instalado y funcionando, o instalado pero a falta de guardar su configuración.
+
 
 **Cambiado — dónde están fondeados los otros barcos, con signalk-anchor-mapper (Rev906).** El ⚓ y el círculo de borneo de los otros barcos fondeados salen ahora de [`signalk-anchor-mapper`](https://www.npmjs.com/package/signalk-anchor-mapper) si está instalado. Publica el ancla de cada barco en Signal K (`navigation.anchor.*` de ese barco), ajustada a su track y su rumbo. Aparece en la App Store como "works well with". La ventana del barco dice de dónde sale cada estimación y su calidad.
 

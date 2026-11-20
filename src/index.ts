@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev906";
+const PLUGIN_REVISION = "Rev907";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -954,6 +954,24 @@ function _skConfigDir(): string {
     if (dd) return path.dirname(path.dirname(dd)); // <conf>/plugin-config-data/<id>
   } catch { /* fallback */ }
   return process.env.SIGNALK_NODE_CONF_DIR || "/home/pi/.signalk";
+}
+/* Rev907: signalk-anchor-mapper (recomendado, "works well with"): si está
+   instalado, activado y cuántos fondeos de otros barcos publica ahora. */
+function _detectAnchorMapper(): { installed: boolean; enabled: boolean; estimates: number } {
+  const out = { installed: false, enabled: false, estimates: 0 };
+  try {
+    const conf = _skConfigDir();
+    out.installed = fs.existsSync(path.join(conf, "node_modules", "signalk-anchor-mapper", "package.json"));
+    const f = path.join(conf, "plugin-config-data", "signalk-anchor-mapper.json");
+    if (out.installed && fs.existsSync(f)) {
+      try { out.enabled = JSON.parse(fs.readFileSync(f, "utf8"))?.enabled === true; } catch { /* unreadable */ }
+    }
+    const vessels = (_appRef as any)?.getPath?.("vessels") ?? {};
+    for (const v of Object.values(vessels) as any[]) {
+      if (v?.navigation?.anchor?.estimate?.value?.source === "signalk-anchor-mapper") out.estimates++;
+    }
+  } catch { /* defaults */ }
+  return out;
 }
 function _detectOtherTideProviders(): Array<{ id: string; enabled: boolean; installed: boolean }> {
   const out: Array<{ id: string; enabled: boolean; installed: boolean }> = [];
@@ -15120,6 +15138,11 @@ expressApp.post("/signalk-mareas-ihm/api/audio/test-sink", requireControlAccess,
    plan v3.1 Fase 2.9. */
 let _audioHealthCache: { ts: number; body: any } | null = null;
 const _AUDIO_HEALTH_CACHE_MS = 5000;
+// Rev907: plugins complementarios (asistente, paso AIS).
+expressApp.get("/signalk-mareas-ihm/api/companions", (_req: any, res: any) => {
+  res.set("Cache-Control", "no-store");
+  res.json({ anchorMapper: _detectAnchorMapper() });
+});
 expressApp.get("/signalk-mareas-ihm/api/audio-health", async (_req: any, res: any) => {
   const now = Date.now();
   if (_audioHealthCache && (now - _audioHealthCache.ts) < _AUDIO_HEALTH_CACHE_MS) {

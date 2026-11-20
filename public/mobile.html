@@ -3319,7 +3319,7 @@ body.mobile-ui #shelter-hours .sh-hr{flex:0 0 60px!important}
      AIS    = solo iconos de targets en mapa (no afecta a alarmas ni ACKs).
      Tracks = tracks de otros AIS (NO afecta al track del barco propio).
      Alarma = alarmas AIS (delega en setAlarm legacy: cierra popups, ACKs, etc).
-     Click stopPropagation para no colapsar el panel. --><span class="ais-hdr-toggles" onclick="event.stopPropagation()"><label id="ais-hdr-icons-lbl" title="Mostrar/ocultar iconos AIS en el mapa"><input type="checkbox" id="ais-hdr-icons-chk" onchange="m_aisHdrToggleIcons(this.checked)"><span data-i18n="ais_hdr_icons">AIS</span></label><label id="ais-hdr-anchors-lbl" title="Mostrar/ocultar círculos de fondeo estimado de otros vessels"><input type="checkbox" id="ais-hdr-anchors-chk" onchange="m_aisHdrToggleAnchorEst(this.checked)"><span data-i18n="ais_hdr_anchors">Fondeos</span></label><label id="ais-hdr-alarm-lbl" title="Activar/desactivar alarmas de proximidad AIS"><input type="checkbox" id="ais-hdr-alarm-chk" onchange="m_aisHdrToggleAlarm(this.checked)"><span data-i18n="ais_hdr_alarm">Alarma</span></label></span></h5><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_radio_lbl">Radio:</span><input type="range" id="ais-radius-slider" min="0.5" max="100" step="0.5" value="5" style="flex:1" oninput="_setAisRadius(this.value)"><span id="ais-radius-val" style="min-width:60px;text-align:right;font-weight:700;color:#fff">5 km</span></div><!-- Rev400: linea de ordenar+filtro mitad/mitad del ancho. --><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_sort_lbl" style="flex:0 0 auto">Ordenar:</span><select id="ais-sort-by" onchange="_setAisSort(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"><option value="dist" data-i18n="ais_sort_dist">Distancia</option><option value="name" data-i18n="ais_sort_name">Nombre</option><option value="fav" data-i18n="ais_sort_fav">Favoritos</option><option value="mmsi" data-i18n="ais_sort_mmsi">MMSI</option><option value="type" data-i18n="ais_sort_type">Tipo</option></select><input type="text" id="ais-filter-txt" placeholder="🔎" data-i18n-placeholder="ais_filter_ph" oninput="_setAisFilter(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"></div></div><div id="ais-alarm-list"></div></div>
+     Click stopPropagation para no colapsar el panel. --><span class="ais-hdr-toggles" onclick="event.stopPropagation()"><label id="ais-hdr-icons-lbl" title="Mostrar/ocultar iconos AIS en el mapa"><input type="checkbox" id="ais-hdr-icons-chk" onchange="m_aisHdrToggleIcons(this.checked)"><span data-i18n="ais_hdr_icons">AIS</span></label><label id="ais-hdr-anchors-lbl" data-i18n-title="ais_hdr_anchors_tip" title="Fondeo de otros barcos. Línea continua: anchor-mapper. Discontinua: estimado por el track. Gris de puntos: sin estimar todavía."><input type="checkbox" id="ais-hdr-anchors-chk" onchange="m_aisHdrToggleAnchorEst(this.checked)"><span data-i18n="ais_hdr_anchors">Fondeos</span></label><label id="ais-hdr-alarm-lbl" title="Activar/desactivar alarmas de proximidad AIS"><input type="checkbox" id="ais-hdr-alarm-chk" onchange="m_aisHdrToggleAlarm(this.checked)"><span data-i18n="ais_hdr_alarm">Alarma</span></label></span></h5><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_radio_lbl">Radio:</span><input type="range" id="ais-radius-slider" min="0.5" max="100" step="0.5" value="5" style="flex:1" oninput="_setAisRadius(this.value)"><span id="ais-radius-val" style="min-width:60px;text-align:right;font-weight:700;color:#fff">5 km</span></div><!-- Rev400: linea de ordenar+filtro mitad/mitad del ancho. --><div style="display:flex;align-items:center;gap:10px;font-size:14px;color:#cfd8dc"><span data-i18n="ais_sort_lbl" style="flex:0 0 auto">Ordenar:</span><select id="ais-sort-by" onchange="_setAisSort(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"><option value="dist" data-i18n="ais_sort_dist">Distancia</option><option value="name" data-i18n="ais_sort_name">Nombre</option><option value="fav" data-i18n="ais_sort_fav">Favoritos</option><option value="mmsi" data-i18n="ais_sort_mmsi">MMSI</option><option value="type" data-i18n="ais_sort_type">Tipo</option><option value="anch" data-i18n="ais_sort_anch">⚓ Fondeados</option></select><input type="text" id="ais-filter-txt" placeholder="🔎" data-i18n-placeholder="ais_filter_ph" oninput="_setAisFilter(this.value)" style="flex:1 1 50%;min-width:0;background:rgba(20,40,60,.85);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 8px;font-size:14px"></div></div><div id="ais-alarm-list"></div></div>
 <div class="popup-overlay" id="levar-confirm-pop" onclick="closePopup('levar-confirm-pop')">
   <div class="popup-box" onclick="event.stopPropagation()" style="min-width:300px;text-align:center">
     <h4 style="font-size:18px"data-i18n="levar_titulo">⚓ Levar ancla</h4>
@@ -6223,6 +6223,10 @@ var _i18n={
   ais_sort_fav:{es:'Favoritos',en:'Favorites'},
   ais_sort_mmsi:{es:'MMSI',en:'MMSI'},
   ais_sort_type:{es:'Tipo',en:'Type'},
+  ais_sort_anch:{es:'⚓ Fondeados',en:'⚓ At anchor'},
+  ais_hdr_anchors_tip:{es:'Fondeo de otros barcos. Línea continua: anchor-mapper. Discontinua: estimado por el track. Gris de puntos: sin estimar todavía.',en:'Where other boats are anchored. Solid line: anchor-mapper. Dashed: estimated from the track. Grey dots: not estimated yet.'},
+  ais_ancla_src_am:{es:'fondeo según anchor-mapper',en:'anchor from anchor-mapper'},
+  ais_ancla_src_trk:{es:'fondeo estimado por el track',en:'anchor estimated from the track'},
   ais_filter_ph:{es:'🔎 Filtrar nombre/MMSI',en:'🔎 Filter name/MMSI'},
   ais_no_results:{es:'Sin resultados',en:'No results'},
   /* Rev563 (feedback Carlos): si filtro AIS no encuentra ningún target en
@@ -12639,7 +12643,8 @@ function _showAisSelectedAnchor(t){
     return;
   }
   /* Círculo de borneo estimado (radio P90 + eslora + margen). */
-  grp.addLayer(L.circle([est.lat,est.lng],{radius:est.radius,color:'#ff9800',fillColor:'#ff9800',fillOpacity:0.06,weight:2,dashArray:'8,4'}));
+  /* Rev907: continua si viene de anchor-mapper, discontinua si es nuestra. */
+  grp.addLayer(L.circle([est.lat,est.lng],{radius:est.radius,color:'#ff9800',fillColor:'#ff9800',fillOpacity:0.06,weight:2,dashArray:(est.source==='track'?'8,4':null)}));
   /* Icono ancla en la posición estimada. divIcon con emoji para que el color
      visual sea consistente aunque el sistema no traiga font emoji. */
   var anchorIcon=L.divIcon({
@@ -12949,6 +12954,9 @@ function checkAisBorneoAlarm(targets){
             } else {
               _ringCol='#ff9800'; _ringWeight=2; _dash='6,6';
             }
+            /* Rev907: línea continua si el fondeo viene de anchor-mapper
+               (u otra app), discontinua si es nuestra estimación. */
+            if(est.source && est.source!=='track') _dash=null;
             _aisBorneoRings.addLayer(L.circle([est.lat,est.lng],{
               radius:est.radius,color:_ringCol,fillColor:_ringCol,
               fillOpacity:0.05,weight:_ringWeight,dashArray:_dash,
@@ -12982,6 +12990,12 @@ function checkAisBorneoAlarm(targets){
     return a.dist-b.dist;
   });
   for(var mmsi in _aisAckedMMSIs){var seen=false;alerts.forEach(function(a){if(a.cleanMmsi===mmsi)seen=true;});if(!seen)delete _aisAckedMMSIs[mmsi];}
+  /* Rev907: fondeo estimado por fila (anchor-mapper o track) para la marca
+     ⚓ y el filtro "⚓ Fondeados" del desplegable de orden. */
+  alerts.forEach(function(a){ try{ a.anchorEst=estimateAnchor(a.target); }catch(_){ a.anchorEst=null; } });
+  if(_aisSortBy==='anch'){
+    alerts=alerts.filter(function(a){ return !!a.anchorEst; });
+  }
   /* Rev400: filtro texto sobre nombre/MMSI antes del render. */
   var _hadAlertsBeforeFilter=alerts.length>0;
   if(_aisFilterTxt){
@@ -13051,6 +13065,11 @@ function checkAisBorneoAlarm(targets){
       };
       var _srcArr=(a.target&&Array.isArray(a.target.sources))?a.target.sources:((a.target&&a.target.source)?[a.target.source]:[]);
       var srcBadge='';
+      /* Rev907: ⚓ si hay fondeo estimado; dice de dónde sale. */
+      if(a.anchorEst){
+        var _am=a.anchorEst.source!=='track';
+        srcBadge+=' <small style="color:#ff9800;font-weight:700;font-size:11px" title="'+_escHtml(_am?T('ais_ancla_src_am','fondeo según anchor-mapper'):T('ais_ancla_src_trk','fondeo estimado por el track'))+'">⚓'+(_am?' anchor-mapper':'')+'</small>';
+      }
       _srcArr.forEach(function(s){
         var d=_srcMap[s]; if(!d) return;
         srcBadge+=' <small style="color:'+d.c+';font-weight:700;opacity:.75;font-size:11px;letter-spacing:.3px" title="Fuente: '+d.l+'">'+d.l+'</small>';
@@ -18877,8 +18896,48 @@ window.m_wizardStep_aisFallback = function(body){
     +     ((lang==='en')?'Loading aisstream settings…':'Cargando ajustes de aisstream…')
     +     '</div>'
     +   '</div>'
+    +   '<div id="m-wiz-anchor-mapper"></div>'
     + '</div>';
   m_wizPluginOptsLoadInto('m-wiz-ais-cfg', 'aisstream');
+  m_wizAnchorMapperStatus('m-wiz-anchor-mapper');
+};
+
+/* Rev907: complemento recomendado signalk-anchor-mapper ("works well with"
+   en la App Store): dónde están fondeados los otros barcos. Dice si está
+   instalado, si falta guardar su configuración y cuántos fondeos publica. */
+window.m_wizAnchorMapperStatus = function(hostId){
+  var isEn = (_lang==='en');
+  var sec = 'padding:16px 18px;background:rgba(0,0,0,.20);border:1px solid rgba(255,255,255,.10);border-radius:10px;margin:14px 0';
+  var h3 = 'font-size:20px;font-weight:800;color:var(--org);margin:0 0 6px;line-height:1.2';
+  var hint = 'font-size:15px;color:#cfd8dc;line-height:1.5';
+  fetch(A+'/companions',{cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .catch(function(){ return null; })
+    .then(function(j){
+      var host = document.getElementById(hostId);
+      if (!host) return;
+      var am = j && j.anchorMapper;
+      var st;
+      if (!am || !am.installed){
+        st = '<span style="color:#ffb23f;font-weight:700">'+(isEn?'Not installed.':'No instalado.')+'</span> '
+          + (isEn?'Install <b>Anchor Mapper</b> from the Signal K App Store, then press <b>Save configuration</b> in its settings.'
+                 :'Instálalo desde la App Store de Signal K (<b>Anchor Mapper</b>) y pulsa <b>Save configuration</b> en sus ajustes.');
+      } else if (!am.enabled){
+        st = '<span style="color:#ffb23f;font-weight:700">'+(isEn?'Installed but not started.':'Instalado pero sin arrancar.')+'</span> '
+          + (isEn?'In Signal K, Server > Plugin Config > Anchor Mapper, press <b>Save configuration</b>.'
+                 :'En Signal K, Server > Plugin Config > Anchor Mapper, pulsa <b>Save configuration</b>.');
+      } else {
+        st = '<span style="color:#3aa856;font-weight:700">✓ '+(isEn?'Working':'Funcionando')+'</span> — '
+          + (isEn?('anchors of '+am.estimates+' boat(s) estimated right now.'):('ahora estima el fondeo de '+am.estimates+' barco(s).'));
+      }
+      host.innerHTML = '<div style="'+sec+'">'
+        + '<div style="'+h3+'">⚓ '+(isEn?'Recommended: Anchor Mapper':'Recomendado: Anchor Mapper')+'</div>'
+        + '<div style="'+hint+'">'+(isEn
+            ? 'Shows where the other boats are anchored and their swing circles, far better than the viewer estimates on its own. On the map, its circles have a solid line.'
+            : 'Muestra dónde están fondeados los otros barcos y su círculo de borneo, mucho mejor de lo que el visor lo estima por sí solo. En el mapa, sus círculos llevan línea continua.')+'</div>'
+        + '<div style="'+hint+';margin-top:10px">'+st+'</div>'
+        + '</div>';
+    });
 };
 
 /* Rev724: carga /api/plugin-options y pinta SOLO los campos que
