@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] (Rev908-913)
+## [2.16.0] - 2026-11-21
 
 ### English
 
