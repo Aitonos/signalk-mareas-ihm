@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] (Rev904-907)
+## [2.15.0] - 2026-11-20
 
 ### English
 
