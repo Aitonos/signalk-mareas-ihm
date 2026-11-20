@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev911";
+const PLUGIN_REVISION = "Rev912";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1477,6 +1477,10 @@ export default function (app: SignalKApp): Plugin {
   // Rev766: forward decl — Telegram formatTelegramMessage uses boat-global lang
   // (same mirror as Pi voice). Real value refreshed from ihmCache /settings.
   let _currentLang: UiLang = DEFAULT_LANG;
+  // Rev912: texto de las notificaciones de Signal K en el idioma del barco.
+  // Lo leen Alert Center (Telegram), WilhelmSK, KIP y OpenPlotter. Desde
+  // Rev732 iban siempre en inglés; un barco en inglés los sigue viendo así.
+  const _nt = (es: string, en: string): string => (_currentLang === "en" ? en : es);
 
   /** Load boat-global lang from props, ihmCache, or plugin-config file. */
   async function _refreshCurrentLang(props?: Config): Promise<void> {
@@ -8170,7 +8174,7 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
         const delta: Delta = { context: ("vessels." + app.selfId) as Context,
           updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
             path: "notifications.signalk-mareas-ihm.gpsLost" as any,
-            value: { state: "normal", method: [] as string[], message: "GPS recovered" }
+            value: { state: "normal", method: [] as string[], message: _nt("GPS recuperado", "GPS recovered") }
           }]}] };
         app.handleMessage(plugin.id, delta);
       } catch { /* non-critical */ }
@@ -8202,7 +8206,7 @@ function _evaluateGpsLost(lat: number | null, lng: number | null) {
       ? ["visual", "sound", "push"]
       : ["visual", "push"];
     // Rev732: mensaje en EN para push WilhelmSK/notifications SK estándar.
-    const message = `GPS position lost (${Math.round(elapsed / 1000)}s without fix)`;
+    const message = _nt(`Posición GPS perdida (${Math.round(elapsed / 1000)} s sin señal)`, `GPS position lost (${Math.round(elapsed / 1000)}s without fix)`);
     const delta: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
         path: "notifications.signalk-mareas-ihm.gpsLost" as any,
@@ -8334,7 +8338,7 @@ async function _autoLiftAnchorIntentional(sogKt: number) {
       : `Auto-lift: SOG ${sogKt.toFixed(1)} kn sustained (departure assumed)`;
     const notifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [
-        { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: "Auto-lift (departure)" } },
+        { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: _nt("Fondeo levado automáticamente (salida)", "Auto-lift (departure)") } },
         { path: "notifications.signalk-mareas-ihm.autoLift" as any, value: { state: "alert", method: ["visual"] as string[], message: msg } },
       ]}] };
     app.handleMessage(plugin.id, notifDelta);
@@ -8628,10 +8632,11 @@ function evaluateAnchorWatch() {
         // por defecto — WilhelmSK y demás clientes son internacionales
         // y EN es lingua franca. Los mensajes internos del visor siguen
         // en español (el UI del visor tiene sistema i18n propio).
-        const velLabel = sogKt < 0.3 ? "low" : (sogKt < 0.8 ? "medium" : "high");
+        const velLabel = sogKt < 0.3 ? _nt("baja", "low") : (sogKt < 0.8 ? _nt("media", "medium") : _nt("alta", "high"));
         const overshootR = Math.max(0, Math.round(dist - radiusTotalForRing));
         const localTime = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-        const message = `[${localTime}] DANGER: Anchor dragging at ${velLabel} speed, ${overshootR} m past max swing radius`;
+        const message = _nt(`[${localTime}] PELIGRO: el ancla garrea a velocidad ${velLabel}, ${overshootR} m fuera del radio de borneo`,
+                            `[${localTime}] DANGER: Anchor dragging at ${velLabel} speed, ${overshootR} m past max swing radius`);
         // Rev49: pseudo-transition for KIP/OP. KIP de-dups by path+state and
         // does NOT re-fire sound on subsequent alarm emissions even with
         // different message. Workaround: emit normal briefly, then alarm
@@ -8666,7 +8671,7 @@ function evaluateAnchorWatch() {
             context: ("vessels." + app.selfId) as Context,
             updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
               path: "notifications.signalk-mareas-ihm.anchorDrag" as any,
-              value: { state: "normal", method: [] as string[], message: "re-arming" },
+              value: { state: "normal", method: [] as string[], message: _nt("repitiendo aviso", "re-arming") },
             }]}],
           };
           app.handleMessage(plugin.id, normalDelta);
@@ -9010,29 +9015,30 @@ function evaluateAnchorWatch() {
       if (matureUnackedInZone.length > 0 && anchorWatch.aisAlarmEnabled && !_isAisSilenced()) {
         desiredState = 'warn';
         const localTime = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-        desiredMessage = `[${localTime}] AIS in swing zone: ${matureUnackedInZone.map(t => t.name).join(", ")}`;
+        desiredMessage = _nt(`[${localTime}] Barco AIS dentro de tu zona de borneo: ${matureUnackedInZone.map(t => t.name).join(", ")}`,
+                             `[${localTime}] AIS in swing zone: ${matureUnackedInZone.map(t => t.name).join(", ")}`);
         desiredSig = 'warn'; // marker only — we always emit regardless
       } else {
         desiredState = 'normal';
         const ackedCount = aisInZone.length - unackedInZone.length;
         if (!anchorWatch.aisAlarmEnabled) {
           desiredSig = 'normal:disabled';
-          desiredMessage = "AIS alarm disabled";
+          desiredMessage = _nt("Alarma AIS desactivada", "AIS alarm disabled");
         } else if (inDropGrace) {
           // Rev57: anchor just dropped — quiet window for skipper review.
           const remainSec = Math.ceil((AIS_DROP_GRACE_MS - (_nowMs - _anchorDroppedAt)) / 1000);
           desiredSig = 'normal:drop-grace:' + Math.floor(remainSec / 5);
-          desiredMessage = `Post-drop grace (${remainSec}s) — review AIS`;
+          desiredMessage = _nt(`Recién fondeado (${remainSec} s): revisa el AIS`, `Post-drop grace (${remainSec}s) — review AIS`);
         } else if (unackedInZone.length > 0) {
           // Targets in zone but not yet "mature" (still in 30s grace)
           desiredSig = 'normal:grace:' + unackedInZone.length;
-          desiredMessage = `Evaluating ${unackedInZone.length} target(s) in zone`;
+          desiredMessage = _nt(`Evaluando ${unackedInZone.length} barco(s) en la zona`, `Evaluating ${unackedInZone.length} target(s) in zone`);
         } else if (ackedCount > 0) {
           desiredSig = 'normal:all-acked:' + ackedCount;
-          desiredMessage = `${ackedCount} target(s) ACK — zone under control`;
+          desiredMessage = _nt(`${ackedCount} barco(s) con ACK: zona bajo control`, `${ackedCount} target(s) ACK — zone under control`);
         } else {
           desiredSig = 'normal:zone-clear';
-          desiredMessage = "AIS zone clear";
+          desiredMessage = _nt("Zona AIS despejada", "AIS zone clear");
         }
       }
 
@@ -9075,7 +9081,7 @@ function evaluateAnchorWatch() {
               context: ("vessels." + app.selfId) as Context,
               updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
                 path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any,
-                value: { state: "normal", method: [] as string[], message: "re-arming" },
+                value: { state: "normal", method: [] as string[], message: _nt("repitiendo aviso", "re-arming") },
               }]}],
             };
             app.handleMessage(plugin.id, normalDelta);
@@ -9160,7 +9166,7 @@ function clearDragAlarm() {
     const delta: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
         path: "notifications.signalk-mareas-ihm.anchorDrag" as any,
-        value: { state: "normal", method: [] as string[], message: "Anchor watch: within safe radius" }
+        value: { state: "normal", method: [] as string[], message: _nt("Fondeo: dentro del radio seguro", "Anchor watch: within safe radius") }
       }]}] };
     app.handleMessage(plugin.id, delta);
   } catch { /* non-critical */ }
@@ -13842,7 +13848,7 @@ function _silenceGarreo(minutes: number) {
       context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
         path: "notifications.signalk-mareas-ihm.anchorDrag" as any,
-        value: { state: "normal", method: [] as string[], message: `Silenced ${minutes} min` },
+        value: { state: "normal", method: [] as string[], message: _nt(`Silenciada ${minutes} min`, `Silenced ${minutes} min`) },
       }]}],
     };
     app.handleMessage(plugin.id, delta);
@@ -13859,7 +13865,7 @@ function _silenceAis(minutes: number) {
       context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
         path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any,
-        value: { state: "normal", method: [] as string[], message: `Silenced ${minutes} min` },
+        value: { state: "normal", method: [] as string[], message: _nt(`Silenciada ${minutes} min`, `Silenced ${minutes} min`) },
       }]}],
     };
     app.handleMessage(plugin.id, delta);
@@ -15779,7 +15785,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", requireControlAcces
     const dropDelta: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [
         { path: "notifications.signalk-mareas-ihm.anchorDrag" as any,
-          value: { state: "normal", method: [] as string[], message: "Anchor watch active" } },
+          value: { state: "normal", method: [] as string[], message: _nt("Vigilancia de fondeo activa", "Anchor watch active") } },
       ]}] };
     app.handleMessage(plugin.id, dropDelta);
   } catch { /* non-critical */ }
@@ -15837,8 +15843,8 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/lift", requireControlAcces
     // Clear notifications
     const notifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
       updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [
-        { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: "Anchor lifted" } },
-        { path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any, value: { state: "normal", method: [] as string[], message: "Anchor lifted" } },
+        { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: _nt("Fondeo levado", "Anchor lifted") } },
+        { path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any, value: { state: "normal", method: [] as string[], message: _nt("Fondeo levado", "Anchor lifted") } },
       ]}] };
     app.handleMessage(plugin.id, notifDelta);
   } catch { /* non-critical */ }
@@ -16050,7 +16056,7 @@ try {
                 { path: "environment.anchor.mareasIhm.anchorCommand" as Path, value: true },
                 { path: "environment.anchor.mareasIhm.garreoAlarmCommand" as Path, value: true },
                 { path: "environment.anchor.mareasIhm.aisAlarmCommand" as Path, value: true },
-                { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: "Anchor watch active" } },
+                { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: _nt("Vigilancia de fondeo activa", "Anchor watch active") } },
               ] as any}] };
             app.handleMessage(plugin.id, dropDelta);
           } catch { /* non-critical */ }
@@ -16096,8 +16102,8 @@ try {
           _canonicalAnchorStateEmitted = "off"; // Rev775
           const notifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
             updates: [{ timestamp: ts, values: [
-              { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: "Anchor lifted" } },
-              { path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any, value: { state: "normal", method: [] as string[], message: "Anchor lifted" } },
+              { path: "notifications.signalk-mareas-ihm.anchorDrag" as any, value: { state: "normal", method: [] as string[], message: _nt("Fondeo levado", "Anchor lifted") } },
+              { path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any, value: { state: "normal", method: [] as string[], message: _nt("Fondeo levado", "Anchor lifted") } },
               // Rev721: canónicos añadidos automáticamente por el wrapper.
             ]}] };
           app.handleMessage(plugin.id, notifDelta);
@@ -16275,7 +16281,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/ais-alarm-status", require
       try {
         const d: Delta = { context: ("vessels." + app.selfId) as Context,
           updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [
-            { path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any, value: { state: "normal", method: [] as string[], message: "AIS alarm disabled" } },
+            { path: "notifications.signalk-mareas-ihm.aisAnchorAlarm" as any, value: { state: "normal", method: [] as string[], message: _nt("Alarma AIS desactivada", "AIS alarm disabled") } },
             { path: "environment.anchor.mareasIhm.aisAlarmEnabled" as Path, value: false },
           ]}] };
         app.handleMessage(plugin.id, d);
@@ -16300,7 +16306,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/gps-lost-alarm-status", re
       const delta: Delta = { context: ("vessels." + app.selfId) as Context,
         updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
           path: "notifications.signalk-mareas-ihm.gpsLost" as any,
-          value: { state: "normal", method: [] as string[], message: "GPS alarm disabled by user" }
+          value: { state: "normal", method: [] as string[], message: _nt("Alarma GPS desactivada por el usuario", "GPS alarm disabled by user") }
         }]}] };
       app.handleMessage(plugin.id, delta);
     } catch {}
@@ -17245,7 +17251,9 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/test-alarm", requireContro
                   : kind === "grounding" ? "notifications.signalk-mareas-ihm.grounding"
                   : "notifications.signalk-mareas-ihm.aisAnchorAlarm";
   const state = kind === "ais" ? "warn" : "alarm";
-  const message = `[TEST] ${kind.toUpperCase()} alarm — simulated for 10 s to verify audio + push + notifications`;
+  const kindName = kind === "garreo" ? _nt("GARREO", "ANCHOR DRAG") : kind === "grounding" ? _nt("VARADA", "GROUNDING") : "AIS";
+  const message = _nt(`[PRUEBA] Alarma de ${kindName}, simulada durante 10 s para comprobar audio, push y notificaciones`,
+                      `[TEST] ${kindName} alarm — simulated for 10 s to verify audio + push + notifications`);
   try {
     // Rev742 (feedback Carlos "alarmas test no funcionan"): además del
     // delta SK, arrancar TAMBIÉN el audio Pi (paplay/espeak) durante el
@@ -17283,7 +17291,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/test-alarm", requireContro
           context: ("vessels." + app.selfId) as Context,
           updates: [{ timestamp: new Date().toISOString() as Timestamp, values: [{
             path: notifPath as any,
-            value: { state: "normal", method: [], message: "[TEST] cleared" },
+            value: { state: "normal", method: [], message: _nt("[PRUEBA] terminada", "[TEST] cleared") },
           }]}],
         });
         // Rev742: parar audio Pi también.
@@ -18263,7 +18271,8 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
         // mensaje claro de por qué la alarma sigue.
         // Rev732: EN por defecto en el mensaje de notification para push
         // WilhelmSK y clientes internacionales.
-        const latchMsg = `⚠ RISK LATCHED — ${reasonText}. Sensor degraded during active alarm. Return to anchor if it was real.`;
+        const latchMsg = tr(`⚠ RIESGO RETENIDO: ${reasonText}. La sonda falló con la alarma activa. Si era real, vuelve al fondeo.`,
+                            `⚠ RISK LATCHED — ${reasonText}. Sensor degraded during active alarm. Return to anchor if it was real.`);
         const latchNotifDelta: Delta = { context: ("vessels." + app.selfId) as Context,
           updates: [{ timestamp: now.toISOString() as Timestamp, values: [{
             path: "notifications.signalk-mareas-ihm.grounding" as any,
@@ -18419,15 +18428,15 @@ async function evaluateAndPublishGroundingRisk(now: Date, tz: string, extremes: 
     let message: string;
     if (physicalRisk) {
       const minsLine = (minutesToRisk != null)
-        ? `GROUNDING RISK in ${minutesToRisk} MINUTES`
-        : `GROUNDING RISK`;
-      const depthLine = `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
+        ? tr(`RIESGO DE VARADA en ${minutesToRisk} MINUTOS`, `GROUNDING RISK in ${minutesToRisk} MINUTES`)
+        : tr(`RIESGO DE VARADA`, `GROUNDING RISK`);
+      const depthLine = tr(`Sonda mínima prevista: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`, `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`);
       message = `${minsLine}\n${depthLine}`;
     } else if (tideUnknown) {
-      message = `NO TIDE DATA\nCurrent depth: ${depthNow!.toFixed(2)} m`;
+      message = tr(`SIN DATOS DE MAREA\nSonda actual: ${depthNow!.toFixed(2)} m`, `NO TIDE DATA\nCurrent depth: ${depthNow!.toFixed(2)} m`);
     } else {
-      const okLine = "NO RISK";
-      const depthLine = `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`;
+      const okLine = tr("SIN RIESGO", "NO RISK");
+      const depthLine = tr(`Sonda mínima prevista: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`, `Expected minimum depth: ${expectedMinDepth != null ? expectedMinDepth.toFixed(2) : "?"} m`);
       message = `${okLine}\n${depthLine}`;
     }
 
@@ -19223,7 +19232,7 @@ try {
       ];
       const clearValues = clearPaths.map(p => ({
         path: p as any,
-        value: { state: "normal", method: [] as string[], message: "Plugin restarted" }
+        value: { state: "normal", method: [] as string[], message: _nt("Plugin reiniciado", "Plugin restarted") }
       }));
       const clearDelta: Delta = {
         context: ("vessels." + app.selfId) as Context,

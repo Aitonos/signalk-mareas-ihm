@@ -1,8 +1,11 @@
 # Changelog
 
-## [Unreleased] (Rev908-911)
+## [Unreleased] (Rev908-912)
 
 ### English
+
+**Changed — alarm texts in the boat's language (Rev912).** The text of the Signal K notifications (what Alert Center, WilhelmSK, KIP and OpenPlotter show) follows the language set in the viewer. Since 2.8.0 it was always English.
+
 
 **Changed — each alarm goes out once, on its standard Signal K path (Rev911).** Since 2.8.0 the anchor drag, AIS, grounding and GPS lost alarms went out twice: on this plugin's own path and copied to the standard one. Alert Center, KIP and OpenPlotter showed two alarms for one, and Alert Center sent two Telegram messages. They now go out only on `notifications.navigation.anchor`, `notifications.navigation.collisionRisk`, `notifications.environment.depth.belowKeel` and `notifications.navigation.gnss`. **If you read `notifications.signalk-mareas-ihm.anchorDrag`, `aisAnchorAlarm`, `grounding` or `gpsLost` (Node-RED, a script), switch to the standard path.** Dismissing the alarm from KIP or OpenPlotter keeps working on both.
 
@@ -18,6 +21,8 @@ Removed:
 - the viewer's "dragging!" from a closing speed of 5 m/min. With the 9-12 m position noise of class B AIS, a rafted boat seemed to close at that speed.
 
 ### Español
+
+**Cambiado — textos de las alarmas en el idioma del barco (Rev912).** El texto de las notificaciones de Signal K (lo que enseñan Alert Center, WilhelmSK, KIP y OpenPlotter) sigue el idioma elegido en el visor. Desde la 2.8.0 iba siempre en inglés.
 
 **Cambiado — cada alarma sale una vez, por su ruta estándar de Signal K (Rev911).** Desde la 2.8.0 las alarmas de garreo, AIS, varada y GPS perdido salían dos veces: por la ruta propia del plugin y copiadas a la estándar. Alert Center, KIP y OpenPlotter enseñaban dos alarmas por una, y Alert Center mandaba dos mensajes de Telegram. Ahora salen solo por `notifications.navigation.anchor`, `notifications.navigation.collisionRisk`, `notifications.environment.depth.belowKeel` y `notifications.navigation.gnss`. **Si lees `notifications.signalk-mareas-ihm.anchorDrag`, `aisAnchorAlarm`, `grounding` o `gpsLost` (Node-RED, un script), cambia a la ruta estándar.** Descartar la alarma desde KIP u OpenPlotter sigue funcionando en las dos.
 
