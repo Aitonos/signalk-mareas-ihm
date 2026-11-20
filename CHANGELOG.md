@@ -1,8 +1,11 @@
 # Changelog
 
-## [Unreleased] (Rev908-910)
+## [Unreleased] (Rev908-911)
 
 ### English
+
+**Changed — each alarm goes out once, on its standard Signal K path (Rev911).** Since 2.8.0 the anchor drag, AIS, grounding and GPS lost alarms went out twice: on this plugin's own path and copied to the standard one. Alert Center, KIP and OpenPlotter showed two alarms for one, and Alert Center sent two Telegram messages. They now go out only on `notifications.navigation.anchor`, `notifications.navigation.collisionRisk`, `notifications.environment.depth.belowKeel` and `notifications.navigation.gnss`. **If you read `notifications.signalk-mareas-ihm.anchorDrag`, `aisAnchorAlarm`, `grounding` or `gpsLost` (Node-RED, a script), switch to the standard path.** Dismissing the alarm from KIP or OpenPlotter keeps working on both.
+
 
 **Added — works well with signalk-alert-center (Rev909).** When Alert Center is running with a working Telegram service in its default policy, it sends the alarms to Telegram and this plugin stops sending its own, so you get one message, not two. This plugin sends them again by itself when Alert Center is missing, stopped, its Telegram service is failing, or its minimum severity would leave an alarm out. The setup assistant's notifications step says which of the two is sending, and its alarm test leaves Telegram to Alert Center too (Rev910). Listed under "works well with".
 
@@ -15,6 +18,8 @@ Removed:
 - the viewer's "dragging!" from a closing speed of 5 m/min. With the 9-12 m position noise of class B AIS, a rafted boat seemed to close at that speed.
 
 ### Español
+
+**Cambiado — cada alarma sale una vez, por su ruta estándar de Signal K (Rev911).** Desde la 2.8.0 las alarmas de garreo, AIS, varada y GPS perdido salían dos veces: por la ruta propia del plugin y copiadas a la estándar. Alert Center, KIP y OpenPlotter enseñaban dos alarmas por una, y Alert Center mandaba dos mensajes de Telegram. Ahora salen solo por `notifications.navigation.anchor`, `notifications.navigation.collisionRisk`, `notifications.environment.depth.belowKeel` y `notifications.navigation.gnss`. **Si lees `notifications.signalk-mareas-ihm.anchorDrag`, `aisAnchorAlarm`, `grounding` o `gpsLost` (Node-RED, un script), cambia a la ruta estándar.** Descartar la alarma desde KIP u OpenPlotter sigue funcionando en las dos.
 
 **Añadido — funciona bien con signalk-alert-center (Rev909).** Si Alert Center está en marcha con un servicio de Telegram funcionando en su política por defecto, él manda las alarmas a Telegram y este plugin deja de mandar las suyas: un mensaje, no dos. Este plugin vuelve a mandarlas por sí mismo si Alert Center falta, está parado, su Telegram falla o su gravedad mínima dejaría fuera una alarma. El paso de notificaciones del asistente dice cuál de los dos las manda, y su prueba de alarmas también deja Telegram a Alert Center (Rev910). Aparece en "works well with".
 

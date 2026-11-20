@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev910";
+const PLUGIN_REVISION = "Rev911";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -2449,19 +2449,14 @@ export default function (app: SignalKApp): Plugin {
               let anyKept = false;
               for (const u of delta.updates) {
                 if (Array.isArray(u.values)) {
-                  // 1) Espejo: por cada value con path en NOTIF_MIRROR,
-                  // clonamos su value con el path canónico. Se inserta en
-                  // el mismo update para que compartan timestamp y así SK
-                  // los procese como uno solo.
-                  const mirrored: any[] = [];
-                  for (const v of u.values) {
-                    const p = String(v?.path ?? "");
-                    const canonical = NOTIF_MIRROR[p];
-                    if (canonical) {
-                      mirrored.push({ path: canonical, value: v.value });
-                    }
-                  }
-                  if (mirrored.length > 0) u.values.push(...mirrored);
+                  // 1) Rev911: estas alarmas salen SOLO por la ruta estándar.
+                  // Antes (Rev721) se copiaban y salían por las dos, y
+                  // Alert Center, KIP u OpenPlotter veían dos alarmas por
+                  // una (docs/auditoria_alarma_doble_ruta_2026-11-20.md).
+                  u.values = u.values.map((v: any) => {
+                    const canonical = NOTIF_MIRROR[String(v?.path ?? "")];
+                    return canonical ? { ...v, path: canonical } : v;
+                  });
                   // 2) Filtro (ya existía Rev703).
                   u.values = u.values.filter((v: any) => {
                     const p = String(v?.path ?? "");
@@ -17331,21 +17326,22 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/cancel-silence", requireCo
 // Rev44: PUT handlers on our notification paths so KIP/OP can ACK using their
 // standard "dismiss notification" UI (which writes state:normal back to SK).
 // When that arrives here we register a 5-min silence + stop Pi audio.
+// Rev911: las alarmas salen ya por la ruta estándar; se atienden las dos
+// (la propia, para clientes que la tuvieran guardada).
 try {
-  (app as any).registerPutHandler?.("vessels.self", "notifications.signalk-mareas-ihm.anchorDrag",
-    (_ctx: string, _path: string, value: any) => {
-      if (value && (value.state === "normal" || (Array.isArray(value.method) && value.method.length === 0))) {
-        _silenceGarreo(ALARM_SILENCE_DEFAULT_MIN);
-      }
-      return { state: "COMPLETED", statusCode: 200 };
-    });
-  (app as any).registerPutHandler?.("vessels.self", "notifications.signalk-mareas-ihm.aisAnchorAlarm",
-    (_ctx: string, _path: string, value: any) => {
-      if (value && (value.state === "normal" || (Array.isArray(value.method) && value.method.length === 0))) {
-        _silenceAis(ALARM_SILENCE_DEFAULT_MIN);
-      }
-      return { state: "COMPLETED", statusCode: 200 };
-    });
+  const isDismiss = (value: any) => !!value && (value.state === "normal" || (Array.isArray(value.method) && value.method.length === 0));
+  const onDismissGarreo = (_ctx: string, _path: string, value: any) => {
+    if (isDismiss(value)) _silenceGarreo(ALARM_SILENCE_DEFAULT_MIN);
+    return { state: "COMPLETED", statusCode: 200 };
+  };
+  const onDismissAis = (_ctx: string, _path: string, value: any) => {
+    if (isDismiss(value)) _silenceAis(ALARM_SILENCE_DEFAULT_MIN);
+    return { state: "COMPLETED", statusCode: 200 };
+  };
+  for (const p of ["notifications.signalk-mareas-ihm.anchorDrag", "notifications.navigation.anchor"])
+    (app as any).registerPutHandler?.("vessels.self", p, onDismissGarreo);
+  for (const p of ["notifications.signalk-mareas-ihm.aisAnchorAlarm", "notifications.navigation.collisionRisk"])
+    (app as any).registerPutHandler?.("vessels.self", p, onDismissAis);
 } catch { /* registerPutHandler may not exist on older SK */ }
 
 // Toggle predictive ring (3rd ring)
@@ -19235,6 +19231,18 @@ try {
       };
       app.handleMessage(plugin.id, clearDelta);
       app.debug(`[IHM-STARTUP] Cleared ${clearPaths.length} notification paths to kill zombies`);
+      // Rev911: si el plugin se reinicia sin reiniciar Signal K, las rutas
+      // propias de antes (ahora solo se usa la estándar) pueden seguir en el
+      // árbol con una alarma vieja. Se ponen en normal, en crudo (el wrapper
+      // las llevaría a la estándar), y solo si existen.
+      const legacy = ["anchorDrag", "aisAnchorAlarm", "grounding", "gpsLost"]
+        .map(k => `notifications.signalk-mareas-ihm.${k}`)
+        .filter(p => { try { const n = (app as any).getSelfPath?.(p); return !!n && (n.value?.state ?? n.state) !== "normal"; } catch { return false; } });
+      const rawHandle = (app as any)._ihmOrigHandleMessage;
+      if (legacy.length && typeof rawHandle === "function") {
+        rawHandle(plugin.id, { context: ("vessels." + app.selfId), updates: [{ timestamp: ts,
+          values: legacy.map(p => ({ path: p, value: { state: "normal", method: [], message: "Moved to the standard Signal K path" } })) }] });
+      }
     } catch { /* never break startup */ }
 
     /* Rev878: declare meta.timeout en paths self que publicamos
