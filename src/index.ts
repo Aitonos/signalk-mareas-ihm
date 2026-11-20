@@ -8353,7 +8353,7 @@ function evaluateAnchorWatch() {
   let dLen = 12;
   if (lat != null && lng != null) {
     const _hdgR = _readHeadingRad(app); // Rev901 (D16)
-    let hdg = _hdgR ?? 0;
+    const hdg = _hdgR ?? 0;
     let bowOff = 0;
     try { const v = app.getSelfPath("sensors.gps.fromBow"); bowOff = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
     try { const v = app.getSelfPath("design.length"); if (typeof v === "object") dLen = (v as any).value?.overall ?? (v as any).overall ?? 12; else if (typeof v === "number") dLen = v; } catch {}
@@ -10369,7 +10369,7 @@ function getAnchorWatchState() {
   if (anchorWatch.anchored && anchorWatch.anchorPosition && lat != null && lng != null) {
     // Distance from BOW to anchor (same as evaluateAnchorWatch)
     const _hdgR = _readHeadingRad(app); // Rev901 (D16)
-    let hdgState = _hdgR ?? 0;
+    const hdgState = _hdgR ?? 0;
     let bowOffState = 0;
     try { const v = app.getSelfPath("sensors.gps.fromBow"); bowOffState = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
     let dLenState = 12;
@@ -15624,7 +15624,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/drop", requireControlAcces
       const gpsLng = (pos as any)?.value?.longitude ?? (pos as any)?.longitude;
       if (typeof gpsLat === "number" && typeof gpsLng === "number") {
         const _hdgR = _readHeadingRad(app); // Rev901 (D16)
-        let hdg = _hdgR ?? 0;
+        const hdg = _hdgR ?? 0;
         let bowOff = 0;
         try { const v = app.getSelfPath("sensors.gps.fromBow"); bowOff = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
         let dLen = 12;
@@ -15821,7 +15821,7 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/toggle", requireControlAcc
       const gLng = (pos as any)?.value?.longitude ?? (pos as any)?.longitude;
       if (typeof gLat === "number" && typeof gLng === "number") {
         const _hdgR = _readHeadingRad(app); // Rev901 (D16)
-        let hdg = _hdgR ?? 0;
+        const hdg = _hdgR ?? 0;
         let bowOff = 0;
         try { const v = app.getSelfPath("sensors.gps.fromBow"); bowOff = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
         let dLen = 12;
@@ -15947,7 +15947,7 @@ try {
           const gLng = (pos as any)?.value?.longitude ?? (pos as any)?.longitude;
           if (typeof gLat === "number" && typeof gLng === "number") {
             const _hdgR = _readHeadingRad(app); // Rev901 (D16)
-            let hdg = _hdgR ?? 0;
+            const hdg = _hdgR ?? 0;
             let bowOff = 0;
             try { const v = app.getSelfPath("sensors.gps.fromBow"); bowOff = typeof v === "object" ? ((v as any).value ?? 0) : (typeof v === "number" ? v : 0); } catch {}
             let dLen = 12;
