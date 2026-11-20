@@ -176,7 +176,8 @@
     "displayName": "AnchorWatch Pro: Smart Anchoring, AIS & Tides",
     "webapp": "./public",
     "recommends": [
-      "signalk-pypilot-newui"
+      "signalk-pypilot-newui",
+      "signalk-anchor-mapper"
     ],
     "screenshots": [
       "./screenshots/01_main.jpg",

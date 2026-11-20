@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev905";
+const PLUGIN_REVISION = "Rev906";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -15380,6 +15380,24 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
           if (longBoat || (hasImo && hasNavState)) aisClass = "A";
         }
       } catch {}
+      // Rev906 (Carlos 2026-11-20): ancla de este barco publicada por otra app
+      // en su contexto (signalk-anchor-mapper: navigation.anchor.position,
+      // maxRadius y estimate). El visor la prefiere a su propia estimación.
+      let anchorEst: { lat: number; lng: number; radiusM: number; source: string | null; quality: string | null; method: string | null; tags: string[] } | null = null;
+      try {
+        const ap = v?.navigation?.anchor?.position?.value;
+        const ar = v?.navigation?.anchor?.maxRadius?.value;
+        if (ap && Number.isFinite(ap.latitude) && Number.isFinite(ap.longitude) && Number.isFinite(ar) && ar > 0) {
+          const est = v?.navigation?.anchor?.estimate?.value;
+          anchorEst = {
+            lat: ap.latitude, lng: ap.longitude, radiusM: ar,
+            source: typeof est?.source === "string" ? est.source : null,
+            quality: typeof est?.quality === "string" ? est.quality : null,
+            method: typeof est?.method === "string" ? est.method : null,
+            tags: Array.isArray(est?.tags) ? est.tags.filter((x: unknown) => typeof x === "string") : [],
+          };
+        }
+      } catch {}
       // Rev387: callsign del bus SK
       let callsign: string | null = null;
       try {
@@ -15466,6 +15484,7 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
         lastSeenMs: cached?.lastSeenMs ?? null,
         source: liveSource,
         sources: _sourcesFor(id, liveSource, _distKm(pos.latitude, pos.longitude)),
+        ...(anchorEst ? { anchorEst } : {}),
         ...(fromCache.length > 0 ? { fromCache } : {}),
       });
     }

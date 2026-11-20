@@ -75,7 +75,7 @@ Most anchor watch apps are paid, closed source, single-device and tied to a vend
 - **Swing-circle intrusion, not CPA/TCPA** — the alarm needs a boat to stay in your circle for a minute, so passing traffic does not set it off. For collision risk from course and speed, use `@signalk/collision-alerts`.
 - **Click-to-focus**: click any target → the map centres on it, auto-follows it and displays its distance next to the blue selection ring. Click the X on the ring to release.
 - **Vessel-type emoji**: list and popup show ⛵ sailing / 📦 cargo / 🛢️ tanker / 🛳️ passenger etc. at a glance.
-- **Anchor estimation** for other boats via track centroid analysis.
+- **Where other boats are anchored** — the ⚓ and swing circle of each boat at anchor ("Anchorages" switch in the AIS panel). With [`signalk-anchor-mapper`](https://www.npmjs.com/package/signalk-anchor-mapper) installed (recommended), its estimates are used: it fits a circle to each track and uses headings, which places the anchor far better. Without it, the viewer estimates from the last 3 h of positions. A grey dotted ring means "not estimated yet". If anchor-mapper's own alerts are on too, a neighbour in your circle can raise both plugins' alarms: keep the alerts of one.
 
 #### Shelter forecasting
 - **16-sector wind rose** with automatic open/sheltered detection from OpenStreetMap coastline + man-made breakwaters/piers/groynes.
@@ -292,7 +292,7 @@ La mayoría de apps de anchor watch son de pago, código cerrado, un solo dispos
 - **Intrusión en el círculo de borneo, no CPA/TCPA** — la alarma pide que el barco se quede un minuto en tu círculo, para no sonar con el tráfico que pasa. Para el riesgo de colisión por rumbo y velocidad, usa `@signalk/collision-alerts`.
 - **Click-to-focus**: click en cualquier target → el mapa lo centra, lo sigue y muestra su distancia junto al aro azul de selección. Click en la X del aro para soltar.
 - **Emoji por tipo**: lista y popup muestran ⛵ velero / 📦 carga / 🛢️ tanque / 🛳️ pasaje, etc. a primera vista.
-- **Estimación del ancla** de otros barcos vía análisis de centroide del track.
+- **Dónde están fondeados los otros barcos** — el ⚓ y el círculo de borneo de cada barco fondeado (interruptor "Fondeos" del panel AIS). Con [`signalk-anchor-mapper`](https://www.npmjs.com/package/signalk-anchor-mapper) instalado (recomendado) se usan sus estimaciones: ajusta un círculo a cada track y usa el rumbo, así que sitúa el ancla mucho mejor. Sin él, el visor estima con las posiciones de las últimas 3 h. Un aro gris de puntos significa "sin estimar todavía". Si también tienes activas las alertas de anchor-mapper, un vecino en tu círculo puede hacer saltar las alarmas de los dos plugins: deja las de uno.
 
 #### Previsión de abrigo
 - **Rosa de 16 sectores** con detección automática abierto/abrigado desde la línea de costa de OpenStreetMap + escolleras/muelles man-made.

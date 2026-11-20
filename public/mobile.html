@@ -5879,6 +5879,12 @@ var _i18n={
   /* Rev310: AIS popup */
   ais_acercamiento:{es:'Acercamiento:',en:'Closing:'},
   ais_ancla_est:{es:'Ancla est.:',en:'Est. anchor:'},
+  ais_ancla_src_track:{es:'estimado por el track',en:'estimated from the track'},
+  ais_borneo:{es:'borneo',en:'swing'},
+  ais_eslora:{es:'eslora',en:'length'},
+  ais_calidad:{es:'calidad',en:'quality'},
+  ais_posible_boya:{es:'posible boya o muerto',en:'possibly a buoy or mooring'},
+  ais_ancla_sin_estimar:{es:'Fondeo sin estimar todavía',en:'Anchor not estimated yet'},
   ais_pts:{es:'pts',en:'pts'},
   ais_ghost:{es:'⚠️ Datos estimados (target fuera de recepción actual, mostrando última posición conocida)',en:'⚠️ Estimated data (target out of current reception, showing last known position)'},
   /* Rev310: menú principal */
@@ -6742,6 +6748,21 @@ var lastBoatHdgDeg=0;
 /* AIS track history with aggressive TTL: 30 min on startup so a fresh boot of
    SK doesn't show "ghost tracks" of long-gone targets before fresh AIS data
    arrives. Runtime adds also prune points older than 30 min. */
+/* Rev906 (auditoría 2026-11-20): histórico propio para estimar el ancla de
+   otros barcos, aparte de aisTrackHist (que alimenta tracks y acercamiento a
+   30 min). Un punto cada 30 s por barco, 3 h, de todos los barcos aunque
+   estén fuera del radio del mapa. */
+var AIS_ANCHOR_HIST_MS=3*3600000, AIS_ANCHOR_HIST_STEP_MS=30000;
+var aisAnchorHist=(function(){var out={};try{var raw=JSON.parse(localStorage.getItem('ihm-aisAnchorHist')||'{}'),cut=Date.now()-AIS_ANCHOR_HIST_MS;for(var k in raw){var a=(raw[k]||[]).filter(function(p){return p.t>cut;});if(a.length)out[k]=a;}}catch(_){}return out;})();
+function _aisAnchorHistAdd(t){
+  var k=(t.mmsi||'').replace(/^urn:mrn:imo:mmsi:/,'').replace(/^urn:mrn:signalk:uuid:/,'');
+  if(!k||typeof t.lat!=='number'||typeof t.lng!=='number')return;
+  var now=Date.now(), a=aisAnchorHist[k]||(aisAnchorHist[k]=[]);
+  if(a.length && now-a[a.length-1].t<AIS_ANCHOR_HIST_STEP_MS)return;
+  a.push({lat:t.lat,lng:t.lng,t:now});
+  var cut=now-AIS_ANCHOR_HIST_MS;
+  if(a[0].t<cut)aisAnchorHist[k]=a.filter(function(p){return p.t>cut;});
+}
 var aisTrackHist=(function(){var raw=JSON.parse(localStorage.getItem('ihm-aisTrkHist')||'{}'),cut=Date.now()-30*60000,out={};for(var k in raw){out[k]=raw[k].filter(function(p){return p.t>cut;});if(!out[k].length)delete out[k];}return out;})();
 var firstPoll=true,_autoCalcDone=false;
 var lastIconZoom=-1,lastIconHdg=-999;
@@ -12001,6 +12022,9 @@ function loadAIS(){
     }
     var z=map.getZoom();
     var _radiusM=_aisRadiusKm*1000;
+    /* Rev906: antes del filtro por radio, para que haya histórico de todos. */
+    d.targets.forEach(_aisAnchorHistAdd);
+    try{localStorage.setItem('ihm-aisAnchorHist',JSON.stringify(aisAnchorHist));}catch(_){}
     d.targets.forEach(function(t){
       /* Rev395: filtro por radio configurable. Targets fuera del radio no
          se pintan ni evaluan. Historico (aisTrackHist) sigue creciendo para
@@ -12378,7 +12402,13 @@ function showAisPopup(t,isBorneo){
   var anchorHtml='';
   if(anchorEst){
     var eslL = unitFmt.shortDistance(anchorEst.esloraM,0);
-    anchorHtml='<div class="ap-row"><span>'+T('ais_ancla_est','Ancla est.:')+'</span><b style="color:var(--org)">r≈'+unitFmt.shortDistance(anchorEst.radius,0)+' <small style="color:#aaa;font-weight:400">(borneo '+unitFmt.shortDistance(anchorEst.swingObservedM,0)+' + eslora '+eslL+')</small></b></div>';
+    /* Rev906: de dónde sale la estimación. */
+    var _src = anchorEst.source==='track'
+      ? T('ais_ancla_src_track','estimado por el track')+': '+T('ais_borneo','borneo')+' '+unitFmt.shortDistance(anchorEst.swingObservedM,0)+' + '+T('ais_eslora','eslora')+' '+eslL
+      : (anchorEst.source==='signalk-anchor-mapper' ? 'anchor-mapper' : anchorEst.source)
+        + (anchorEst.quality ? ', '+T('ais_calidad','calidad')+' '+anchorEst.quality : '')
+        + (anchorEst.moored ? ', '+T('ais_posible_boya','posible boya o muerto') : '');
+    anchorHtml='<div class="ap-row"><span>'+T('ais_ancla_est','Ancla est.:')+'</span><b style="color:var(--org)">r≈'+unitFmt.shortDistance(anchorEst.radius,0)+' <small style="color:#aaa;font-weight:400">('+_escHtml(_src)+')</small></b></div>';
   }
   /* Rev349: F2 — tipo de barco + emoji. Renderiza solo si shipType reconocido. */
   var _ti = (typeof _aisTypeInfo==='function') ? _aisTypeInfo(t.shipType) : null;
@@ -12600,11 +12630,14 @@ function _showAisSelectedAnchor(t){
      actual del vessel. El aro puro por P90 aparecerá cuando el histórico
      acumule 4+ puntos (~15 s tras seleccionar). */
   var est=estimateAnchor(t);
-  if(!est){
-    var _lenFallback = (typeof t.length === 'number' && t.length > 0) ? t.length : 12;
-    est = { lat: t.lat, lng: t.lng, radius: Math.max(20, _lenFallback * 2), _fallback: true };
-  }
   var grp=L.layerGroup();
+  /* Rev906: sin estimación, aro gris "sin estimar" (no un ancla inventada). */
+  if(!est){
+    grp.addLayer(_aisUnestimatedRing(t));
+    grp.addTo(map);
+    _aisSelectedAnchorLayer=grp;
+    return;
+  }
   /* Círculo de borneo estimado (radio P90 + eslora + margen). */
   grp.addLayer(L.circle([est.lat,est.lng],{radius:est.radius,color:'#ff9800',fillColor:'#ff9800',fillOpacity:0.06,weight:2,dashArray:'8,4'}));
   /* Icono ancla en la posición estimada. divIcon con emoji para que el color
@@ -12625,22 +12658,37 @@ function _showAisSelectedAnchor(t){
 }
 function estimateAnchor(t){
   if(!t) return null;
+  var eslora = (typeof t.length === 'number' && t.length > 0) ? t.length : 12;
+  /* Rev906: si otra app publica el ancla de este barco en Signal K
+     (signalk-anchor-mapper: círculo ajustado al track y rayos de rumbo,
+     mejor que nuestro centroide), se usa tal cual. */
+  var ae = t.anchorEst;
+  if(ae && typeof ae.lat==='number' && typeof ae.lng==='number' && ae.radiusM>0){
+    return {
+      lat: ae.lat, lng: ae.lng, radius: ae.radiusM,
+      esloraM: eslora, source: ae.source || 'signalk',
+      quality: ae.quality || null, method: ae.method || null,
+      moored: Array.isArray(ae.tags) && ae.tags.indexOf('possibly-moored')>=0,
+    };
+  }
   var cleanMmsi = (t.mmsi||'').replace(/^urn:mrn:imo:mmsi:/,'').replace(/^urn:mrn:signalk:uuid:/,'');
   if(!cleanMmsi) return null;
-  var hist = aisTrackHist[cleanMmsi] || aisTrackHist['urn:mrn:imo:mmsi:'+cleanMmsi];
+  var hist = aisAnchorHist[cleanMmsi];
   if(!hist || hist.length < 4) return null;
-  /* SOG del target en kn. t.sog viene en m/s en SK. Umbral 0.5 kn ≈ deriva GPS. */
-  var sogKn = (typeof t.sog === 'number') ? (t.sog * 1.94384) : 0;
+  /* Rev906: t.sog llega del backend ya en nudos (Rev773); antes se
+     multiplicaba otra vez por 1,94 y casi todos los fondeados se
+     descartaban por "navegar". Umbral 0,5 kn ≈ deriva GPS. */
+  var sogKn = (typeof t.sog === 'number') ? t.sog : 0;
   if(sogKn > 0.5) return null;
-  /* Ventana 3 h. */
   var now = Date.now();
-  var recent = hist.filter(function(h){ return (now - h.t) < 3*3600000; });
+  var recent = hist.filter(function(h){ return (now - h.t) < AIS_ANCHOR_HIST_MS; });
   if(recent.length < 4) return null;
   /* Descartar si drift neto primer→último es demasiado grande. */
   var first = recent[0], last = recent[recent.length-1];
   var netDrift = hav({lat:first.lat,lng:first.lng},{lat:last.lat,lng:last.lng});
   if(netDrift > 200) return null;
-  /* Centroide. */
+  /* Centroide. Aproximación: el ancla queda más lejos, en el centro del
+     arco de borneo; anchor-mapper lo calcula bien (ajuste de círculo). */
   var sumLat=0, sumLng=0;
   recent.forEach(function(h){ sumLat += h.lat; sumLng += h.lng; });
   var cLat = sumLat/recent.length, cLng = sumLng/recent.length;
@@ -12649,20 +12697,23 @@ function estimateAnchor(t){
   dists.sort(function(a,b){ return a-b; });
   var p90Index = Math.max(0, Math.floor(dists.length * 0.9) - 1);
   var swingObservedM = dists[p90Index];
-  /* Eslora. Fallback: 12 m (yate típico). */
-  var eslora = (typeof t.length === 'number' && t.length > 0) ? t.length : 12;
   /* Radio efectivo = swing observado + eslora + 5 m margen. */
   var radius = swingObservedM + eslora + 5;
   /* Radios descomunales indican error de datos, no fondeo. */
   if(radius > 300) return null;
-  /* Umbral mínimo del radio para no dibujar cosas ridículas. */
-  if(radius < eslora + 5) radius = eslora + 5;
   return {
     lat: cLat, lng: cLng, radius: radius,
     points: recent.length, esloraM: eslora,
     swingObservedM: swingObservedM,
-    sourceSogKt: sogKn,
+    sourceSogKt: sogKn, source: 'track',
   };
+}
+/* Rev906: aro de reserva cuando aún no hay estimación (pocos puntos):
+   gris, fino, sin ⚓ y rotulado, para que no pase por una estimación. */
+function _aisUnestimatedRing(t){
+  var len = (typeof t.length === 'number' && t.length > 0) ? t.length : 12;
+  return L.circle([t.lat,t.lng],{radius:Math.max(20,len*2),color:'#90a4ae',fillOpacity:0,weight:1,dashArray:'2,6',interactive:false})
+    .bindTooltip(T('ais_ancla_sin_estimar','Fondeo sin estimar todavía'),{direction:'top'});
 }
 function showNextBorneoTarget(){
   /* Rev629 (bug report Carlos): si la alarma AIS está desactivada, no auto-abrir
@@ -12884,11 +12935,10 @@ function checkAisBorneoAlarm(targets){
         var _isStaticT = !!(t.isStatic || _sogKnT < 1.5);
         if(_isStaticT && !_isSelectedT){
           var est=estimateAnchor(t);
-          /* Rev779: fallback si histórico corto — aro conservador
-             centrado en el vessel para que no desaparezca. */
+          /* Rev906: sin estimación, aro gris "sin estimar" (Rev779 pintaba
+             un aro naranja inventado que parecía una estimación). */
           if(!est){
-            var _lenFallback = (typeof t.length === 'number' && t.length > 0) ? t.length : 12;
-            est = { lat: t.lat, lng: t.lng, radius: Math.max(20, _lenFallback * 2), _fallback: true };
+            _aisBorneoRings.addLayer(_aisUnestimatedRing(t));
           }
           if(est){
             var _ringCol, _ringWeight, _dash;

@@ -1,8 +1,19 @@
 # Changelog
 
-## [Unreleased] (Rev904-905)
+## [Unreleased] (Rev904-906)
 
 ### English
+
+**Changed — where other boats are anchored, with signalk-anchor-mapper (Rev906).** The ⚓ and swing circle of other boats at anchor now come from [`signalk-anchor-mapper`](https://www.npmjs.com/package/signalk-anchor-mapper) when it is installed. It publishes each boat's anchor in Signal K (`navigation.anchor.*` on that vessel), fitted to the track and its headings. It is listed in the App Store as "works well with". The boat's window says where each estimate comes from, and its quality.
+
+**Fixed — the viewer's own estimate of where other boats are anchored hardly ever worked (Rev906).**
+- The boat's speed, already in knots, was converted again. Most boats at anchor were thrown out as "under way".
+- Instead of an estimate the viewer then drew a ring around the boat with a made-up radius, which looked like one.
+- The estimate now uses its own 3 h history of every boat, not only those inside the map radius.
+- With no estimate yet, the ring is grey and dotted, says "not estimated yet", and has no ⚓.
+
+The AIS alarm never used these estimates and is unchanged.
+
 
 Second audit round: AIS alarm and grounding calculation.
 
@@ -17,6 +28,17 @@ Second audit round: AIS alarm and grounding calculation.
 **Docs.** The AIS alarm is a swing-circle intrusion alarm, not CPA/TCPA; for collision risk from course and speed, use `@signalk/collision-alerts`.
 
 ### Español
+
+**Cambiado — dónde están fondeados los otros barcos, con signalk-anchor-mapper (Rev906).** El ⚓ y el círculo de borneo de los otros barcos fondeados salen ahora de [`signalk-anchor-mapper`](https://www.npmjs.com/package/signalk-anchor-mapper) si está instalado. Publica el ancla de cada barco en Signal K (`navigation.anchor.*` de ese barco), ajustada a su track y su rumbo. Aparece en la App Store como "works well with". La ventana del barco dice de dónde sale cada estimación y su calidad.
+
+**Arreglado — la estimación propia del visor de dónde están fondeados los otros barcos casi nunca funcionaba (Rev906).**
+- La velocidad del barco, que ya llega en nudos, se volvía a convertir. Casi todos los fondeados se descartaban como si navegaran.
+- En vez de una estimación, el visor pintaba entonces un aro alrededor del barco con un radio inventado, que parecía una estimación.
+- La estimación usa ahora su propio histórico de 3 h de todos los barcos, no solo de los que están dentro del radio del mapa.
+- Sin estimación todavía, el aro sale gris y de puntos, dice "sin estimar todavía" y no lleva ⚓.
+
+La alarma AIS no usaba estas estimaciones y no cambia.
+
 
 Segunda ronda de auditoría: alarma AIS y cálculo de la varada.
 
