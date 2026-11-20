@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev909";
+const PLUGIN_REVISION = "Rev910";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -17270,7 +17270,11 @@ expressApp.post("/signalk-mareas-ihm/api/anchor-watch/test-alarm", requireContro
     // prueba no mandaba nada a Telegram. Lo mandamos y dejamos el resultado
     // en el log.
     let tgNote = "Telegram off";
-    if (_telegramBotToken && _telegramEffectiveChatId()) {
+    // Rev910: con Alert Center mandando Telegram, la prueba también se la
+    // deja a él (recibe el delta de arriba); si no, la mandamos nosotros.
+    if (_alertCenterSendsTelegram(kind)) {
+      tgNote = "Telegram via Alert Center";
+    } else if (_telegramBotToken && _telegramEffectiveChatId()) {
       delete _telegramLastSent["test_alarm"];
       tgNote = "Telegram sent";
       _sendTelegram("test_alarm", formatTelegramMessage("test_alarm", { revision: PLUGIN_REVISION, alarm: kind }, _currentLang),
