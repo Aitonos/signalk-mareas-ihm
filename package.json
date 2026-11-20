@@ -177,7 +177,8 @@
     "webapp": "./public",
     "recommends": [
       "signalk-pypilot-newui",
-      "signalk-anchor-mapper"
+      "signalk-anchor-mapper",
+      "signalk-alert-center"
     ],
     "screenshots": [
       "./screenshots/01_main.jpg",

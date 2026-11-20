@@ -1,8 +1,11 @@
 # Changelog
 
-## [Unreleased] (Rev908)
+## [Unreleased] (Rev908-909)
 
 ### English
+
+**Added — works well with signalk-alert-center (Rev909).** When Alert Center is running with a working Telegram service in its default policy, it sends the alarms to Telegram and this plugin stops sending its own, so you get one message, not two. This plugin sends them again by itself when Alert Center is missing, stopped, its Telegram service is failing, or its minimum severity would leave an alarm out. The setup assistant's notifications step says which of the two is sending. Listed under "works well with".
+
 
 **Changed — an AIS ACK lasts the whole anchorage (Rev908).** Too many alarms teach you to stop listening, or to switch the alarm off. An ACK now silences that boat until you lift the anchor. It drops only when there is a new danger: the boat gets 15 m closer to your anchor than your own boat has meanwhile, as a neighbour dragging towards you does. A friend rafted alongside, or a neighbour swinging with you, moves like your boat and never sets it off.
 
@@ -12,6 +15,8 @@ Removed:
 - the viewer's "dragging!" from a closing speed of 5 m/min. With the 9-12 m position noise of class B AIS, a rafted boat seemed to close at that speed.
 
 ### Español
+
+**Añadido — funciona bien con signalk-alert-center (Rev909).** Si Alert Center está en marcha con un servicio de Telegram funcionando en su política por defecto, él manda las alarmas a Telegram y este plugin deja de mandar las suyas: un mensaje, no dos. Este plugin vuelve a mandarlas por sí mismo si Alert Center falta, está parado, su Telegram falla o su gravedad mínima dejaría fuera una alarma. El paso de notificaciones del asistente dice cuál de los dos las manda. Aparece en "works well with".
 
 **Cambiado — el ACK de un barco AIS dura todo el fondeo (Rev908).** Un exceso de alarmas enseña a dejar de escucharlas o a apagarlas. El ACK silencia ahora ese barco hasta que levas. Solo se pierde con un peligro nuevo: que el barco se acerque a tu ancla 15 m más de lo que se ha acercado tu propio barco, como hace un vecino que garrea hacia ti. Un amigo abarloado, o un vecino que bornea contigo, se mueve como tu barco y nunca lo dispara.
 

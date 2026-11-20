@@ -18818,8 +18818,10 @@ window.m_wizardStep_notifications = function(body){
     +     ((lang==='en')?'Loading Telegram settings…':'Cargando ajustes de Telegram…')
     +     '</div>'
     +   '</div>'
+    +   '<div id="m-wiz-alert-center"></div>'
     + '</div>';
   m_wizPluginOptsLoadInto('m-wiz-notif-cfg', 'notifications');
+  m_wizAlertCenterStatus('m-wiz-alert-center');
   /* Rev742 (feedback Carlos "esto hay que ponerlo en el wizard"): bloque
      "🔔 Probar alarmas" pegado a Alertas móvil, ya que testea exactamente
      lo que este step configura (audio Pi + push nativo + notifications). */
@@ -18865,6 +18867,50 @@ window.m_wizardStep_aisFallback = function(body){
     + '</div>';
   m_wizPluginOptsLoadInto('m-wiz-ais-cfg', 'aisstream');
   m_wizAnchorMapperStatus('m-wiz-anchor-mapper');
+};
+
+/* Rev909: complemento recomendado signalk-alert-center ("works well with").
+   Si tiene un Telegram activo en sus ajustes por defecto, él manda las
+   alarmas y mareas se calla; si no, mareas sigue mandando las suyas. */
+window.m_wizAlertCenterStatus = function(hostId){
+  var isEn = (_lang==='en');
+  var sec = 'padding:16px 18px;background:rgba(0,0,0,.20);border:1px solid rgba(255,255,255,.10);border-radius:10px;margin:14px 0';
+  var h3 = 'font-size:20px;font-weight:800;color:var(--org);margin:0 0 6px;line-height:1.2';
+  var hint = 'font-size:15px;color:#cfd8dc;line-height:1.5';
+  fetch(A+'/companions',{cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .catch(function(){ return null; })
+    .then(function(j){
+      var host = document.getElementById(hostId);
+      if (!host) return;
+      var ac = j && j.alertCenter;
+      var warn = '<span style="color:#ffb23f;font-weight:700">';
+      var st;
+      if (!ac || !ac.installed){
+        st = warn+(isEn?'Not installed.':'No instalado.')+'</span> '
+          + (isEn?'Telegram alerts are sent by this plugin, with the settings above.'
+                 :'Las alertas de Telegram las manda este plugin, con los ajustes de arriba.');
+      } else if (!ac.enabled){
+        st = warn+(isEn?'Installed but not started.':'Instalado pero sin arrancar.')+'</span> '
+          + (isEn?'In Signal K, Server > Plugin Config > Alert Center, press <b>Save configuration</b>. Until then, this plugin keeps sending Telegram.'
+                 :'En Signal K, Server > Plugin Config > Alert Center, pulsa <b>Save configuration</b>. Mientras, este plugin sigue mandando Telegram.');
+      } else if (!ac.sendsTelegram){
+        st = warn+(isEn?'No Telegram working in Alert Center.':'Alert Center no tiene un Telegram funcionando.')+'</span> '
+          + (isEn?'Add a Telegram service and tick it in its default policy. Until then, this plugin keeps sending Telegram.'
+                 :'Añade un servicio de Telegram y márcalo en su política por defecto. Mientras, este plugin sigue mandando Telegram.');
+      } else {
+        st = '<span style="color:#3aa856;font-weight:700">✓ '+(isEn?'Working':'Funcionando')+'</span> — '
+          + (isEn?'Alert Center sends the alarms to Telegram; this plugin stops sending its own. If Alert Center stops working, this plugin sends them again.'
+                 :'Alert Center manda las alarmas a Telegram y este plugin deja de mandar las suyas. Si Alert Center deja de funcionar, este plugin vuelve a mandarlas.');
+      }
+      host.innerHTML = '<div style="'+sec+'">'
+        + '<div style="'+h3+'">🔔 '+(isEn?'Recommended: Alert Center':'Recomendado: Alert Center')+'</div>'
+        + '<div style="'+hint+'">'+(isEn
+            ? 'Sends the alarms of every plugin on the boat to Telegram and other apps, with one setup for all.'
+            : 'Manda a Telegram y otras apps las alarmas de todos los plugins del barco, con una sola configuración para todo.')+'</div>'
+        + '<div style="'+hint+';margin-top:10px">'+st+'</div>'
+        + '</div>';
+    });
 };
 
 /* Rev907: complemento recomendado signalk-anchor-mapper ("works well with"

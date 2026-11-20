@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev908";
+const PLUGIN_REVISION = "Rev909";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -973,6 +973,69 @@ function _detectAnchorMapper(): { installed: boolean; enabled: boolean; estimate
   } catch { /* defaults */ }
   return out;
 }
+/* Rev909: signalk-alert-center (recomendado): centraliza el envío de alarmas
+   (Telegram, ntfy, Pushover…). Si está activo, tiene un servicio de Telegram
+   entre los predeterminados y ese servicio está sano, las alarmas de garreo,
+   GPS perdido, varada y AIS las manda él y el Telegram de mareas queda de
+   respaldo: vuelve a enviar si alert-center se para o su Telegram falla. */
+type AlertCenterStatus = {
+  installed: boolean; enabled: boolean;
+  telegram: { name: string; byDefault: boolean; health: string | null; minSeverity: string }[];
+  defaultMinSeverity: string;
+  sendsTelegram: boolean;
+};
+const _SK_SEVERITIES = ["normal", "alert", "warn", "alarm", "emergency"];
+// Rev909: gravedad con la que mareas publica cada aviso que también manda por
+// Telegram. alert-center solo lo reenvía si llega al mínimo de sus ajustes
+// por defecto y al del servicio; si no llega, mareas lo sigue mandando.
+const _TELEGRAM_KIND_SEVERITY: Record<string, string> = { garreo: "alarm", gps_lost: "alarm", grounding: "alarm", ais: "warn" };
+function _alertCenterSendsTelegram(kind: string): boolean {
+  const ac = _detectAlertCenter();
+  if (!ac.sendsTelegram) return false;
+  const lvl = _SK_SEVERITIES.indexOf(_TELEGRAM_KIND_SEVERITY[kind] ?? "");
+  if (lvl < 0 || lvl < _SK_SEVERITIES.indexOf(ac.defaultMinSeverity)) return false;
+  return ac.telegram.some(t => t.byDefault && t.health === "normal" && lvl >= _SK_SEVERITIES.indexOf(t.minSeverity));
+}
+// Igual que servicePathSegment de alert-center (dist/signalk/service-health.js).
+function _alertCenterServiceSegment(id: string): string {
+  if (/^[A-Za-z][A-Za-z0-9]*$/.test(id)) return id;
+  const readable = id.normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "").slice(0, 24);
+  const hash = crypto.createHash("sha256").update(id).digest("hex").slice(0, 8);
+  return `${readable || "service"}${hash}`;
+}
+let _alertCenterCache: { ts: number; v: AlertCenterStatus } | null = null;
+function _detectAlertCenter(): AlertCenterStatus {
+  if (_alertCenterCache && Date.now() - _alertCenterCache.ts < 15_000) return _alertCenterCache.v;
+  const out: AlertCenterStatus = { installed: false, enabled: false, telegram: [], defaultMinSeverity: "warn", sendsTelegram: false };
+  try {
+    const conf = _skConfigDir();
+    out.installed = fs.existsSync(path.join(conf, "node_modules", "signalk-alert-center", "package.json"));
+    const f = path.join(conf, "plugin-config-data", "signalk-alert-center.json");
+    if (out.installed && fs.existsSync(f)) {
+      const j = JSON.parse(fs.readFileSync(f, "utf8"));
+      out.enabled = j?.enabled === true;
+      const c = j?.configuration ?? {};
+      const defaults = c.defaults ?? {};
+      const defaultNames: string[] = Array.isArray(defaults.notifiers) ? defaults.notifiers : [];
+      const deliversByDefault = defaults.enabled !== false;
+      if (_SK_SEVERITIES.includes(defaults.minSeverity)) out.defaultMinSeverity = defaults.minSeverity;
+      for (const n of (Array.isArray(c.notifiers) ? c.notifiers : [])) {
+        if (n?.type !== "telegram" || n?.enabled === false || typeof n?.name !== "string") continue;
+        let health: string | null = null;
+        try {
+          const node = (_appRef as any)?.getSelfPath?.(`notifications.plugins.signalkAlertCenter.services.${_alertCenterServiceSegment(n.name)}`);
+          const st = node?.value?.state ?? node?.state;
+          if (typeof st === "string") health = st;
+        } catch { /* sin dato */ }
+        out.telegram.push({ name: n.name, byDefault: deliversByDefault && defaultNames.includes(n.name), health,
+          minSeverity: _SK_SEVERITIES.includes(n.minSeverity) ? n.minSeverity : "normal" });
+      }
+      out.sendsTelegram = out.enabled && out.telegram.some(t => t.byDefault && t.health === "normal");
+    }
+  } catch { /* defaults */ }
+  _alertCenterCache = { ts: Date.now(), v: out };
+  return out;
+}
 function _detectOtherTideProviders(): Array<{ id: string; enabled: boolean; installed: boolean }> {
   const out: Array<{ id: string; enabled: boolean; installed: boolean }> = [];
   try {
@@ -1691,6 +1754,8 @@ export default function (app: SignalKApp): Plugin {
   const _telegramAlarmDeliveredMs: Record<string, number> = {};
   function _telegramAlarm(kind: string, first: boolean, text: () => string) {
     if (first) _telegramAlarmDeliveredMs[kind] = 0;
+    // Rev909: con alert-center enviando a Telegram, mareas queda de respaldo.
+    if (_alertCenterSendsTelegram(kind)) return;
     const delivered = _telegramAlarmDeliveredMs[kind] || 0;
     if (delivered && Date.now() - delivered < TELEGRAM_ALARM_REMIND_MS) return;
     _sendTelegram(kind, text(), (r) => { if (r.ok) _telegramAlarmDeliveredMs[kind] = Date.now(); });
@@ -9065,7 +9130,8 @@ function evaluateAnchorWatch() {
       if (desiredState === 'warn' && !_isAisSilenced()) {
         _piAlarmStart('ais');
         // Rev166: Telegram push para AIS dentro de radio borneo.
-        _sendTelegram("ais", formatTelegramMessage("ais", {}, _currentLang));
+        // Rev909: respaldo si alert-center ya lo manda a Telegram.
+        if (!_alertCenterSendsTelegram("ais")) _sendTelegram("ais", formatTelegramMessage("ais", {}, _currentLang));
       } else {
         _piAlarmStop('ais');
       }
@@ -15142,7 +15208,7 @@ const _AUDIO_HEALTH_CACHE_MS = 5000;
 // Rev907: plugins complementarios (asistente, paso AIS).
 expressApp.get("/signalk-mareas-ihm/api/companions", (_req: any, res: any) => {
   res.set("Cache-Control", "no-store");
-  res.json({ anchorMapper: _detectAnchorMapper() });
+  res.json({ anchorMapper: _detectAnchorMapper(), alertCenter: _detectAlertCenter() });
 });
 expressApp.get("/signalk-mareas-ihm/api/audio-health", async (_req: any, res: any) => {
   const now = Date.now();
