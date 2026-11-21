@@ -1,8 +1,11 @@
 # Changelog
 
-## [Unreleased] (Rev914-923)
+## [Unreleased] (Rev914-926)
 
 ### English
+
+**Added — anchor estimate from the track, the own wind and the tide, off by default (Rev926).** Under load a boat lies near its maximum distance from the anchor, downstream of the resultant of wind and tidal stream; with several load directions the anchor and the radius can be told apart, with one only they cannot, and then only the area is shown. Computed every 10 minutes for boats stopped within 5 km, from the current anchorage's track (up to 24 h). It is used for drawing only with the option `anchorEstimateWindTide`, until it has been checked against a known anchor; meanwhile its results are at `/signalk-mareas-ihm/api/anchor-watch/ais/wind-tide`.
+
 
 **Changed — the track view shows only the current anchorage, with the wind (Rev922).** The passage that led to the anchorage is cut (from anchor-mapper's anchoring time when it has one, and where the boat was under way at more than 1.5 kn), so a ship that sailed in today no longer shades miles of water. While moving the time bar, an arrow shows the own wind at that moment and its speed. The Track button sits next to Locate and vesselfinder, in the same style. Our own anchor estimate needs at least 30 minutes of positions, and after a restart the plugin fills the last 3 h from the tracks plugin, so it no longer draws a tiny ring right under a boat. A boat that moves less than the 10 m position noise of an AIS is berthed or on a buoy, and gets no anchor ring (Rev923).
 
@@ -28,6 +31,8 @@
 **Fixed — a boat at anchor without heading is drawn with its bow towards its anchor (Rev914).** Class B AIS does not send a heading, and a stopped boat's course over ground is noise, so a boat at anchor could point anywhere. With an anchor estimate and no heading, the bow now points at the anchor; with a heading, the heading is used as before.
 
 ### Español
+
+**Añadido — estimación del fondeo con el recorrido, el viento propio y la marea, apagada de inicio (Rev926).** Con carga, un barco queda cerca de su distancia máxima al ancla, a favor de la resultante de viento y corriente; con varias direcciones de carga se separan el ancla y el radio, con una sola no, y entonces solo se enseña la zona. Se calcula cada 10 minutos para los barcos parados a menos de 5 km, con el recorrido del fondeo actual (hasta 24 h). Solo se usa para dibujar con la opción `anchorEstimateWindTide`, hasta comprobarla con un ancla conocida; mientras, sus resultados están en `/signalk-mareas-ihm/api/anchor-watch/ais/wind-tide`.
 
 **Cambiado — el recorrido enseña solo el fondeo actual, con el viento (Rev922).** Se corta la navegación hasta el fondeadero (desde la hora de fondeo de anchor-mapper si la tiene, y donde el barco iba a más de 1,5 kn), así que un barco que llegó hoy ya no sombrea millas de agua. Al mover la barra de tiempo, una flecha enseña el viento propio de ese momento y su fuerza. El botón Recorrido va junto a Localizar y vesselfinder, con su mismo estilo. Nuestra estimación de fondeo necesita al menos 30 minutos de posiciones, y tras un reinicio el plugin rellena las últimas 3 h desde el plugin de tracks, así que ya no dibuja un aro diminuto debajo del barco. Un barco que se mueve menos que los 10 m de ruido de posición de un AIS está amarrado o en una boya, y no lleva aro de fondeo (Rev923).
 

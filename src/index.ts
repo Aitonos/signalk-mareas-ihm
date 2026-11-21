@@ -81,6 +81,7 @@ import { resolveBoatLang } from "./langSettings.js";
 import { AnchorHistory, STEP_MS as AIS_HIST_STEP_MS, anchorFitsTrack, currentAnchorage } from "./anchor-history.js";
 import { fetchVesselTrack, fetchTracksInBox } from "./track-api.js";
 import { OwnHistory, trueWindDirection, trueHeading } from "./own-history.js";
+import { estimateWindTide, type WindTideResult, type Extreme } from "./anchor-wind-tide.js";
 
 // Rev680 (feedback Carlos "aunque pongamos NEAPS en curvas siguen saliendo
 // datos de IHM"): las pseudo-estaciones no-IHM (sin-marea, mediterráneo,
@@ -128,7 +129,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev925";
+const PLUGIN_REVISION = "Rev926";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1453,6 +1454,14 @@ export default function (app: SignalKApp): Plugin {
   const _ownHistory = new OwnHistory();
   let _ownHistLoaded = false, _ownHistSavedMs = 0;
   const _ownHistFile = (): string | null => { try { const d = (app as any).getDataDirPath?.(); return d ? path.join(d, "own-history.json") : null; } catch { return null; } };
+  // Rev926: anchor estimate from track + own wind + tide, every 10 min for
+  // the boats that are stopped nearby. Always computed (diagnostic endpoint);
+  // used for drawing only with the option anchorEstimateWindTide (off by
+  // default until validated against the own boat's real anchor).
+  const _windTide = new Map<string, WindTideResult & { at: number }>();
+  let _windTideEnabled = false;
+  let _windTideTimer: ReturnType<typeof setInterval> | null = null;
+  let _extremesCache: { at: number; ex: Extreme[] } | null = null;
   const _ownHistSave = () => { const f = _ownHistFile(); if (!f) return; try { fs.writeFileSync(f, JSON.stringify(_ownHistory.toJSON())); _ownHistSavedMs = Date.now(); } catch { /* next time */ } };
   const _aisHistKey = (idOrMmsi: string): string =>
     (/(\d{9})/.exec(String(idOrMmsi)) ?? [])[1] ?? String(idOrMmsi || "").replace(/^urn:mrn:imo:mmsi:/, "").replace(/^urn:mrn:signalk:uuid:/, "");
@@ -1595,6 +1604,7 @@ export default function (app: SignalKApp): Plugin {
       if (_pypilotSelfHealTimer) { clearInterval(_pypilotSelfHealTimer); _pypilotSelfHealTimer = null; }
       if (_aisIdentityEnrichTimer) { clearInterval(_aisIdentityEnrichTimer); _aisIdentityEnrichTimer = null; }
       if (_aisAnchorHistTimer) { clearInterval(_aisAnchorHistTimer); _aisAnchorHistTimer = null; }
+      if (_windTideTimer) { clearInterval(_windTideTimer); _windTideTimer = null; }
       try { _ownHistSave(); } catch { /* best effort */ }
       if (_setSystemTimeCheckTimer) { clearInterval(_setSystemTimeCheckTimer); _setSystemTimeCheckTimer = null; }
       if (_subsystemHealthTimer) { clearInterval(_subsystemHealthTimer); _subsystemHealthTimer = null; }
@@ -1821,6 +1831,7 @@ export default function (app: SignalKApp): Plugin {
   }
 
   async function start(props: Config) {
+    _windTideEnabled = (props as any)?.anchorEstimateWindTide === true;   // Rev926
     app.debug("Starting signalk-mareas-ihm: " + JSON.stringify(props));
     // Rev901: con seguridad en Signal K, las rutas que escriben piden sesión
     // de Signal K (src/access.ts).
@@ -9202,6 +9213,53 @@ const _aisAnchorHistTick = () => {
 if (_aisAnchorHistTimer) clearInterval(_aisAnchorHistTimer);
 _aisAnchorHistTimer = setInterval(_aisAnchorHistTick, AIS_HIST_STEP_MS);
 _aisAnchorHistTick();
+// Rev926: wind + tide anchor estimate, every 10 min (first after 2 min).
+const _windTideExtremes = async (): Promise<Extreme[]> => {
+  if (_extremesCache && Date.now() - _extremesCache.at < 30 * 60_000) return _extremesCache.ex;
+  try {
+    const port = (app as any)?.config?.settings?.port ?? process.env.PORT ?? 3000;
+    const r = await fetch(`http://127.0.0.1:${port}/signalk-mareas-ihm/api/extremes`, { signal: AbortSignal.timeout(10_000) });
+    const j: any = r.ok ? await r.json() : null;
+    const ex: Extreme[] = (Array.isArray(j?.extremes) ? j.extremes : [])
+      .map((e: any) => ({ t: Date.parse(e.time), v: Number(e.value), type: e.type === "High" ? "High" : "Low" }))
+      .filter((e: Extreme) => Number.isFinite(e.t) && Number.isFinite(e.v));
+    if (ex.length) _extremesCache = { at: Date.now(), ex };
+    return ex;
+  } catch { return _extremesCache?.ex ?? []; }
+};
+const _windTideTick = async () => {
+  try {
+    const now = Date.now();
+    const own = (app.getSelfPath("navigation.position") as any)?.value ?? app.getSelfPath("navigation.position");
+    if (!Number.isFinite(own?.latitude) || !Number.isFinite(own?.longitude)) return;
+    const extremes = await _windTideExtremes();
+    const wind = _ownHistory.get(now - 24 * 3600_000);
+    const vessels = (app as any).getPath?.("vessels") ?? {};
+    const selfMmsi = _getSelfMmsi();
+    for (const [id, vessel] of Object.entries(vessels)) {
+      if (id === app.selfId || id === "self") continue;
+      const key = _aisHistKey(id);
+      if (!key || (selfMmsi && key === selfMmsi)) continue;
+      const v: any = vessel;
+      const pos = v?.navigation?.position?.value;
+      const sogKn = (Number(v?.navigation?.speedOverGround?.value) || 0) * 1.94384;
+      if (!Number.isFinite(pos?.latitude) || sogKn > 0.5) continue;
+      const dLat = (pos.latitude - own.latitude) * 111320, dLng = (pos.longitude - own.longitude) * 111320 * Math.cos(own.latitude * Math.PI / 180);
+      if (Math.hypot(dLat, dLng) > 5000) continue;
+      const ctx = id.startsWith("vessels.") ? id : `vessels.${id}`;
+      let fixes = await fetchVesselTrack(app, ctx, now - 24 * 3600_000, now, 30);
+      if (!fixes || fixes.length < 20) fixes = _aisAnchorHistory.get(key);
+      const since = Date.parse(v?.navigation?.anchor?.estimate?.value?.since ?? "");
+      fixes = currentAnchorage(fixes, Number.isFinite(since) ? since : null);
+      _windTide.set(key, { ...estimateWindTide(fixes, wind, extremes), at: now });
+    }
+    for (const [k, r] of _windTide) if (now - r.at > 30 * 60_000) _windTide.delete(k);
+  } catch (e: any) { app.debug(`[IHM-WINDTIDE] ${e?.message ?? e}`); }
+};
+if (_windTideTimer) clearInterval(_windTideTimer);
+_windTideTimer = setInterval(() => { void _windTideTick(); }, 10 * 60_000);
+setTimeout(() => { void _windTideTick(); }, 2 * 60_000);
+
 // Rev922: after a restart, fill the last 3 h from the Track API (boats within
 // ~10 km), so our estimate does not start empty. The tracks plugin may start
 // after us: try for 3 minutes.
@@ -15367,6 +15425,11 @@ expressApp.post("/signalk-mareas-ihm/api/audio/test", requireControlAccess, asyn
 });
 
 // AIS targets within range
+// Rev926: the wind + tide anchor estimates (diagnostic, for validation).
+expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais/wind-tide", (_req: any, res: any) => {
+  res.json({ enabled: _windTideEnabled, estimates: Object.fromEntries(_windTide) });
+});
+
 // Rev920: own true wind (m/s, radians from) and true heading (radians),
 // one sample every 30 s, up to 24 h.
 expressApp.get("/signalk-mareas-ihm/api/own-history", (req: any, res: any) => {
@@ -15745,6 +15808,15 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
         }
       }
       if (t.anchorEst) continue;
+      // Rev926: with the option on, the wind + tide estimate replaces the
+      // 3 h centroid; "zone" draws no ring (only the track's shaded area).
+      if (_windTideEnabled) {
+        const wt = _windTide.get(_aisHistKey(t.mmsi));
+        if (wt?.state === "estimated" && wt.lat != null && wt.lng != null && wt.radiusM != null) {
+          t.anchorEst = { lat: wt.lat, lng: wt.lng, radiusM: wt.radiusM, source: "track", quality: null, method: "wind-tide", tags: [] };
+        }
+        continue;
+      }
       const e = _aisAnchorHistory.estimate(_aisHistKey(t.mmsi), typeof t.sog === "number" ? t.sog : null, now);
       if (e) t.anchorEst = { lat: e.lat, lng: e.lng, radiusM: e.radiusM, source: "track", quality: null, method: "centroid", tags: [], points: e.points };
     }
