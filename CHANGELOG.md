@@ -4,7 +4,7 @@
 
 ### English
 
-**Fixed — an anchor estimate the boat's own track clearly goes beyond is not used (Rev918).** When another app's estimate (signalk-anchor-mapper) has a radius the boat has been well beyond in the last 3 h (more than the radius plus 10 m of class B position noise, for 10 % of the time), this plugin's own estimate is drawn instead, and the boat's window says why.
+**Fixed — an anchor estimate the boat's own track clearly goes beyond is not used (Rev918).** When another app's estimate (signalk-anchor-mapper) has a radius the boat has been well beyond in the last 3 h (more than the radius plus 10 m of class B position noise, for 10 % of the time), this plugin's own estimate is drawn instead.
 
 
 **Added — another boat's track over the last 24 h, with a time bar (Rev917).** Tap a boat's swing circle (or its window) and press **Show track (24 h)**: its track is drawn and the time bar moves the boat to where it was at each time. The track comes from the Signal K tracks plugin (`@signalk/tracks-plugin`, which keeps 7 days), or from this plugin's own last 3 h when it is not installed.
@@ -20,7 +20,7 @@
 
 ### Español
 
-**Corregido — no se usa una estimación de fondeo de la que el recorrido del barco se sale claramente (Rev918).** Si la estimación de otra app (signalk-anchor-mapper) tiene un radio del que el barco se ha salido mucho en las últimas 3 h (más del radio y 10 m de ruido de posición de un clase B, el 10 % del tiempo), se dibuja la estimación de este plugin, y la ventana del barco dice por qué.
+**Corregido — no se usa una estimación de fondeo de la que el recorrido del barco se sale claramente (Rev918).** Si la estimación de otra app (signalk-anchor-mapper) tiene un radio del que el barco se ha salido mucho en las últimas 3 h (más del radio y 10 m de ruido de posición de un clase B, el 10 % del tiempo), se dibuja la estimación de este plugin.
 
 **Añadido — el recorrido de otro barco en las últimas 24 h, con barra de tiempo (Rev917).** Toca el aro de borneo de un barco (o su ventana) y pulsa **Ver recorrido (24 h)**: se dibuja su recorrido y la barra de tiempo lleva el barco a donde estaba a cada hora. El recorrido sale del plugin de tracks de Signal K (`@signalk/tracks-plugin`, que guarda 7 días), o de las últimas 3 h que guarda este plugin si aquel no está instalado.
 
