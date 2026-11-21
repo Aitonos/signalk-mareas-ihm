@@ -79,6 +79,7 @@ import {
 } from "./telegram.js";
 import { resolveBoatLang } from "./langSettings.js";
 import { AnchorHistory, STEP_MS as AIS_HIST_STEP_MS } from "./anchor-history.js";
+import { fetchVesselTrack } from "./track-api.js";
 
 // Rev680 (feedback Carlos "aunque pongamos NEAPS en curvas siguen saliendo
 // datos de IHM"): las pseudo-estaciones no-IHM (sin-marea, mediterráneo,
@@ -126,7 +127,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev916";
+const PLUGIN_REVISION = "Rev917";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -15321,6 +15322,29 @@ expressApp.post("/signalk-mareas-ihm/api/audio/test", requireControlAccess, asyn
 });
 
 // AIS targets within range
+// Rev917: one boat's track for the viewer's "Show track" (time bar, up to
+// 24 h): from the Signal K Track API (@signalk/tracks-plugin keeps 7 days),
+// else from the plugin's own 3 h history.
+expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais/track", async (req: any, res: any) => {
+  try {
+    const raw = String(req?.query?.mmsi ?? "").trim();
+    const key = _aisHistKey(raw);
+    if (!key) { res.status(400).json({ error: "mmsi required" }); return; }
+    const hours = Math.min(24, Math.max(1, Number(req?.query?.hours) || 24));
+    const toMs = Date.now(), fromMs = toMs - hours * 3600_000;
+    const context = raw.startsWith("urn:") ? `vessels.${raw}` : /^\d{9}$/.test(key) ? `vessels.urn:mrn:imo:mmsi:${key}` : `vessels.urn:mrn:signalk:uuid:${key}`;
+    let fixes = await fetchVesselTrack(app, context, fromMs, toMs, 30);
+    let source = "tracks";
+    if (!fixes || fixes.length < 2) {
+      fixes = _aisAnchorHistory.get(key).filter((f) => f.t >= fromMs);
+      source = "plugin";
+    }
+    res.json({ mmsi: key, hours, source, fixes });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || String(e) });
+  }
+});
+
 expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any) => {
   // Rev387: targets ahora pueden traer `fromCache: string[]` listando
   // que propiedades estaticas fueron rellenadas desde aisKnownDB (TTL 72h).
