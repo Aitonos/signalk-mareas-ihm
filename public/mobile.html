@@ -12718,6 +12718,8 @@ window.aisTrackShow=function(mmsi){
       L.polyline(fixes.map(function(f){ return [f.lat,f.lng]; }),{color:'#ff9800',weight:2,opacity:0.75,interactive:false}).addTo(_aisTrk.layer);
       _aisTrk.boat=L.marker([fixes[fixes.length-1].lat,fixes[fixes.length-1].lng],{icon:_aisTrkIcon(fixes.length-1),interactive:false,zIndexOffset:900}).addTo(_aisTrk.layer);
       sl.max=String(fixes.length-1); sl.value=String(fixes.length-1);
+      /* Rev927: el barco y la flecha se redibujan al cambiar el zoom. */
+      if(!_aisTrk.zoomHook){ _aisTrk.zoomHook=function(){ if(_aisTrk.boat) aisTrackAt(document.getElementById('ais-trk-slider').value); }; map.on('zoomend',_aisTrk.zoomHook); }
       bar.style.display='flex';
       aisTrackAt(fixes.length-1);
       try{ map.fitBounds(L.latLngBounds(fixes.map(function(f){ return [f.lat,f.lng]; })).pad(0.3)); }catch(_){}
@@ -12777,6 +12779,13 @@ function _aisTrkHdg(i){
   if(f.hdg!=null) return f.hdg*180/Math.PI;
   var est=null; try{ est=t?estimateAnchor(t):null; }catch(_){ est=null; }
   var to=est?{lat:est.lat,lng:est.lng}:null;
+  /* Rev927 (Carlos): casi encima del ancla estimada, la dirección hacia
+     ella no dice nada (OHANA salía con el viento de costado): solo vale a
+     una distancia clara (10 m o media distancia de borneo). */
+  if(to){
+    var _dA=hav({lat:f.lat,lng:f.lng},to), _rA=(est.antennaRadiusM!=null?est.antennaRadiusM:est.radius)||0;
+    if(_dA<Math.max(10,_rA*0.5)) to=null;
+  }
   /* Rev925 (Carlos): sin ancla estimada, proa al viento de ese momento
      (viento propio, con algo de fuerza). Aún sin corriente de marea. */
   if(!to){ var ww=_aisTrkWindAt(f.t); if(ww && ww.tws>1.5) return (ww.twd*180/Math.PI+360)%360; }
@@ -12794,6 +12803,7 @@ function _aisTrkIcon(i){
 }
 window.aisTrackClose=function(){
   if(_aisTrk.layer){ try{ map.removeLayer(_aisTrk.layer); }catch(_){} }
+  if(_aisTrk.zoomHook){ try{ map.off('zoomend',_aisTrk.zoomHook); }catch(_){} }
   _aisTrk={layer:null,boat:null,wind:null,fixes:[],t:null,own:[]};
   var bar=document.getElementById('ais-trk-timeline'); if(bar) bar.style.display='none';
 };
