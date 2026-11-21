@@ -1,8 +1,11 @@
 # Changelog
 
-## [Unreleased] (Rev914-915)
+## [Unreleased] (Rev914-916)
 
 ### English
+
+**Changed — our own estimate of other boats' anchors is made in the plugin, not in each browser (Rev916).** The last 3 h of every boat's positions are kept by the plugin, which also makes the estimate (for boats signalk-anchor-mapper does not cover). Every device shows the same, and a newly opened viewer no longer starts empty.
+
 
 **Fixed — another boat's swing circle is where its stern reaches (Rev915).** With the bow towards the anchor, the GPS antenna swings at the radius anchor-mapper or the track measure, and the stern reaches further out by the length behind the antenna (from the AIS `fromBow`, or half the length). The circle now uses that radius. The track estimate no longer adds the whole length plus a hidden 5 m margin.
 
@@ -10,6 +13,8 @@
 **Fixed — a boat at anchor without heading is drawn with its bow towards its anchor (Rev914).** Class B AIS does not send a heading, and a stopped boat's course over ground is noise, so a boat at anchor could point anywhere. With an anchor estimate and no heading, the bow now points at the anchor; with a heading, the heading is used as before.
 
 ### Español
+
+**Cambiado — nuestra estimación del fondeo de otros barcos la hace el plugin, no cada navegador (Rev916).** Las últimas 3 h de posiciones de cada barco las guarda el plugin, que también hace la estimación (para los barcos que signalk-anchor-mapper no cubre). Todos los dispositivos ven lo mismo, y un visor recién abierto ya no empieza vacío.
 
 **Corregido — el aro de borneo de otro barco es hasta donde llega su popa (Rev915).** Con la proa al ancla, la antena GPS bornea al radio que miden anchor-mapper o el track, y la popa llega más lejos lo que mide el barco por detrás de la antena (del `fromBow` del AIS, o media eslora). El aro usa ahora ese radio. La estimación por track ya no suma la eslora entera más un margen oculto de 5 m.
 

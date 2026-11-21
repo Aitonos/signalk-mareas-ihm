@@ -1,0 +1,60 @@
+// Rev916: the other boats' history and our own anchor estimate live in the
+// backend (src/anchor-history.ts).
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { resolve, dirname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const js = resolve(__dirname, '..', 'dist/anchor-history.js');
+async function load() {
+  assert.ok(existsSync(js), 'dist/anchor-history.js missing — run `npm run build` first');
+  return import(pathToFileURL(js).href);
+}
+
+const A = { lat: 42.2801, lng: -8.7340 };   // anchor
+const at = (bearingDeg, m) => {
+  const b = bearingDeg * Math.PI / 180;
+  return { lat: A.lat + (m * Math.cos(b)) / 111320, lng: A.lng + (m * Math.sin(b)) / (111320 * Math.cos(A.lat * Math.PI / 180)) };
+};
+
+test('anchor history: one fix every 30 s, older than 3 h dropped', async () => {
+  const { AnchorHistory } = await load();
+  const h = new AnchorHistory();
+  const t0 = 1_000_000_000_000;
+  h.add('227355930', A.lat, A.lng, t0);
+  h.add('227355930', A.lat, A.lng, t0 + 10_000);           // too soon
+  assert.equal(h.get('227355930').length, 1);
+  h.add('227355930', A.lat, A.lng, t0 + 4 * 3600_000);     // 4 h later
+  assert.equal(h.get('227355930').length, 1, 'the 4 h old fix is gone');
+  h.prune(t0 + 8 * 3600_000);
+  assert.equal(h.size(), 0, 'a boat not heard for 3 h is forgotten');
+});
+
+test('anchor history: estimate near the swing centre, radius of the antenna swing', async () => {
+  const { AnchorHistory } = await load();
+  const h = new AnchorHistory();
+  const t0 = 1_000_000_000_000;
+  // swinging 15 m from the anchor over a 120° arc, a fix every 30 s for 1 h
+  for (let i = 0; i < 120; i++) {
+    const p = at(200 + (i % 40) * 3, 15);
+    h.add('227355930', p.lat, p.lng, t0 + i * 30_000);
+  }
+  const e = h.estimate('227355930', 0, t0 + 120 * 30_000);
+  assert.ok(e, 'estimated');
+  assert.ok(e.radiusM > 3 && e.radiusM < 15, `radius ${e.radiusM}`);
+  assert.ok(e.points >= 100);
+});
+
+test('anchor history: no estimate while moving, with too few fixes, or after a long drift', async () => {
+  const { AnchorHistory, estimateFromFixes } = await load();
+  const h = new AnchorHistory();
+  const t0 = 1_000_000_000_000;
+  for (let i = 0; i < 10; i++) h.add('1', A.lat, A.lng, t0 + i * 30_000);
+  assert.equal(h.estimate('1', 3, t0 + 300_000), null, 'moving at 3 kn');
+  assert.equal(estimateFromFixes([{ t: t0, ...A }], 0, t0), null, 'one fix');
+  const drift = [0, 1, 2, 3, 4].map((i) => ({ t: t0 + i * 30_000, ...at(90, i * 100) }));
+  assert.equal(estimateFromFixes(drift, 0, t0 + 150_000), null, '400 m drift is not an anchorage');
+});

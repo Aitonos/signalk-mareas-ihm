@@ -6752,17 +6752,9 @@ var lastBoatHdgDeg=0;
    otros barcos, aparte de aisTrackHist (que alimenta tracks y acercamiento a
    30 min). Un punto cada 30 s por barco, 3 h, de todos los barcos aunque
    estén fuera del radio del mapa. */
-var AIS_ANCHOR_HIST_MS=3*3600000, AIS_ANCHOR_HIST_STEP_MS=30000;
-var aisAnchorHist=(function(){var out={};try{var raw=JSON.parse(localStorage.getItem('ihm-aisAnchorHist')||'{}'),cut=Date.now()-AIS_ANCHOR_HIST_MS;for(var k in raw){var a=(raw[k]||[]).filter(function(p){return p.t>cut;});if(a.length)out[k]=a;}}catch(_){}return out;})();
-function _aisAnchorHistAdd(t){
-  var k=(t.mmsi||'').replace(/^urn:mrn:imo:mmsi:/,'').replace(/^urn:mrn:signalk:uuid:/,'');
-  if(!k||typeof t.lat!=='number'||typeof t.lng!=='number')return;
-  var now=Date.now(), a=aisAnchorHist[k]||(aisAnchorHist[k]=[]);
-  if(a.length && now-a[a.length-1].t<AIS_ANCHOR_HIST_STEP_MS)return;
-  a.push({lat:t.lat,lng:t.lng,t:now});
-  var cut=now-AIS_ANCHOR_HIST_MS;
-  if(a[0].t<cut)aisAnchorHist[k]=a.filter(function(p){return p.t>cut;});
-}
+/* Rev916: este histórico vive ya en el backend (src/anchor-history.ts).
+   Se borra el que guardaban los navegadores. */
+try{ localStorage.removeItem('ihm-aisAnchorHist'); }catch(_){}
 var aisTrackHist=(function(){var raw=JSON.parse(localStorage.getItem('ihm-aisTrkHist')||'{}'),cut=Date.now()-30*60000,out={};for(var k in raw){out[k]=raw[k].filter(function(p){return p.t>cut;});if(!out[k].length)delete out[k];}return out;})();
 var firstPoll=true,_autoCalcDone=false;
 var lastIconZoom=-1,lastIconHdg=-999;
@@ -12043,8 +12035,6 @@ function loadAIS(){
     var z=map.getZoom();
     var _radiusM=_aisRadiusKm*1000;
     /* Rev906: antes del filtro por radio, para que haya histórico de todos. */
-    d.targets.forEach(_aisAnchorHistAdd);
-    try{localStorage.setItem('ihm-aisAnchorHist',JSON.stringify(aisAnchorHist));}catch(_){}
     d.targets.forEach(function(t){
       /* Rev395: filtro por radio configurable. Targets fuera del radio no
          se pintan ni evaluan. Historico (aisTrackHist) sigue creciendo para
@@ -12695,7 +12685,7 @@ function estimateAnchor(t){
      (signalk-anchor-mapper: círculo ajustado al track y rayos de rumbo,
      mejor que nuestro centroide), se usa tal cual. */
   var ae = t.anchorEst;
-  if(ae && typeof ae.lat==='number' && typeof ae.lng==='number' && ae.radiusM>0){
+  if(ae && typeof ae.lat==='number' && typeof ae.lng==='number' && ae.radiusM>=0){
     return {
       lat: ae.lat, lng: ae.lng, radius: ae.radiusM + _aisSternOffsetM(t),
       antennaRadiusM: ae.radiusM,
@@ -12704,43 +12694,10 @@ function estimateAnchor(t){
       moored: Array.isArray(ae.tags) && ae.tags.indexOf('possibly-moored')>=0,
     };
   }
-  var cleanMmsi = (t.mmsi||'').replace(/^urn:mrn:imo:mmsi:/,'').replace(/^urn:mrn:signalk:uuid:/,'');
-  if(!cleanMmsi) return null;
-  var hist = aisAnchorHist[cleanMmsi];
-  if(!hist || hist.length < 4) return null;
-  /* Rev906: t.sog llega del backend ya en nudos (Rev773); antes se
-     multiplicaba otra vez por 1,94 y casi todos los fondeados se
-     descartaban por "navegar". Umbral 0,5 kn ≈ deriva GPS. */
-  var sogKn = (typeof t.sog === 'number') ? t.sog : 0;
-  if(sogKn > 0.5) return null;
-  var now = Date.now();
-  var recent = hist.filter(function(h){ return (now - h.t) < AIS_ANCHOR_HIST_MS; });
-  if(recent.length < 4) return null;
-  /* Descartar si drift neto primer→último es demasiado grande. */
-  var first = recent[0], last = recent[recent.length-1];
-  var netDrift = hav({lat:first.lat,lng:first.lng},{lat:last.lat,lng:last.lng});
-  if(netDrift > 200) return null;
-  /* Centroide. Aproximación: el ancla queda más lejos, en el centro del
-     arco de borneo; anchor-mapper lo calcula bien (ajuste de círculo). */
-  var sumLat=0, sumLng=0;
-  recent.forEach(function(h){ sumLat += h.lat; sumLng += h.lng; });
-  var cLat = sumLat/recent.length, cLng = sumLng/recent.length;
-  /* Distancias al centroide. P90 = radio de borneo observado robusto. */
-  var dists = recent.map(function(h){ return hav({lat:cLat,lng:cLng},{lat:h.lat,lng:h.lng}); });
-  dists.sort(function(a,b){ return a-b; });
-  var p90Index = Math.max(0, Math.floor(dists.length * 0.9) - 1);
-  var swingObservedM = dists[p90Index];
-  /* Rev915: radio = swing observado de la antena + lo que sobresale la
-     popa. Antes eslora entera + 5 m de margen, un margen oculto. */
-  var radius = swingObservedM + _aisSternOffsetM(t);
-  /* Radios descomunales indican error de datos, no fondeo. */
-  if(radius > 300) return null;
-  return {
-    lat: cLat, lng: cLng, radius: radius,
-    points: recent.length, esloraM: eslora,
-    swingObservedM: swingObservedM,
-    sourceSogKt: sogKn, source: 'track',
-  };
+  /* Rev916: nuestra propia estimación (centroide de las últimas 3 h) la
+     calcula ya el backend y llega también en t.anchorEst, con source
+     "track". Sin ella, el aro gris "sin estimar". */
+  return null;
 }
 /* Rev906: aro de reserva cuando aún no hay estimación (pocos puntos):
    gris, fino, sin ⚓ y rotulado, para que no pase por una estimación. */

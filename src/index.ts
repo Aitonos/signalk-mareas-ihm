@@ -78,6 +78,7 @@ import {
   type TelegramResult,
 } from "./telegram.js";
 import { resolveBoatLang } from "./langSettings.js";
+import { AnchorHistory, STEP_MS as AIS_HIST_STEP_MS } from "./anchor-history.js";
 
 // Rev680 (feedback Carlos "aunque pongamos NEAPS en curvas siguen saliendo
 // datos de IHM"): las pseudo-estaciones no-IHM (sin-marea, mediterráneo,
@@ -125,7 +126,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev915";
+const PLUGIN_REVISION = "Rev916";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1442,6 +1443,12 @@ export default function (app: SignalKApp): Plugin {
   let _pypilotSelfHealTimer: ReturnType<typeof setInterval> | null = null;
   // Rev886: AIS identity enrichment of the SK vessels tree (cleared in stop()).
   let _aisIdentityEnrichTimer: ReturnType<typeof setInterval> | null = null;
+  // Rev916: history of the other boats' positions (3 h) and our own anchor
+  // estimate, in the backend (the viewer kept it in each browser).
+  const _aisAnchorHistory = new AnchorHistory();
+  let _aisAnchorHistTimer: ReturnType<typeof setInterval> | null = null;
+  const _aisHistKey = (idOrMmsi: string): string =>
+    (/(\d{9})/.exec(String(idOrMmsi)) ?? [])[1] ?? String(idOrMmsi || "").replace(/^urn:mrn:imo:mmsi:/, "").replace(/^urn:mrn:signalk:uuid:/, "");
   // Rev904 (sospecha de la auditoría GPT, confirmada): las 156 rutas HTTP se
   // registran en la app de Signal K dentro de start() y Express no permite
   // quitarlas. Tras un stop()/start() (desactivar y activar el plugin, o
@@ -1580,6 +1587,7 @@ export default function (app: SignalKApp): Plugin {
       if (_gustSampleTimer) { clearInterval(_gustSampleTimer); _gustSampleTimer = null; }
       if (_pypilotSelfHealTimer) { clearInterval(_pypilotSelfHealTimer); _pypilotSelfHealTimer = null; }
       if (_aisIdentityEnrichTimer) { clearInterval(_aisIdentityEnrichTimer); _aisIdentityEnrichTimer = null; }
+      if (_aisAnchorHistTimer) { clearInterval(_aisAnchorHistTimer); _aisAnchorHistTimer = null; }
       if (_setSystemTimeCheckTimer) { clearInterval(_setSystemTimeCheckTimer); _setSystemTimeCheckTimer = null; }
       if (_subsystemHealthTimer) { clearInterval(_subsystemHealthTimer); _subsystemHealthTimer = null; }
       for (const t of _audioNullSinkTimers) { clearTimeout(t); clearInterval(t); }
@@ -9148,6 +9156,29 @@ function _restartAnchorWatchTimer() {
 if (anchorWatchIntervalId) clearInterval(anchorWatchIntervalId);
 _restartAnchorWatchTimer();
 
+// Rev916: every 30 s, one fix per other boat into the backend history (all
+// sources, also the boats republished from the online AIS feeds).
+const _aisAnchorHistTick = () => {
+  try {
+    const now = Date.now();
+    const vessels = (app as any).getPath?.("vessels") ?? {};
+    const selfMmsi = _getSelfMmsi();
+    for (const [id, vessel] of Object.entries(vessels)) {
+      if (id === app.selfId || id === "self") continue;
+      const key = _aisHistKey(id);
+      if (!key || (selfMmsi && key === selfMmsi)) continue;
+      const pos = (vessel as any)?.navigation?.position?.value;
+      if (Number.isFinite(pos?.latitude) && Number.isFinite(pos?.longitude)) {
+        _aisAnchorHistory.add(key, pos.latitude, pos.longitude, now);
+      }
+    }
+    _aisAnchorHistory.prune(now);
+  } catch { /* never break the plugin */ }
+};
+if (_aisAnchorHistTimer) clearInterval(_aisAnchorHistTimer);
+_aisAnchorHistTimer = setInterval(_aisAnchorHistTick, AIS_HIST_STEP_MS);
+_aisAnchorHistTick();
+
 // === Open-Meteo weather poller (Rev58, Deploy 4a) ===
 // Polls weather every WEATHER_POLL_MS when GPS position is available.
 // Emits standard SK paths (wind/pressure/waves) so KIP / OP can render natively,
@@ -15600,6 +15631,16 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
       ],
     });
   }
+  // Rev916: boats without an anchor from another app (anchor-mapper) get
+  // our own estimate from the backend history, as source "track".
+  try {
+    const now = Date.now();
+    for (const t of targets as any[]) {
+      if (t.anchorEst) continue;
+      const e = _aisAnchorHistory.estimate(_aisHistKey(t.mmsi), typeof t.sog === "number" ? t.sog : null, now);
+      if (e) t.anchorEst = { lat: e.lat, lng: e.lng, radiusM: e.radiusM, source: "track", quality: null, method: "centroid", tags: [], points: e.points };
+    }
+  } catch { /* the viewer shows "not estimated yet" */ }
   // Persistir DB (debounced 30s) para sobrevivir reinicio.
   _aisDBPersistMaybe();
   res.json({ targets });
