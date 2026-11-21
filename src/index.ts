@@ -80,6 +80,7 @@ import {
 import { resolveBoatLang } from "./langSettings.js";
 import { AnchorHistory, STEP_MS as AIS_HIST_STEP_MS, anchorFitsTrack } from "./anchor-history.js";
 import { fetchVesselTrack } from "./track-api.js";
+import { OwnHistory, trueWindDirection, trueHeading } from "./own-history.js";
 
 // Rev680 (feedback Carlos "aunque pongamos NEAPS en curvas siguen saliendo
 // datos de IHM"): las pseudo-estaciones no-IHM (sin-marea, mediterráneo,
@@ -127,7 +128,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev919";
+const PLUGIN_REVISION = "Rev920";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1448,6 +1449,11 @@ export default function (app: SignalKApp): Plugin {
   // estimate, in the backend (the viewer kept it in each browser).
   const _aisAnchorHistory = new AnchorHistory();
   let _aisAnchorHistTimer: ReturnType<typeof setInterval> | null = null;
+  // Rev920: own true wind and heading, 24 h, persisted every 5 min.
+  const _ownHistory = new OwnHistory();
+  let _ownHistLoaded = false, _ownHistSavedMs = 0;
+  const _ownHistFile = (): string | null => { try { const d = (app as any).getDataDirPath?.(); return d ? path.join(d, "own-history.json") : null; } catch { return null; } };
+  const _ownHistSave = () => { const f = _ownHistFile(); if (!f) return; try { fs.writeFileSync(f, JSON.stringify(_ownHistory.toJSON())); _ownHistSavedMs = Date.now(); } catch { /* next time */ } };
   const _aisHistKey = (idOrMmsi: string): string =>
     (/(\d{9})/.exec(String(idOrMmsi)) ?? [])[1] ?? String(idOrMmsi || "").replace(/^urn:mrn:imo:mmsi:/, "").replace(/^urn:mrn:signalk:uuid:/, "");
   // Rev904 (sospecha de la auditoría GPT, confirmada): las 156 rutas HTTP se
@@ -1589,6 +1595,7 @@ export default function (app: SignalKApp): Plugin {
       if (_pypilotSelfHealTimer) { clearInterval(_pypilotSelfHealTimer); _pypilotSelfHealTimer = null; }
       if (_aisIdentityEnrichTimer) { clearInterval(_aisIdentityEnrichTimer); _aisIdentityEnrichTimer = null; }
       if (_aisAnchorHistTimer) { clearInterval(_aisAnchorHistTimer); _aisAnchorHistTimer = null; }
+      try { _ownHistSave(); } catch { /* best effort */ }
       if (_setSystemTimeCheckTimer) { clearInterval(_setSystemTimeCheckTimer); _setSystemTimeCheckTimer = null; }
       if (_subsystemHealthTimer) { clearInterval(_subsystemHealthTimer); _subsystemHealthTimer = null; }
       for (const t of _audioNullSinkTimers) { clearTimeout(t); clearInterval(t); }
@@ -9170,10 +9177,26 @@ const _aisAnchorHistTick = () => {
       if (!key || (selfMmsi && key === selfMmsi)) continue;
       const pos = (vessel as any)?.navigation?.position?.value;
       if (Number.isFinite(pos?.latitude) && Number.isFinite(pos?.longitude)) {
-        _aisAnchorHistory.add(key, pos.latitude, pos.longitude, now);
+        const h = (vessel as any)?.navigation?.headingTrue?.value;
+        _aisAnchorHistory.add(key, pos.latitude, pos.longitude, now, Number.isFinite(h) ? h : null);
       }
     }
     _aisAnchorHistory.prune(now);
+    // Rev920: own true wind and heading.
+    if (!_ownHistLoaded) {
+      _ownHistLoaded = true;
+      try { const f = _ownHistFile(); if (f && fs.existsSync(f)) _ownHistory.load(JSON.parse(fs.readFileSync(f, "utf8")), now); } catch { /* start empty */ }
+    }
+    const sv = (p: string) => { try { const v = app.getSelfPath(p); return (v && typeof v === "object") ? (v as any).value : v; } catch { return undefined; } };
+    const hdg = trueHeading(sv("navigation.headingTrue"), sv("navigation.headingMagnetic"), sv("navigation.magneticVariation"));
+    const twsRaw = sv("environment.wind.speedTrue");
+    _ownHistory.add({
+      t: now,
+      tws: typeof twsRaw === "number" && Number.isFinite(twsRaw) ? twsRaw : null,
+      twd: trueWindDirection(sv("environment.wind.directionTrue"), hdg, sv("environment.wind.angleTrueWater")),
+      hdg,
+    });
+    if (now - _ownHistSavedMs > 5 * 60_000) _ownHistSave();
   } catch { /* never break the plugin */ }
 };
 if (_aisAnchorHistTimer) clearInterval(_aisAnchorHistTimer);
@@ -15322,6 +15345,13 @@ expressApp.post("/signalk-mareas-ihm/api/audio/test", requireControlAccess, asyn
 });
 
 // AIS targets within range
+// Rev920: own true wind (m/s, radians from) and true heading (radians),
+// one sample every 30 s, up to 24 h.
+expressApp.get("/signalk-mareas-ihm/api/own-history", (req: any, res: any) => {
+  const hours = Math.min(24, Math.max(1, Number(req?.query?.hours) || 24));
+  res.json({ hours, samples: _ownHistory.get(Date.now() - hours * 3600_000) });
+});
+
 // Rev917: one boat's track for the viewer's "Show track" (time bar, up to
 // 24 h): from the Signal K Track API (@signalk/tracks-plugin keeps 7 days),
 // else from the plugin's own 3 h history.
@@ -15338,6 +15368,15 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais/track", async (req: any
     if (!fixes || fixes.length < 2) {
       fixes = _aisAnchorHistory.get(key).filter((f) => f.t >= fromMs);
       source = "plugin";
+    }
+    // Rev920: heading where our own history has it (class A boats).
+    const own = _aisAnchorHistory.get(key).filter((f) => f.hdg != null);
+    if (own.length) {
+      fixes = fixes.map((f: any) => {
+        let best: any = null, bd = Infinity;
+        for (const o of own) { const d = Math.abs(o.t - f.t); if (d < bd) { bd = d; best = o; } }
+        return best && bd <= 60_000 ? { ...f, hdg: best.hdg } : f;
+      });
     }
     res.json({ mmsi: key, hours, source, fixes });
   } catch (e: any) {

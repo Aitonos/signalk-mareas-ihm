@@ -4,7 +4,7 @@
 // device had its own and started empty. It is the fallback for boats that
 // signalk-anchor-mapper does not cover (or when it is not installed).
 
-export type Fix = { t: number; lat: number; lng: number };
+export type Fix = { t: number; lat: number; lng: number; hdg?: number | null };
 
 export type OwnAnchorEstimate = {
   lat: number;
@@ -63,12 +63,12 @@ export class AnchorHistory {
   private tracks = new Map<string, Fix[]>();
 
   /** One fix per boat every STEP_MS; older than HIST_MS is dropped. */
-  add(id: string, lat: number, lng: number, now: number): void {
+  add(id: string, lat: number, lng: number, now: number, hdg: number | null = null): void {
     if (!id || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
     let a = this.tracks.get(id);
     if (!a) { a = []; this.tracks.set(id, a); }
     if (a.length && now - a[a.length - 1].t < STEP_MS) return;
-    a.push({ t: now, lat, lng });
+    a.push(hdg != null && Number.isFinite(hdg) ? { t: now, lat, lng, hdg } : { t: now, lat, lng });
     if (a[0].t < now - HIST_MS) this.tracks.set(id, a.filter((f) => f.t >= now - HIST_MS));
   }
 

@@ -12708,7 +12708,7 @@ window.aisTrackShow=function(mmsi){
       _aisTrk.fixes=fixes; _aisTrk.t=t;
       _aisTrk.layer=L.layerGroup().addTo(map);
       L.polyline(fixes.map(function(f){ return [f.lat,f.lng]; }),{color:'#ff9800',weight:2,opacity:0.75,interactive:false}).addTo(_aisTrk.layer);
-      _aisTrk.boat=L.circleMarker([fixes[fixes.length-1].lat,fixes[fixes.length-1].lng],{radius:7,color:'#fff',weight:2,fillColor:'#ff9800',fillOpacity:1,interactive:false}).addTo(_aisTrk.layer);
+      _aisTrk.boat=L.marker([fixes[fixes.length-1].lat,fixes[fixes.length-1].lng],{icon:_aisTrkIcon(fixes.length-1),interactive:false,zIndexOffset:900}).addTo(_aisTrk.layer);
       sl.max=String(fixes.length-1); sl.value=String(fixes.length-1);
       bar.style.display='flex';
       aisTrackAt(fixes.length-1);
@@ -12718,11 +12718,32 @@ window.aisTrackShow=function(mmsi){
 window.aisTrackAt=function(i){
   var f=_aisTrk.fixes[+i]; if(!f||!_aisTrk.boat) return;
   _aisTrk.boat.setLatLng([f.lat,f.lng]);
+  _aisTrk.boat.setIcon(_aisTrkIcon(+i));
   var d=new Date(f.t), now=Date.now();
   var hh=('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
   var lbl=(now-f.t>20*3600000||d.getDate()!==new Date(now).getDate())?(('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+' '+hh):hh;
   document.getElementById('ais-trk-time').textContent=lbl;
 };
+/* Rev920: el barco de la barra de tiempo, con su dibujo y orientado:
+   heading guardado (clase A), si no la proa al ancla estimada, y si no la
+   dirección en la que se movía. */
+function _aisTrkHdg(i){
+  var f=_aisTrk.fixes[i], t=_aisTrk.t;
+  if(f.hdg!=null) return f.hdg*180/Math.PI;
+  var est=null; try{ est=t?estimateAnchor(t):null; }catch(_){ est=null; }
+  var to=est?{lat:est.lat,lng:est.lng}:null;
+  if(!to){ var n=_aisTrk.fixes[Math.min(i+1,_aisTrk.fixes.length-1)], p=_aisTrk.fixes[Math.max(i-1,0)]; if(n&&p&&(n.lat!==p.lat||n.lng!==p.lng)){ f=p; to=n; } }
+  if(!to) return 0;
+  var la1=f.lat*Math.PI/180, la2=to.lat*Math.PI/180, dl=(to.lng-f.lng)*Math.PI/180;
+  var y=Math.sin(dl)*Math.cos(la2), x=Math.cos(la1)*Math.sin(la2)-Math.sin(la1)*Math.cos(la2)*Math.cos(dl);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+function _aisTrkIcon(i){
+  var t=_aisTrk.t||{}, f=_aisTrk.fixes[i], z=map.getZoom();
+  var lenPx=Math.max(8,m2px(t.length||12,z,f.lat));
+  var beamPx=(typeof t.beam==='number'&&t.beam>0)?m2px(t.beam,z,f.lat):null;
+  return mkAisBoatIcon(lenPx,_aisTrkHdg(i),true,t.aisClass,beamPx,t.shipType,false);
+}
 window.aisTrackClose=function(){
   if(_aisTrk.layer){ try{ map.removeLayer(_aisTrk.layer); }catch(_){} }
   _aisTrk={layer:null,boat:null,fixes:[],t:null};

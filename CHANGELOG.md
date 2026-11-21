@@ -1,8 +1,11 @@
 # Changelog
 
-## [Unreleased] (Rev914-918)
+## [Unreleased] (Rev914-920)
 
 ### English
+
+**Added — the plugin keeps the own true wind and heading for 24 h (Rev920),** one sample every 30 s, saved across restarts (`/signalk-mareas-ihm/api/own-history`). It is the base for estimating other boats' anchors from wind and tide. In a boat's track, the time bar now moves the boat's drawing, oriented by its heading when it sends one, else towards its anchor.
+
 
 **Fixed — an anchor estimate the boat's own track clearly goes beyond is not used (Rev918).** When another app's estimate (signalk-anchor-mapper) has a radius the boat has been well beyond in the last 3 h (more than the radius plus 10 m of class B position noise, for 10 % of the time), this plugin's own estimate is drawn instead.
 
@@ -19,6 +22,8 @@
 **Fixed — a boat at anchor without heading is drawn with its bow towards its anchor (Rev914).** Class B AIS does not send a heading, and a stopped boat's course over ground is noise, so a boat at anchor could point anywhere. With an anchor estimate and no heading, the bow now points at the anchor; with a heading, the heading is used as before.
 
 ### Español
+
+**Añadido — el plugin guarda 24 h del viento real y el rumbo propios (Rev920),** una muestra cada 30 s, que sobrevive a reinicios (`/signalk-mareas-ihm/api/own-history`). Es la base para estimar el fondeo de otros barcos con viento y marea. En el recorrido de un barco, la barra de tiempo mueve ahora su dibujo, orientado por su heading si lo manda y, si no, hacia su ancla.
 
 **Corregido — no se usa una estimación de fondeo de la que el recorrido del barco se sale claramente (Rev918).** Si la estimación de otra app (signalk-anchor-mapper) tiene un radio del que el barco se ha salido mucho en las últimas 3 h (más del radio y 10 m de ruido de posición de un clase B, el 10 % del tiempo), se dibuja la estimación de este plugin.
 
