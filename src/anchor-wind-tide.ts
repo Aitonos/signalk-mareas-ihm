@@ -58,7 +58,7 @@ type Bin = { x: number; y: number; t: number; wx: number; wy: number; c: number 
 /** Robust (Huber) fit of p = A + R·u over the bins. */
 function irls(S: { x: number; y: number; ux: number; uy: number }[]): { Ax: number; Ay: number; R: number; medRes: number } | null {
   let w = S.map(() => 1), sol: number[] | null = null;
-  for (let it = 0; it < 25; it++) {
+  for (let it = 0; it < 12; it++) {   // Rev928: 12 is enough to converge, and cheaper on the Pi
     const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], v = [0, 0, 0];
     S.forEach((b, i) => {
       for (const r of [[1, 0, b.ux, b.x], [0, 1, b.uy, b.y]]) {
@@ -109,12 +109,20 @@ export function estimateWindTide(fixes: Fix[], wind: WindSample[], extremes: Ext
     bins.push({ x: (lo[m] - lng0) * kx, y: (la[m] - lat0) * ky, t: tMid, wx: W * Math.sin(down), wy: W * Math.cos(down), c: streamProxy(tMid, ex) });
   }
   if (bins.length < MIN_FIT_BINS) return { state: "none", reason: "few bins with wind", bins: bins.length };
+  // Rev928: a boat that moves less than the AIS position noise is berthed
+  // or on a buoy: nothing to fit, and no need to spend the CPU.
+  {
+    const cx = bins.reduce((s, b) => s + b.x, 0) / bins.length, cy = bins.reduce((s, b) => s + b.y, 0) / bins.length;
+    const d = bins.map((b) => Math.hypot(b.x - cx, b.y - cy)).sort((a, b) => a - b);
+    if (d[Math.floor(d.length * 0.9)] < MIN_R_M / 2) return { state: "zone", reason: "not swinging", bins: bins.length };
+  }
 
   type Cand = { phi: number; lam: number; spread: number; Ax: number; Ay: number; R: number; medRes: number; score: number };
   const cands: Cand[] = [];
-  for (let phi = 0; phi < 180; phi += 5) {
+  // Rev928: 10° steps and 5 weights (a third of the work: SK must not stall).
+  for (let phi = 0; phi < 180; phi += 10) {
     const sx = Math.sin(phi * D), sy = Math.cos(phi * D);
-    for (const lam of [0, 0.25, 0.5, 1, 2, 4, 8]) {
+    for (const lam of [0, 0.5, 1, 2, 4]) {
       const S = bins.map((b) => {
         const cc = lam * Math.sign(b.c) * b.c * b.c;
         const fx = b.wx + cc * sx, fy = b.wy + cc * sy, F = Math.hypot(fx, fy);

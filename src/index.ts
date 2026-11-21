@@ -129,7 +129,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev927";
+const PLUGIN_REVISION = "Rev928";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -9252,12 +9252,13 @@ const _windTideTick = async () => {
       const since = Date.parse(v?.navigation?.anchor?.estimate?.value?.since ?? "");
       fixes = currentAnchorage(fixes, Number.isFinite(since) ? since : null);
       _windTide.set(key, { ...estimateWindTide(fixes, wind, extremes), at: now });
+      await new Promise((r) => setTimeout(r, 200));   // Rev928: let Signal K breathe between boats
     }
-    for (const [k, r] of _windTide) if (now - r.at > 30 * 60_000) _windTide.delete(k);
+    for (const [k, r] of _windTide) if (now - r.at > 50 * 60_000) _windTide.delete(k);
   } catch (e: any) { app.debug(`[IHM-WINDTIDE] ${e?.message ?? e}`); }
 };
 if (_windTideTimer) clearInterval(_windTideTimer);
-_windTideTimer = setInterval(() => { void _windTideTick(); }, 10 * 60_000);
+_windTideTimer = setInterval(() => { void _windTideTick(); }, 20 * 60_000);   // Rev928: every 20 min
 setTimeout(() => { void _windTideTick(); }, 2 * 60_000);
 
 // Rev922: after a restart, fill the last 3 h from the Track API (boats within
