@@ -46,6 +46,19 @@ export function estimateFromFixes(fixes: Fix[], sogKn: number | null, now: numbe
   return { lat: c.lat, lng: c.lng, radiusM, points: recent.length };
 }
 
+/** Rev918: does an anchor published by another app (anchor-mapper) fit
+ *  this boat's own recent track? No when the P90 distance of the last 3 h
+ *  from that anchor is beyond its radius plus the position noise of a
+ *  class B AIS (10 m). Too few fixes: we cannot tell, so it fits. */
+export const AIS_POS_NOISE_M = 10;
+export function anchorFitsTrack(fixes: Fix[], anchor: { lat: number; lng: number }, radiusM: number, now: number): { fits: boolean; p90M: number | null } {
+  const recent = fixes.filter((f) => now - f.t < HIST_MS);
+  if (recent.length < 20) return { fits: true, p90M: null };
+  const d = recent.map((f) => distM(anchor, f)).sort((a, b) => a - b);
+  const p90M = d[Math.max(0, Math.floor(d.length * 0.9) - 1)];
+  return { fits: p90M <= radiusM + AIS_POS_NOISE_M, p90M };
+}
+
 export class AnchorHistory {
   private tracks = new Map<string, Fix[]>();
 

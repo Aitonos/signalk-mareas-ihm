@@ -78,7 +78,7 @@ import {
   type TelegramResult,
 } from "./telegram.js";
 import { resolveBoatLang } from "./langSettings.js";
-import { AnchorHistory, STEP_MS as AIS_HIST_STEP_MS } from "./anchor-history.js";
+import { AnchorHistory, STEP_MS as AIS_HIST_STEP_MS, anchorFitsTrack } from "./anchor-history.js";
 import { fetchVesselTrack } from "./track-api.js";
 
 // Rev680 (feedback Carlos "aunque pongamos NEAPS en curvas siguen saliendo
@@ -127,7 +127,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev917";
+const PLUGIN_REVISION = "Rev918";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -15660,6 +15660,17 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
   try {
     const now = Date.now();
     for (const t of targets as any[]) {
+      // Rev918: an anchor from another app that the boat's own 3 h track
+      // clearly goes beyond (OHANA: anchor-mapper radius 8 m, the boat up
+      // to 29 m away) is not used; our estimate takes over and the viewer
+      // says why.
+      if (t.anchorEst && t.anchorEst.source !== "track") {
+        const chk = anchorFitsTrack(_aisAnchorHistory.get(_aisHistKey(t.mmsi)), t.anchorEst, t.anchorEst.radiusM, now);
+        if (!chk.fits) {
+          t.anchorEstRejected = { source: t.anchorEst.source, radiusM: t.anchorEst.radiusM, p90M: chk.p90M };
+          delete t.anchorEst;
+        }
+      }
       if (t.anchorEst) continue;
       const e = _aisAnchorHistory.estimate(_aisHistKey(t.mmsi), typeof t.sog === "number" ? t.sog : null, now);
       if (e) t.anchorEst = { lat: e.lat, lng: e.lng, radiusM: e.radiusM, source: "track", quality: null, method: "centroid", tags: [], points: e.points };

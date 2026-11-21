@@ -6235,6 +6235,7 @@ var _i18n={
   ais_sort_anch:{es:'⚓ Fondeados',en:'⚓ At anchor'},
   ais_ver_recorrido:{es:'Ver recorrido (24 h)',en:'Show track (24 h)'},
   ais_popa:{es:'popa',en:'stern'},
+  ais_ancla_descartada:{es:'Descartado el fondeo de {src} (radio {r}): el barco se ha alejado {p} en las últimas 3 h.',en:'Anchor from {src} discarded (radius {r}): the boat has been {p} away in the last 3 h.'},
   ais_sin_recorrido:{es:'Todavía no hay recorrido de este barco.',en:'No track of this boat yet.'},
   ais_hdr_anchors_tip:{es:'Fondeo de otros barcos. Línea continua: anchor-mapper. Discontinua: estimado por el track. Gris de puntos: sin estimar todavía.',en:'Where other boats are anchored. Solid line: anchor-mapper. Dashed: estimated from the track. Grey dots: not estimated yet.'},
   ais_ancla_src_am:{es:'fondeo según anchor-mapper',en:'anchor from anchor-mapper'},
@@ -12431,6 +12432,11 @@ function showAisPopup(t,isBorneo){
         + (anchorEst.quality ? ', '+T('ais_calidad','calidad')+' '+anchorEst.quality : '')
         + (anchorEst.moored ? ', '+T('ais_posible_boya','posible boya o muerto') : '');
     anchorHtml='<div class="ap-row"><span>'+T('ais_ancla_est','Ancla est.:')+'</span><b style="color:var(--org)">r≈'+unitFmt.shortDistance(anchorEst.radius,0)+' <small style="color:#aaa;font-weight:400">('+_escHtml(_src)+')</small></b></div>';
+  }
+  /* Rev918: estimación de otra app descartada porque el recorrido se sale. */
+  if(t.anchorEstRejected){
+    var _rj=t.anchorEstRejected;
+    anchorHtml+='<div class="ap-row"><span></span><small style="color:#ffb23f">'+_escHtml(T('ais_ancla_descartada','Descartado el fondeo de {src} (radio {r}): el barco se ha alejado {p} en las últimas 3 h.').replace('{src}',_rj.source==='signalk-anchor-mapper'?'anchor-mapper':(_rj.source||'signalk')).replace('{r}',unitFmt.shortDistance(_rj.radiusM,0)).replace('{p}',unitFmt.shortDistance(_rj.p90M,0)))+'</small></div>';
   }
   /* Rev917: recorrido de las últimas 24 h con barra de tiempo. */
   if(cleanMmsi){

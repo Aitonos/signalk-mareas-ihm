@@ -58,3 +58,14 @@ test('anchor history: no estimate while moving, with too few fixes, or after a l
   const drift = [0, 1, 2, 3, 4].map((i) => ({ t: t0 + i * 30_000, ...at(90, i * 100) }));
   assert.equal(estimateFromFixes(drift, 0, t0 + 150_000), null, '400 m drift is not an anchorage');
 });
+
+test('anchor fits track: an anchor whose radius the track goes far beyond is not trusted (Rev918, OHANA)', async () => {
+  const { anchorFitsTrack } = await load();
+  const t0 = 1_000_000_000_000;
+  // the boat swings 25 m around A for an hour
+  const fixes = Array.from({ length: 120 }, (_, i) => ({ t: t0 + i * 30_000, ...at(i * 3, 25) }));
+  const now = t0 + 120 * 30_000;
+  assert.equal(anchorFitsTrack(fixes, A, 8, now).fits, false, 'radius 8 m, boat 25 m away');
+  assert.equal(anchorFitsTrack(fixes, A, 20, now).fits, true, 'radius 20 m: within the 10 m class B noise');
+  assert.equal(anchorFitsTrack(fixes.slice(0, 5), A, 8, now).fits, true, 'too few fixes to tell');
+});
