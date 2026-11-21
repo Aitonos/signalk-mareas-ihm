@@ -12728,10 +12728,9 @@ window.aisTrackAt=function(i){
   _aisTrk.boat.setLatLng([f.lat,f.lng]);
   _aisTrk.boat.setIcon(_aisTrkIcon(+i));
   /* Rev922: flecha de viento (hacia donde sopla) y su fuerza, de ese momento. */
-  var w=null, bd=Infinity;
-  (_aisTrk.own||[]).forEach(function(x){ var d=Math.abs(x.t-f.t); if(d<bd&&x.twd!=null&&x.tws!=null){ bd=d; w=x; } });
+  var w=_aisTrkWindAt(f.t);
   if(_aisTrk.wind){ try{ _aisTrk.layer.removeLayer(_aisTrk.wind); }catch(_){} _aisTrk.wind=null; }
-  if(w && bd<=90000){
+  if(w){
     /* Rev924 (Carlos): la flecha va al lado del barco por donde viene el
        viento y apunta al barco (hacia donde sopla). */
     var rot=(w.twd*180/Math.PI+180-90+360)%360;
@@ -12768,11 +12767,19 @@ function _aisTrkZone(fixes){
 /* Rev920: el barco de la barra de tiempo, con su dibujo y orientado:
    heading guardado (clase A), si no la proa al ancla estimada, y si no la
    dirección en la que se movía. */
+function _aisTrkWindAt(tm){
+  var w=null, bd=Infinity;
+  (_aisTrk.own||[]).forEach(function(x){ var d=Math.abs(x.t-tm); if(d<bd&&x.twd!=null&&x.tws!=null){ bd=d; w=x; } });
+  return (w&&bd<=90000)?w:null;
+}
 function _aisTrkHdg(i){
   var f=_aisTrk.fixes[i], t=_aisTrk.t;
   if(f.hdg!=null) return f.hdg*180/Math.PI;
   var est=null; try{ est=t?estimateAnchor(t):null; }catch(_){ est=null; }
   var to=est?{lat:est.lat,lng:est.lng}:null;
+  /* Rev925 (Carlos): sin ancla estimada, proa al viento de ese momento
+     (viento propio, con algo de fuerza). Aún sin corriente de marea. */
+  if(!to){ var ww=_aisTrkWindAt(f.t); if(ww && ww.tws>1.5) return (ww.twd*180/Math.PI+360)%360; }
   if(!to){ var n=_aisTrk.fixes[Math.min(i+1,_aisTrk.fixes.length-1)], p=_aisTrk.fixes[Math.max(i-1,0)]; if(n&&p&&(n.lat!==p.lat||n.lng!==p.lng)){ f=p; to=n; } }
   if(!to) return 0;
   var la1=f.lat*Math.PI/180, la2=to.lat*Math.PI/180, dl=(to.lng-f.lng)*Math.PI/180;
