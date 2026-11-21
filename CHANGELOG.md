@@ -1,12 +1,17 @@
 # Changelog
 
-## [Unreleased] (Rev914)
+## [Unreleased] (Rev914-915)
 
 ### English
+
+**Fixed — another boat's swing circle is where its stern reaches (Rev915).** With the bow towards the anchor, the GPS antenna swings at the radius anchor-mapper or the track measure, and the stern reaches further out by the length behind the antenna (from the AIS `fromBow`, or half the length). The circle now uses that radius. The track estimate no longer adds the whole length plus a hidden 5 m margin.
+
 
 **Fixed — a boat at anchor without heading is drawn with its bow towards its anchor (Rev914).** Class B AIS does not send a heading, and a stopped boat's course over ground is noise, so a boat at anchor could point anywhere. With an anchor estimate and no heading, the bow now points at the anchor; with a heading, the heading is used as before.
 
 ### Español
+
+**Corregido — el aro de borneo de otro barco es hasta donde llega su popa (Rev915).** Con la proa al ancla, la antena GPS bornea al radio que miden anchor-mapper o el track, y la popa llega más lejos lo que mide el barco por detrás de la antena (del `fromBow` del AIS, o media eslora). El aro usa ahora ese radio. La estimación por track ya no suma la eslora entera más un margen oculto de 5 m.
 
 **Corregido — un barco fondeado sin heading se dibuja con la proa hacia su ancla (Rev914).** El AIS de clase B no manda heading, y el rumbo sobre el fondo de un barco parado es ruido, así que un barco fondeado podía apuntar a cualquier lado. Con fondeo estimado y sin heading, la proa mira ahora al ancla; con heading, se usa el heading como antes.
 

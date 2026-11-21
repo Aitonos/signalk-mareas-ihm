@@ -12677,6 +12677,17 @@ function _showAisSelectedAnchor(t){
   grp.addTo(map);
   _aisSelectedAnchorLayer=grp;
 }
+/* Rev915 (Carlos): el aro de borneo de otro barco lo marca su popa. Con
+   la proa al ancla, la antena GPS va a "r" del ancla (lo que miden
+   anchor-mapper y nuestro track) y la popa queda (eslora - fromBow) más
+   lejos. Sin fromBow, antena a media eslora; sin eslora, 12 m. */
+function _aisSternOffsetM(t){
+  var L=(typeof t.length==='number'&&t.length>0)?t.length:null;
+  var fb=(typeof t.fromBow==='number'&&t.fromBow>=0)?t.fromBow:null;
+  if(L!=null&&fb!=null&&fb<=L) return L-fb;
+  if(L!=null) return L/2;
+  return 6;
+}
 function estimateAnchor(t){
   if(!t) return null;
   var eslora = (typeof t.length === 'number' && t.length > 0) ? t.length : 12;
@@ -12686,7 +12697,8 @@ function estimateAnchor(t){
   var ae = t.anchorEst;
   if(ae && typeof ae.lat==='number' && typeof ae.lng==='number' && ae.radiusM>0){
     return {
-      lat: ae.lat, lng: ae.lng, radius: ae.radiusM,
+      lat: ae.lat, lng: ae.lng, radius: ae.radiusM + _aisSternOffsetM(t),
+      antennaRadiusM: ae.radiusM,
       esloraM: eslora, source: ae.source || 'signalk',
       quality: ae.quality || null, method: ae.method || null,
       moored: Array.isArray(ae.tags) && ae.tags.indexOf('possibly-moored')>=0,
@@ -12718,8 +12730,9 @@ function estimateAnchor(t){
   dists.sort(function(a,b){ return a-b; });
   var p90Index = Math.max(0, Math.floor(dists.length * 0.9) - 1);
   var swingObservedM = dists[p90Index];
-  /* Radio efectivo = swing observado + eslora + 5 m margen. */
-  var radius = swingObservedM + eslora + 5;
+  /* Rev915: radio = swing observado de la antena + lo que sobresale la
+     popa. Antes eslora entera + 5 m de margen, un margen oculto. */
+  var radius = swingObservedM + _aisSternOffsetM(t);
   /* Radios descomunales indican error de datos, no fondeo. */
   if(radius > 300) return null;
   return {

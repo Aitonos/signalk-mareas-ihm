@@ -125,7 +125,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev914";
+const PLUGIN_REVISION = "Rev915";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -15293,7 +15293,7 @@ expressApp.post("/signalk-mareas-ihm/api/audio/test", requireControlAccess, asyn
 expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any) => {
   // Rev387: targets ahora pueden traer `fromCache: string[]` listando
   // que propiedades estaticas fueron rellenadas desde aisKnownDB (TTL 72h).
-  const targets: Array<{ mmsi: string; name: string; lat: number; lng: number; sog: number | null; heading: number | null; cog: number | null; isStatic: boolean; length: number | null; beam: number | null; aisClass: "A" | "B" | null; shipType: number | null; callsign?: string | null; imo?: string | null; firstSeenMs?: number | null; lastSeenMs?: number | null; fromCache?: string[]; source?: "vhf" | "aisstream" | "aishub" | "aisfriends" | null; sources?: string[] }> = [];
+  const targets: Array<{ mmsi: string; name: string; lat: number; lng: number; sog: number | null; heading: number | null; cog: number | null; isStatic: boolean; length: number | null; beam: number | null; fromBow?: number | null; aisClass: "A" | "B" | null; shipType: number | null; callsign?: string | null; imo?: string | null; firstSeenMs?: number | null; lastSeenMs?: number | null; fromCache?: string[]; source?: "vhf" | "aisstream" | "aishub" | "aisfriends" | null; sources?: string[] }> = [];
   /* Rev811/812/813: helper para lista de badges por target. Regla Carlos:
      Siempre listar TODOS los canales que han visto el MMSI en <120s. Si
      VHF y AISHUB lo ven simultáneamente → sale "VHF AH". Si solo online
@@ -15390,6 +15390,15 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
       try {
         const db = v?.design?.beam;
         if (db) aisBeam = typeof db === "object" ? (db?.value ?? null) : (typeof db === "number" ? db : null);
+      } catch {}
+      // Rev915: dónde va la antena GPS del barco, medido desde la proa (AIS
+      // estático). El visor lo usa para que el aro de borneo lo marque la
+      // popa y no la antena.
+      let aisFromBow: number | null = null;
+      try {
+        const fb = v?.sensors?.ais?.fromBow;
+        const n = typeof fb === "object" ? (fb?.value ?? null) : (typeof fb === "number" ? fb : null);
+        if (typeof n === "number" && isFinite(n) && n >= 0) aisFromBow = n;
       } catch {}
       // Rev349: design.aisShipType del bus SK. Es un número AIS 0-99 según
       // ITU-R M.1371. Lo exponemos al frontend para que renderice icono y
@@ -15523,6 +15532,7 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais", (_req: any, res: any)
         isStatic,
         length: finalLen,
         beam: finalBeam,
+        fromBow: aisFromBow,   // Rev915
         aisClass: finalAisClass,
         shipType: finalShipType,
         callsign: finalCallsign,
