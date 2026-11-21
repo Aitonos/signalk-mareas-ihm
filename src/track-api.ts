@@ -65,6 +65,28 @@ export function featuresToFixes(collection: any, context: string): TimedFix[] {
   return out.sort((a, b) => a.t - b.t);
 }
 
+/** Rev922: every vessel's track inside a box ([west, south, east, north]),
+ *  by context, for seeding the backend history after a restart. */
+export async function fetchTracksInBox(app: any, bbox: [number, number, number, number], fromMs: number, toMs: number, resolutionS = 30): Promise<Map<string, TimedFix[]> | null> {
+  if (typeof app?.getTrackApi !== "function") return null;
+  let api: any;
+  try { api = await app.getTrackApi(); } catch { return null; }
+  try {
+    const req = buildRequest("", fromMs, toMs, resolutionS);
+    delete req.contexts;
+    req.bbox = bbox;
+    req.clip = false;
+    const col = await api.getTracks(req);
+    const out = new Map<string, TimedFix[]>();
+    for (const f of (col?.features ?? [])) {
+      const ctx = f?.properties?.context;
+      if (typeof ctx !== "string" || !ctx.startsWith("vessels.") || f?.properties?.isSelf) continue;
+      if (!out.has(ctx)) out.set(ctx, featuresToFixes({ features: (col.features as any[]).filter((g) => g?.properties?.context === ctx) }, ctx));
+    }
+    return out;
+  } catch { return null; }
+}
+
 /** Resolves the fixes, or null when there is no Track API / provider. */
 export async function fetchVesselTrack(app: any, context: string, fromMs: number, toMs: number, resolutionS = 30): Promise<TimedFix[] | null> {
   if (typeof app?.getTrackApi !== "function") return null;

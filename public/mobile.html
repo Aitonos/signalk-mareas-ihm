@@ -6233,7 +6233,7 @@ var _i18n={
   ais_sort_mmsi:{es:'MMSI',en:'MMSI'},
   ais_sort_type:{es:'Tipo',en:'Type'},
   ais_sort_anch:{es:'⚓ Fondeados',en:'⚓ At anchor'},
-  ais_ver_recorrido:{es:'Ver recorrido (24 h)',en:'Show track (24 h)'},
+  ais_recorrido:{es:'Recorrido',en:'Track'},
   ais_popa:{es:'popa',en:'stern'},
   ais_ancla_3h:{es:'estimación últimas 3 h',en:'estimate, last 3 h'},
   ais_sin_recorrido:{es:'Todavía no hay recorrido de este barco.',en:'No track of this boat yet.'},
@@ -12392,6 +12392,8 @@ function showAisPopup(t,isBorneo){
   var _vfImo = (t.imo && /^\d+$/.test(String(t.imo))) ? String(t.imo) : '0';
   var _vfUrl = 'https://www.vesselfinder.com/pro/map#vessel-details?imo='+_vfImo+'&mmsi='+encodeURIComponent(cleanMmsi);
   var vfBtn='<button class="btn-ack ais-action-btn" style="background:rgba(56,142,60,.55)" onclick="window.open(\''+_vfUrl+'\',\'_blank\',\'noopener\')">🔍 vesselfinder</button>';
+  /* Rev922: "Recorrido" junto a Localizar y vesselfinder, mismo estilo. */
+  vfBtn+='<button class="btn-ack ais-action-btn" style="background:rgba(255,152,0,.55)" onclick="aisTrackShow(\''+cleanMmsi+'\')">🧭 '+T('ais_recorrido','Recorrido')+'</button>';
   var actionsEl=document.getElementById('ais-pop-actions');
   if(actionsEl){
     /* Rev617 (feedback Carlos "me ha pedido ACK sin tener alarma AIS
@@ -12432,10 +12434,6 @@ function showAisPopup(t,isBorneo){
         + (anchorEst.quality ? ', '+T('ais_calidad','calidad')+' '+anchorEst.quality : '')
         + (anchorEst.moored ? ', '+T('ais_posible_boya','posible boya o muerto') : '');
     anchorHtml='<div class="ap-row"><span>'+T('ais_ancla_est','Ancla est.:')+'</span><b style="color:var(--org)">r≈'+unitFmt.shortDistance(anchorEst.radius,0)+' <small style="color:#aaa;font-weight:400">('+_escHtml(_src)+')</small></b></div>';
-  }
-  /* Rev917: recorrido de las últimas 24 h con barra de tiempo. */
-  if(cleanMmsi){
-    anchorHtml+='<div class="ap-row" style="justify-content:center;margin-top:6px"><button type="button" class="ghost" onclick="aisTrackShow(\''+_escHtml(cleanMmsi)+'\')">🧭 '+T('ais_ver_recorrido','Ver recorrido (24 h)')+'</button></div>';
   }
   /* Rev349: F2 — tipo de barco + emoji. Renderiza solo si shipType reconocido. */
   var _ti = (typeof _aisTypeInfo==='function') ? _aisTypeInfo(t.shipType) : null;
@@ -12686,10 +12684,13 @@ function _showAisSelectedAnchor(t){
 }
 /* Rev917: recorrido de un barco AIS con barra de tiempo (24 h). Los datos
    los da el backend (Track API de Signal K, o el histórico propio de 3 h). */
-var _aisTrk={layer:null,boat:null,fixes:[],t:null};
+var _aisTrk={layer:null,boat:null,wind:null,fixes:[],t:null,own:[]};
 window.aisTrackShow=function(mmsi){
   try{ closePopup('ais-pop'); }catch(_){}
   aisTrackClose();
+  /* Rev922: viento propio de esas horas para la flecha de la barra. */
+  fetch(A+'/own-history?hours=24',{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; }).catch(function(){ return null; })
+    .then(function(j){ _aisTrk.own=(j&&Array.isArray(j.samples))?j.samples:[]; if(_aisTrk.boat) aisTrackAt(document.getElementById('ais-trk-slider').value); });
   fetch(A+'/anchor-watch/ais/track?hours=24&mmsi='+encodeURIComponent(mmsi),{cache:'no-store'})
     .then(function(r){ return r.ok?r.json():null; })
     .catch(function(){ return null; })
@@ -12726,6 +12727,17 @@ window.aisTrackAt=function(i){
   var f=_aisTrk.fixes[+i]; if(!f||!_aisTrk.boat) return;
   _aisTrk.boat.setLatLng([f.lat,f.lng]);
   _aisTrk.boat.setIcon(_aisTrkIcon(+i));
+  /* Rev922: flecha de viento (hacia donde sopla) y su fuerza, de ese momento. */
+  var w=null, bd=Infinity;
+  (_aisTrk.own||[]).forEach(function(x){ var d=Math.abs(x.t-f.t); if(d<bd&&x.twd!=null&&x.tws!=null){ bd=d; w=x; } });
+  if(_aisTrk.wind){ try{ _aisTrk.layer.removeLayer(_aisTrk.wind); }catch(_){} _aisTrk.wind=null; }
+  if(w && bd<=90000){
+    var rot=(w.twd*180/Math.PI+180-90+360)%360;
+    var html='<div style="display:flex;align-items:center;gap:4px;white-space:nowrap;pointer-events:none">'
+      +'<span style="display:inline-block;transform:rotate('+rot.toFixed(0)+'deg);font-size:26px;color:#ffeb3b;text-shadow:0 0 3px #000">➤</span>'
+      +'<b style="color:#ffeb3b;font-size:14px;text-shadow:0 0 3px #000">'+unitFmt.speed(w.tws,0)+'</b></div>';
+    _aisTrk.wind=L.marker([f.lat,f.lng],{icon:L.divIcon({className:'',html:html,iconSize:[90,30],iconAnchor:[-18,15]}),interactive:false,zIndexOffset:950}).addTo(_aisTrk.layer);
+  }
   var d=new Date(f.t), now=Date.now();
   var hh=('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
   var lbl=(now-f.t>20*3600000||d.getDate()!==new Date(now).getDate())?(('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+' '+hh):hh;
@@ -12771,7 +12783,7 @@ function _aisTrkIcon(i){
 }
 window.aisTrackClose=function(){
   if(_aisTrk.layer){ try{ map.removeLayer(_aisTrk.layer); }catch(_){} }
-  _aisTrk={layer:null,boat:null,fixes:[],t:null};
+  _aisTrk={layer:null,boat:null,wind:null,fixes:[],t:null,own:[]};
   var bar=document.getElementById('ais-trk-timeline'); if(bar) bar.style.display='none';
 };
 /* Rev915 (Carlos): el aro de borneo de otro barco lo marca su popa. Con

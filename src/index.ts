@@ -78,8 +78,8 @@ import {
   type TelegramResult,
 } from "./telegram.js";
 import { resolveBoatLang } from "./langSettings.js";
-import { AnchorHistory, STEP_MS as AIS_HIST_STEP_MS, anchorFitsTrack } from "./anchor-history.js";
-import { fetchVesselTrack } from "./track-api.js";
+import { AnchorHistory, STEP_MS as AIS_HIST_STEP_MS, anchorFitsTrack, currentAnchorage } from "./anchor-history.js";
+import { fetchVesselTrack, fetchTracksInBox } from "./track-api.js";
 import { OwnHistory, trueWindDirection, trueHeading } from "./own-history.js";
 
 // Rev680 (feedback Carlos "aunque pongamos NEAPS en curvas siguen saliendo
@@ -128,7 +128,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev921";
+const PLUGIN_REVISION = "Rev923";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -9202,6 +9202,28 @@ const _aisAnchorHistTick = () => {
 if (_aisAnchorHistTimer) clearInterval(_aisAnchorHistTimer);
 _aisAnchorHistTimer = setInterval(_aisAnchorHistTick, AIS_HIST_STEP_MS);
 _aisAnchorHistTick();
+// Rev922: after a restart, fill the last 3 h from the Track API (boats within
+// ~10 km), so our estimate does not start empty. The tracks plugin may start
+// after us: try for 3 minutes.
+(async () => {
+  for (let i = 0; i < 12; i++) {
+    try {
+      const pos = (app.getSelfPath("navigation.position") as any)?.value ?? app.getSelfPath("navigation.position");
+      if (Number.isFinite(pos?.latitude) && Number.isFinite(pos?.longitude)) {
+        const dLat = 0.09, dLng = 0.09 / Math.cos(pos.latitude * Math.PI / 180);
+        const now = Date.now();
+        const tracks = await fetchTracksInBox(app, [pos.longitude - dLng, pos.latitude - dLat, pos.longitude + dLng, pos.latitude + dLat], now - 3 * 3600_000, now, 30);
+        if (tracks) {
+          let n = 0;
+          for (const [ctx, fx] of tracks) { _aisAnchorHistory.seed(_aisHistKey(ctx), fx, now); n++; }
+          app.debug(`[IHM-AIS-HIST] seeded ${n} boats from the Track API`);
+          return;
+        }
+      }
+    } catch { /* retry */ }
+    await new Promise((r) => setTimeout(r, 15_000));
+  }
+})();
 
 // === Open-Meteo weather poller (Rev58, Deploy 4a) ===
 // Polls weather every WEATHER_POLL_MS when GPS position is available.
@@ -15369,6 +15391,18 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais/track", async (req: any
       fixes = _aisAnchorHistory.get(key).filter((f) => f.t >= fromMs);
       source = "plugin";
     }
+    // Rev922: only the current anchorage, not the passage that led to it
+    // (ADMIRAL NEPTUNE's 24 h shaded miles of the ria). anchor-mapper's
+    // "since", when it has one, and a cut where the boat was under way.
+    let sinceMs: number | null = null;
+    try {
+      const v = (app as any).getPath?.(context) ?? null;
+      const since = v?.navigation?.anchor?.estimate?.value?.since;
+      const ms = typeof since === "string" ? Date.parse(since) : NaN;
+      if (Number.isFinite(ms)) sinceMs = ms;
+    } catch { /* none */ }
+    const full = fixes.length;
+    fixes = currentAnchorage(fixes, sinceMs);
     // Rev920: heading where our own history has it (class A boats).
     const own = _aisAnchorHistory.get(key).filter((f) => f.hdg != null);
     if (own.length) {
@@ -15378,7 +15412,7 @@ expressApp.get("/signalk-mareas-ihm/api/anchor-watch/ais/track", async (req: any
         return best && bd <= 60_000 ? { ...f, hdg: best.hdg } : f;
       });
     }
-    res.json({ mmsi: key, hours, source, fixes });
+    res.json({ mmsi: key, hours, source, anchoredSince: fixes.length ? fixes[0].t : null, cutFrom: full, fixes });
   } catch (e: any) {
     res.status(500).json({ error: e?.message || String(e) });
   }

@@ -1,8 +1,11 @@
 # Changelog
 
-## [Unreleased] (Rev914-921)
+## [Unreleased] (Rev914-923)
 
 ### English
+
+**Changed — the track view shows only the current anchorage, with the wind (Rev922).** The passage that led to the anchorage is cut (from anchor-mapper's anchoring time when it has one, and where the boat was under way at more than 1.5 kn), so a ship that sailed in today no longer shades miles of water. While moving the time bar, an arrow shows the own wind at that moment and its speed. The Track button sits next to Locate and vesselfinder, in the same style. Our own anchor estimate needs at least 30 minutes of positions, and after a restart the plugin fills the last 3 h from the tracks plugin, so it no longer draws a tiny ring right under a boat. A boat that moves less than the 10 m position noise of an AIS is berthed or on a buoy, and gets no anchor ring (Rev923).
+
 
 **Added — the area a boat has swung over, shaded under its track (Rev921).** The outline of its 5-minute median positions, so class B position noise does not inflate it. It shows where the boat really goes, more telling than a radius.
 
@@ -25,6 +28,8 @@
 **Fixed — a boat at anchor without heading is drawn with its bow towards its anchor (Rev914).** Class B AIS does not send a heading, and a stopped boat's course over ground is noise, so a boat at anchor could point anywhere. With an anchor estimate and no heading, the bow now points at the anchor; with a heading, the heading is used as before.
 
 ### Español
+
+**Cambiado — el recorrido enseña solo el fondeo actual, con el viento (Rev922).** Se corta la navegación hasta el fondeadero (desde la hora de fondeo de anchor-mapper si la tiene, y donde el barco iba a más de 1,5 kn), así que un barco que llegó hoy ya no sombrea millas de agua. Al mover la barra de tiempo, una flecha enseña el viento propio de ese momento y su fuerza. El botón Recorrido va junto a Localizar y vesselfinder, con su mismo estilo. Nuestra estimación de fondeo necesita al menos 30 minutos de posiciones, y tras un reinicio el plugin rellena las últimas 3 h desde el plugin de tracks, así que ya no dibuja un aro diminuto debajo del barco. Un barco que se mueve menos que los 10 m de ruido de posición de un AIS está amarrado o en una boya, y no lleva aro de fondeo (Rev923).
 
 **Añadido — la zona por donde ha borneado un barco, sombreada bajo su recorrido (Rev921).** El contorno de sus posiciones medianas de 5 minutos, para que el ruido de posición del clase B no la agrande. Enseña por dónde va de verdad el barco, más que un radio.
 

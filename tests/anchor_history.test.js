@@ -69,3 +69,32 @@ test('anchor fits track: an anchor whose radius the track goes far beyond is not
   assert.equal(anchorFitsTrack(fixes, A, 20, now).fits, true, 'radius 20 m: within the 10 m class B noise');
   assert.equal(anchorFitsTrack(fixes.slice(0, 5), A, 8, now).fits, true, 'too few fixes to tell');
 });
+
+test('current anchorage: the passage that led to the anchorage is cut (Rev922)', async () => {
+  const { currentAnchorage } = await load();
+  const t0 = 1_000_000_000_000;
+  const fixes = [];
+  // 1 h under way at 5 kn heading north, then 3 h swinging at anchor
+  for (let i = 0; i < 120; i++) fixes.push({ t: t0 + i * 30_000, ...at(180, 9260 - i * 77) });
+  const tAnch = t0 + 120 * 30_000;
+  for (let i = 0; i < 360; i++) fixes.push({ t: tAnch + i * 30_000, ...at(i * 2, 20) });
+  const cut = currentAnchorage(fixes);
+  assert.ok(cut[0].t >= tAnch - 600_000, 'starts at the anchorage (within one or two 5-min bins)');
+  assert.ok(cut.length >= 340);
+  const since = currentAnchorage(fixes, tAnch + 3600_000);
+  assert.equal(since[0].t, tAnch + 3600_000, "anchor-mapper's since cuts later");
+});
+
+test('anchor history: no estimate from a few minutes of fixes, and a seed merges in time order (Rev922)', async () => {
+  const { AnchorHistory } = await load();
+  const h = new AnchorHistory();
+  const t0 = 1_000_000_000_000;
+  for (let i = 0; i < 25; i++) { const p = at(i * 7, 15); h.add('1', p.lat, p.lng, t0 + i * 30_000); }  // 12 min
+  assert.equal(h.estimate('1', 0, t0 + 25 * 30_000), null, '12 minutes is not enough');
+  const older = Array.from({ length: 100 }, (_, i) => ({ t: t0 - (100 - i) * 30_000, ...at(i * 3, 15) }));
+  h.seed('1', older, t0 + 25 * 30_000);
+  const all = h.get('1');
+  assert.ok(all.length >= 120);
+  assert.ok(all.every((f, i) => i === 0 || f.t > all[i - 1].t), 'in time order');
+  assert.ok(h.estimate('1', 0, t0 + 25 * 30_000), 'with 1 h of fixes it estimates');
+});
