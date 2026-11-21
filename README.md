@@ -5,7 +5,7 @@ Intelligent anchor monitoring, voice alarms, AIS anti-collision with cross-sessi
 
 **User-friendly UI designed for fingers in sunlight** — from the bridge Pi to the phone in the cockpit, the whole viewer adapts to your screen, keeping comfortable controls and readable text.
 
-🇬🇧 [English](#english) · 🇪🇸 [Español](#espanol)
+🇬🇧 [English](#english) · 🇪🇸 [Español](#español)
 
 ---
 
@@ -219,8 +219,6 @@ Issues, PRs and feature requests welcome at the [GitHub repo](https://github.com
 Apache 2.0. Derived from `signalk-tides` (Brandon Keepers, Joachim Bakke, Scott Bender and contributors).
 
 ---
-
-<a id="espanol"></a>
 
 ## Español
 
