@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] (Rev914)
+
+### English
+
+**Fixed — a boat at anchor without heading is drawn with its bow towards its anchor (Rev914).** Class B AIS does not send a heading, and a stopped boat's course over ground is noise, so a boat at anchor could point anywhere. With an anchor estimate and no heading, the bow now points at the anchor; with a heading, the heading is used as before.
+
+### Español
+
+**Corregido — un barco fondeado sin heading se dibuja con la proa hacia su ancla (Rev914).** El AIS de clase B no manda heading, y el rumbo sobre el fondo de un barco parado es ruido, así que un barco fondeado podía apuntar a cualquier lado. Con fondeo estimado y sin heading, la proa mira ahora al ancla; con heading, se usa el heading como antes.
+
 ## [2.16.0] - 2026-11-21
 
 ### English
