@@ -12732,11 +12732,15 @@ window.aisTrackAt=function(i){
   (_aisTrk.own||[]).forEach(function(x){ var d=Math.abs(x.t-f.t); if(d<bd&&x.twd!=null&&x.tws!=null){ bd=d; w=x; } });
   if(_aisTrk.wind){ try{ _aisTrk.layer.removeLayer(_aisTrk.wind); }catch(_){} _aisTrk.wind=null; }
   if(w && bd<=90000){
+    /* Rev924 (Carlos): la flecha va al lado del barco por donde viene el
+       viento y apunta al barco (hacia donde sopla). */
     var rot=(w.twd*180/Math.PI+180-90+360)%360;
-    var html='<div style="display:flex;align-items:center;gap:4px;white-space:nowrap;pointer-events:none">'
-      +'<span style="display:inline-block;transform:rotate('+rot.toFixed(0)+'deg);font-size:26px;color:#ffeb3b;text-shadow:0 0 3px #000">➤</span>'
-      +'<b style="color:#ffeb3b;font-size:14px;text-shadow:0 0 3px #000">'+unitFmt.speed(w.tws,0)+'</b></div>';
-    _aisTrk.wind=L.marker([f.lat,f.lng],{icon:L.divIcon({className:'',html:html,iconSize:[90,30],iconAnchor:[-18,15]}),interactive:false,zIndexOffset:950}).addTo(_aisTrk.layer);
+    var off=Math.max(40, (_aisTrk.boat&&_aisTrk.boat.options.icon&&_aisTrk.boat.options.icon.options.iconSize)?Math.max.apply(null,_aisTrk.boat.options.icon.options.iconSize)/2+26:40);
+    var dx=off*Math.sin(w.twd), dy=-off*Math.cos(w.twd);
+    var html='<div style="position:relative;width:70px;height:56px;pointer-events:none">'
+      +'<span style="position:absolute;left:22px;top:6px;width:26px;height:26px;line-height:26px;text-align:center;display:block;transform:rotate('+rot.toFixed(0)+'deg);font-size:26px;color:#ffeb3b;text-shadow:0 0 3px #000">➤</span>'
+      +'<b style="position:absolute;left:0;right:0;top:34px;text-align:center;color:#ffeb3b;font-size:14px;text-shadow:0 0 3px #000;white-space:nowrap">'+unitFmt.speed(w.tws,0)+'</b></div>';
+    _aisTrk.wind=L.marker([f.lat,f.lng],{icon:L.divIcon({className:'',html:html,iconSize:[70,56],iconAnchor:[35-dx,19-dy]}),interactive:false,zIndexOffset:950}).addTo(_aisTrk.layer);
   }
   var d=new Date(f.t), now=Date.now();
   var hh=('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
