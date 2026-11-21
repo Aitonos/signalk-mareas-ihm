@@ -12707,6 +12707,13 @@ window.aisTrackShow=function(mmsi){
       sl.style.display='';
       _aisTrk.fixes=fixes; _aisTrk.t=t;
       _aisTrk.layer=L.layerGroup().addTo(map);
+      /* Rev921 (Carlos): zona por donde ha estado el barco, sombreada. Es
+         la tendencia real del borneo, más útil que un radio. Envolvente de
+         las medianas de 5 min (quita el ruido de posición del clase B). */
+      try{
+        var _zone=_aisTrkZone(fixes);
+        if(_zone.length>=3) L.polygon(_zone,{color:'#ff9800',weight:1,opacity:0.5,fillColor:'#ff9800',fillOpacity:0.18,interactive:false}).addTo(_aisTrk.layer);
+      }catch(_){}
       L.polyline(fixes.map(function(f){ return [f.lat,f.lng]; }),{color:'#ff9800',weight:2,opacity:0.75,interactive:false}).addTo(_aisTrk.layer);
       _aisTrk.boat=L.marker([fixes[fixes.length-1].lat,fixes[fixes.length-1].lng],{icon:_aisTrkIcon(fixes.length-1),interactive:false,zIndexOffset:900}).addTo(_aisTrk.layer);
       sl.max=String(fixes.length-1); sl.value=String(fixes.length-1);
@@ -12724,6 +12731,24 @@ window.aisTrackAt=function(i){
   var lbl=(now-f.t>20*3600000||d.getDate()!==new Date(now).getDate())?(('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+' '+hh):hh;
   document.getElementById('ais-trk-time').textContent=lbl;
 };
+/* Rev921: envolvente convexa de las medianas de 5 min del recorrido. */
+function _aisTrkZone(fixes){
+  var bins={};
+  fixes.forEach(function(f){ var k=Math.floor(f.t/300000); (bins[k]||(bins[k]=[])).push(f); });
+  var pts=[];
+  for(var k in bins){
+    var a=bins[k], la=a.map(function(f){return f.lat;}).sort(function(x,y){return x-y;}), lo=a.map(function(f){return f.lng;}).sort(function(x,y){return x-y;});
+    pts.push([la[Math.floor(la.length/2)], lo[Math.floor(lo.length/2)]]);
+  }
+  if(pts.length<3) return pts;
+  pts.sort(function(p,q){ return p[1]-q[1] || p[0]-q[0]; });
+  var cross=function(o,a,b){ return (a[1]-o[1])*(b[0]-o[0])-(a[0]-o[0])*(b[1]-o[1]); };
+  var lower=[], upper=[];
+  pts.forEach(function(p){ while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],p)<=0) lower.pop(); lower.push(p); });
+  for(var i=pts.length-1;i>=0;i--){ var p=pts[i]; while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],p)<=0) upper.pop(); upper.push(p); }
+  upper.pop(); lower.pop();
+  return lower.concat(upper);
+}
 /* Rev920: el barco de la barra de tiempo, con su dibujo y orientado:
    heading guardado (clase A), si no la proa al ancla estimada, y si no la
    dirección en la que se movía. */

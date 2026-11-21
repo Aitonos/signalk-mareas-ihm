@@ -1,8 +1,11 @@
 # Changelog
 
-## [Unreleased] (Rev914-920)
+## [Unreleased] (Rev914-921)
 
 ### English
+
+**Added — the area a boat has swung over, shaded under its track (Rev921).** The outline of its 5-minute median positions, so class B position noise does not inflate it. It shows where the boat really goes, more telling than a radius.
+
 
 **Added — the plugin keeps the own true wind and heading for 24 h (Rev920),** one sample every 30 s, saved across restarts (`/signalk-mareas-ihm/api/own-history`). It is the base for estimating other boats' anchors from wind and tide. In a boat's track, the time bar now moves the boat's drawing, oriented by its heading when it sends one, else towards its anchor.
 
@@ -22,6 +25,8 @@
 **Fixed — a boat at anchor without heading is drawn with its bow towards its anchor (Rev914).** Class B AIS does not send a heading, and a stopped boat's course over ground is noise, so a boat at anchor could point anywhere. With an anchor estimate and no heading, the bow now points at the anchor; with a heading, the heading is used as before.
 
 ### Español
+
+**Añadido — la zona por donde ha borneado un barco, sombreada bajo su recorrido (Rev921).** El contorno de sus posiciones medianas de 5 minutos, para que el ruido de posición del clase B no la agrande. Enseña por dónde va de verdad el barco, más que un radio.
 
 **Añadido — el plugin guarda 24 h del viento real y el rumbo propios (Rev920),** una muestra cada 30 s, que sobrevive a reinicios (`/signalk-mareas-ihm/api/own-history`). Es la base para estimar el fondeo de otros barcos con viento y marea. En el recorrido de un barco, la barra de tiempo mueve ahora su dibujo, orientado por su heading si lo manda y, si no, hacia su ancla.
 
