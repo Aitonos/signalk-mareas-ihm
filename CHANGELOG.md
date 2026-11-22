@@ -1,8 +1,12 @@
 # Changelog
 
-## [Unreleased] (Rev914-926)
+## [Unreleased] (Rev914-929)
 
 ### English
+
+**Changed - no IMU warning while pypilot is stopped for a backup (Rev929).** signalk-pypilot-newui stops pypilot on purpose to copy the TinyPilot's card and says so on `notifications.autopilot.maintenance`. The IMU that comes through pypilot is then silent by design, so the "IMU source stale" warning is held while that notice lasts.
+
+**Changed - the wind and tide estimate costs a quarter of the CPU (Rev928).** The pass now uses 10 degree steps, 5 weights and 12 iterations, skips boats that are not swinging, and pauses 200 ms between boats. It runs every 20 minutes, so Signal K stays responsive during it.
 
 **Added — anchor estimate from the track, the own wind and the tide, off by default (Rev926).** Under load a boat lies near its maximum distance from the anchor, downstream of the resultant of wind and tidal stream; with several load directions the anchor and the radius can be told apart, with one only they cannot, and then only the area is shown. Computed every 10 minutes for boats stopped within 5 km, from the current anchorage's track (up to 24 h). It is used for drawing only with the option `anchorEstimateWindTide`, until it has been checked against a known anchor; meanwhile its results are at `/signalk-mareas-ihm/api/anchor-watch/ais/wind-tide`.
 
@@ -31,6 +35,10 @@
 **Fixed — a boat at anchor without heading is drawn with its bow towards its anchor (Rev914).** Class B AIS does not send a heading, and a stopped boat's course over ground is noise, so a boat at anchor could point anywhere. With an anchor estimate and no heading, the bow now points at the anchor; with a heading, the heading is used as before.
 
 ### Español
+
+**Cambiado - sin aviso de IMU mientras pypilot está parado por un backup (Rev929).** signalk-pypilot-newui para pypilot a propósito para copiar la tarjeta del TinyPilot y lo dice en `notifications.autopilot.maintenance`. La IMU que llega a través de pypilot se calla entonces por diseño, así que el aviso de "IMU sin datos" se retiene mientras dura ese aviso.
+
+**Cambiado - la estimación de viento y marea gasta la cuarta parte de CPU (Rev928).** El cálculo usa ahora pasos de 10 grados, 5 pesos y 12 iteraciones, se salta los barcos que no bornean y hace una pausa de 200 ms entre barcos. Corre cada 20 minutos, así que Signal K sigue respondiendo mientras tanto.
 
 **Añadido — estimación del fondeo con el recorrido, el viento propio y la marea, apagada de inicio (Rev926).** Con carga, un barco queda cerca de su distancia máxima al ancla, a favor de la resultante de viento y corriente; con varias direcciones de carga se separan el ancla y el radio, con una sola no, y entonces solo se enseña la zona. Se calcula cada 10 minutos para los barcos parados a menos de 5 km, con el recorrido del fondeo actual (hasta 24 h). Solo se usa para dibujar con la opción `anchorEstimateWindTide`, hasta comprobarla con un ancla conocida; mientras, sus resultados están en `/signalk-mareas-ihm/api/anchor-watch/ais/wind-tide`.
 

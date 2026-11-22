@@ -129,7 +129,7 @@ function isPositionValue(v: unknown): v is PositionValue {
 // timestamp + git hash so we can verify exactly which build is running on the Pi
 // without ambiguity. ("¿Qué versión tengo deployada?" → /api/paths or landing.)
 const PLUGIN_VERSION: string = (esmRequire("../package.json") as { version: string }).version;
-const PLUGIN_REVISION = "Rev928";
+const PLUGIN_REVISION = "Rev929";
 
 // Rev478 (C-17): schemaVersion=2. Introduce bloque `grounding` (FSM Physics/
 // Config/Notification de Rev477) y `gpsAgeMs` (C-12). Frontend cacheado con
@@ -1896,7 +1896,13 @@ export default function (app: SignalKApp): Plugin {
         // -- IMU health --
         const imuActive = _imuManager?.active ?? null;
         const imuAgeMs = imuActive?.quality?.ageMs ?? null;
-        const imuIsBad = !!(imuActive && typeof imuAgeMs === "number" && isFinite(imuAgeMs) && imuAgeMs > IMU_STALE_MS);
+        // Rev929 (Carlos 2026-11-22): signalk-pypilot-newui stops pypilot on
+        // purpose for a card backup and says so on
+        // notifications.autopilot.maintenance; the IMU that comes through
+        // pypilot is then silent by design - no warning while it lasts.
+        let pypilotMaint = false;
+        try { const m: any = app.getSelfPath("notifications.autopilot.maintenance"); const st = m?.value?.state ?? m?.state; pypilotMaint = !!st && st !== "normal" && st !== "nominal"; } catch { /* none */ }
+        const imuIsBad = !pypilotMaint && !!(imuActive && typeof imuAgeMs === "number" && isFinite(imuAgeMs) && imuAgeMs > IMU_STALE_MS);
         if (imuIsBad !== _lastSubHealth.imu) {
           _lastSubHealth.imu = imuIsBad;
           _publishSkPath("notifications.security.imuStale",
