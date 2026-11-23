@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased] (Rev914-929)
+## [Unreleased] (Rev914-930)
 
 ### English
 
-**Changed - no IMU warning while pypilot is stopped for a backup (Rev929).** signalk-pypilot-newui stops pypilot on purpose to copy the TinyPilot's card and says so on `notifications.autopilot.maintenance`. The IMU that comes through pypilot is then silent by design, so the "IMU source stale" warning is held while that notice lasts.
+**Changed - no IMU warning while pypilot is stopped for a backup (Rev929-930).** signalk-pypilot-newui stops pypilot on purpose to copy the TinyPilot's card and says so on `notifications.autopilot.maintenance`. The IMU that comes through pypilot is then silent by design, so the "IMU source stale" warning is held. Only a current notice counts: it must come from signalk-pypilot-newui and be less than 45 minutes old, so an old or foreign notice never hides a real IMU problem.
 
 **Changed - the wind and tide estimate costs a quarter of the CPU (Rev928).** The pass now uses 10 degree steps, 5 weights and 12 iterations, skips boats that are not swinging, and pauses 200 ms between boats. It runs every 20 minutes, so Signal K stays responsive during it.
 
@@ -36,7 +36,7 @@
 
 ### Español
 
-**Cambiado - sin aviso de IMU mientras pypilot está parado por un backup (Rev929).** signalk-pypilot-newui para pypilot a propósito para copiar la tarjeta del TinyPilot y lo dice en `notifications.autopilot.maintenance`. La IMU que llega a través de pypilot se calla entonces por diseño, así que el aviso de "IMU sin datos" se retiene mientras dura ese aviso.
+**Cambiado - sin aviso de IMU mientras pypilot está parado por un backup (Rev929-930).** signalk-pypilot-newui para pypilot a propósito para copiar la tarjeta del TinyPilot y lo dice en `notifications.autopilot.maintenance`. La IMU que llega a través de pypilot se calla entonces por diseño, así que el aviso de "IMU sin datos" se retiene. Solo cuenta un aviso vigente: tiene que venir de signalk-pypilot-newui y tener menos de 45 minutos, para que un aviso viejo o ajeno nunca tape un problema real de la IMU.
 
 **Cambiado - la estimación de viento y marea gasta la cuarta parte de CPU (Rev928).** El cálculo usa ahora pasos de 10 grados, 5 pesos y 12 iteraciones, se salta los barcos que no bornean y hace una pausa de 200 ms entre barcos. Corre cada 20 minutos, así que Signal K sigue respondiendo mientras tanto.
 
